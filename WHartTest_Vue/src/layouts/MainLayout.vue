@@ -50,7 +50,7 @@
         <a-popover v-if="hasUpdate" position="bottom" trigger="hover" content-class="version-popover">
           <a 
             class="version-badge update-available" 
-            :href="versionInfo?.releaseUrl || 'https://github.com/mgdaaslab/WHartTest/releases'"
+            :href="versionInfo?.releaseUrl || versionUpdatesUrl"
             target="_blank"
           >
             当前版本: {{ currentVersion }}
@@ -67,7 +67,7 @@
               </div>
               <a 
                 class="version-update-footer"
-                :href="versionInfo?.releaseUrl || 'https://github.com/mgdaaslab/WHartTest/releases'"
+                :href="versionInfo?.releaseUrl || versionUpdatesUrl"
                 target="_blank"
               >
                 点击查看完整更新日志
@@ -254,6 +254,7 @@ import {
   getCurrentVersion,
   formatVersion,
   checkLatestVersion,
+  getVersionUpdatesUrl,
   type VersionInfo
 } from '@/services/versionService';
 import {
@@ -307,6 +308,7 @@ const themeStore = useThemeStore();
 const currentVersion = ref(formatVersion(getCurrentVersion()));
 const versionInfo = ref<VersionInfo | null>(null);
 const hasUpdate = computed(() => versionInfo.value?.hasUpdate ?? false);
+const versionUpdatesUrl = getVersionUpdatesUrl();
 
 // 更新说明预览（显示完整内容）
 const releaseNotesPreview = computed(() => {

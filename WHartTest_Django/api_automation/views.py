@@ -24,6 +24,7 @@ from .serializers import (
     ApiTestCaseSerializer,
 )
 from .document_import import ParsedRequestData, import_requests_from_document
+from .ai_parser import enhance_import_result_with_ai
 from .services import VariableResolver, build_request_url, evaluate_assertions
 
 
@@ -31,6 +32,15 @@ def get_accessible_projects(user):
     if user.is_superuser:
         return Project.objects.all()
     return Project.objects.filter(Q(members__user=user) | Q(creator=user)).distinct()
+
+
+def collect_collection_ids(root_collection: ApiCollection) -> list[int]:
+    collection_ids = [root_collection.id]
+    child_ids = list(root_collection.children.values_list("id", flat=True))
+    for child_id in child_ids:
+        child = root_collection.children.model.objects.get(id=child_id)
+        collection_ids.extend(collect_collection_ids(child))
+    return collection_ids
 
 
 class ApiCollectionViewSet(BaseModelViewSet):
@@ -80,7 +90,14 @@ class ApiRequestViewSet(BaseModelViewSet):
         if project_id:
             queryset = queryset.filter(collection__project_id=project_id)
         if collection_id:
-            queryset = queryset.filter(collection_id=collection_id)
+            root_collection = ApiCollection.objects.filter(
+                pk=collection_id,
+                project__in=get_accessible_projects(self.request.user),
+            ).first()
+            if root_collection:
+                queryset = queryset.filter(collection_id__in=collect_collection_ids(root_collection))
+            else:
+                queryset = queryset.none()
         if method:
             queryset = queryset.filter(method=method.upper())
         return queryset
@@ -103,6 +120,7 @@ class ApiRequestViewSet(BaseModelViewSet):
             pk=collection_id,
         )
         generate_test_cases = str(request.data.get("generate_test_cases", "true")).lower() in {"1", "true", "yes", "on"}
+        enable_ai_parse = str(request.data.get("enable_ai_parse", "true")).lower() in {"1", "true", "yes", "on"}
 
         suffix = Path(file.name).suffix or ""
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
@@ -112,12 +130,25 @@ class ApiRequestViewSet(BaseModelViewSet):
 
         try:
             import_result = import_requests_from_document(temp_path)
-            created_requests = self._create_imported_requests(collection, request.user, import_result.requests)
+            ai_result = None
+            parsed_requests = import_result.requests
+
+            if enable_ai_parse:
+                ai_result = enhance_import_result_with_ai(
+                    file_path=temp_path,
+                    user=request.user,
+                    source_type=import_result.source_type,
+                    base_requests=import_result.requests,
+                )
+                if ai_result.requests:
+                    parsed_requests = ai_result.requests
+
+            created_requests = self._create_imported_requests(collection, request.user, parsed_requests)
             created_test_cases = self._create_generated_test_cases(
                 collection.project,
                 request.user,
                 created_requests,
-                import_result.requests,
+                parsed_requests,
                 enabled=generate_test_cases,
             )
             serializer = self.get_serializer(created_requests, many=True)
@@ -140,6 +171,12 @@ class ApiRequestViewSet(BaseModelViewSet):
                     "source_type": import_result.source_type,
                     "marker_used": import_result.marker_used,
                     "note": import_result.note,
+                    "ai_requested": enable_ai_parse,
+                    "ai_used": bool(ai_result and ai_result.used),
+                    "ai_note": ai_result.note if ai_result else "",
+                    "ai_prompt_source": ai_result.prompt_source if ai_result else None,
+                    "ai_prompt_name": ai_result.prompt_name if ai_result else None,
+                    "ai_model_name": ai_result.model_name if ai_result else None,
                     "items": serialized_requests,
                     "generated_scripts": generated_scripts,
                     "test_cases": testcase_serializer.data,
@@ -385,7 +422,14 @@ class ApiExecutionRecordViewSet(BaseModelViewSet):
         if request_id:
             queryset = queryset.filter(request_id=request_id)
         if collection_id:
-            queryset = queryset.filter(request__collection_id=collection_id)
+            root_collection = ApiCollection.objects.filter(
+                pk=collection_id,
+                project__in=get_accessible_projects(self.request.user),
+            ).first()
+            if root_collection:
+                queryset = queryset.filter(request__collection_id__in=collect_collection_ids(root_collection))
+            else:
+                queryset = queryset.none()
         return queryset
 
 
@@ -401,10 +445,20 @@ class ApiTestCaseViewSet(BaseModelViewSet):
         queryset = super().get_queryset().filter(project__in=get_accessible_projects(self.request.user))
         project_id = self.request.query_params.get("project")
         request_id = self.request.query_params.get("request")
+        collection_id = self.request.query_params.get("collection")
         if project_id:
             queryset = queryset.filter(project_id=project_id)
         if request_id:
             queryset = queryset.filter(request_id=request_id)
+        if collection_id:
+            root_collection = ApiCollection.objects.filter(
+                pk=collection_id,
+                project__in=get_accessible_projects(self.request.user),
+            ).first()
+            if root_collection:
+                queryset = queryset.filter(request__collection_id__in=collect_collection_ids(root_collection))
+            else:
+                queryset = queryset.none()
         return queryset
 
     def perform_create(self, serializer):

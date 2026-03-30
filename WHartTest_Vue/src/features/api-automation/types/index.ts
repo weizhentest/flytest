@@ -139,6 +139,12 @@ export interface ApiImportResult {
   source_type: string
   marker_used: boolean
   note: string
+  ai_requested?: boolean
+  ai_used?: boolean
+  ai_note?: string
+  ai_prompt_source?: string | null
+  ai_prompt_name?: string | null
+  ai_model_name?: string | null
   items: ApiRequest[]
   generated_scripts: ApiGeneratedScript[]
   test_cases: ApiTestCase[]

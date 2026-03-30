@@ -1,7 +1,3 @@
-/**
- * 版本管理服务
- * 提供版本号显示和更新检测功能
- */
 import packageJson from '../../package.json'
 
 export interface VersionInfo {
@@ -13,98 +9,101 @@ export interface VersionInfo {
   checkTime?: Date
 }
 
-// GitHub 仓库配置
-const GITHUB_REPO = 'mgdaaslab/WHartTest'
-const GITHUB_API_BASE = 'https://api.github.com'
+interface GitHubContentsResponse {
+  version?: string
+}
 
-// 缓存版本信息，避免频繁请求
+interface PackageJsonVersionPayload {
+  version?: string
+}
+
+const GITHUB_REPO = 'weixiaoluan/flytest'
+const GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`
+const GITHUB_UPDATES_URL = `${GITHUB_REPO_URL}/commits/main`
+const GITHUB_PACKAGE_JSON_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/WHartTest_Vue/package.json`
+
 let cachedVersionInfo: VersionInfo | null = null
-let lastCheckTime: number = 0
-const CHECK_INTERVAL = 1000 * 60 * 60 // 1小时缓存
+let lastCheckTime = 0
+const CHECK_INTERVAL = 1000 * 60 * 60
 
-/**
- * 获取当前版本号
- */
 export function getCurrentVersion(): string {
   return packageJson.version || '0.0.0'
 }
 
-/**
- * 比较版本号
- * @returns 当 v1 > v2 返回 1；v1 < v2 返回 -1；相等返回 0
- */
+export function getVersionUpdatesUrl(): string {
+  return GITHUB_UPDATES_URL
+}
+
+function normalizeVersion(version?: string): string {
+  return version?.replace(/^v/, '').trim() || ''
+}
+
+async function fetchRepoPackageVersion(): Promise<string | undefined> {
+  const response = await fetch(GITHUB_PACKAGE_JSON_URL)
+
+  if (!response.ok) {
+    return undefined
+  }
+
+  try {
+    const remotePackageJson = await response.json() as PackageJsonVersionPayload
+    return normalizeVersion(remotePackageJson.version)
+  } catch (error) {
+    console.warn('Failed to parse remote package.json version', error)
+    return undefined
+  }
+}
+
 export function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.replace(/^v/, '').split('.').map(Number)
-  const parts2 = v2.replace(/^v/, '').split('.').map(Number)
-  
+  const parts1 = normalizeVersion(v1).split('.').map(Number)
+  const parts2 = normalizeVersion(v2).split('.').map(Number)
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const p1 = parts1[i] || 0
     const p2 = parts2[i] || 0
     if (p1 > p2) return 1
     if (p1 < p2) return -1
   }
+
   return 0
 }
 
-/**
- * 检查 GitHub 最新版本
- */
 export async function checkLatestVersion(): Promise<VersionInfo> {
   const now = Date.now()
-  
-  // 使用缓存
-  if (cachedVersionInfo && (now - lastCheckTime) < CHECK_INTERVAL) {
+
+  if (cachedVersionInfo && now - lastCheckTime < CHECK_INTERVAL) {
     return cachedVersionInfo
   }
-  
+
   const current = getCurrentVersion()
   const versionInfo: VersionInfo = {
     current,
-    hasUpdate: false
+    hasUpdate: false,
+    releaseUrl: getVersionUpdatesUrl(),
+    releaseNotes: 'Version source: weixiaoluan/flytest/WHartTest_Vue/package.json'
   }
-  
+
   try {
-    const response = await fetch(
-      `${GITHUB_API_BASE}/repos/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      }
-    )
-    
-    if (!response.ok) {
-      // 可能是没有发布的 release，或者 API 限制
-      console.warn('无法获取最新版本信息:', response.status)
-      return versionInfo
+    const repoVersion = await fetchRepoPackageVersion()
+    if (repoVersion) {
+      versionInfo.latest = repoVersion
+      versionInfo.hasUpdate = compareVersions(repoVersion, current) > 0
     }
-    
-    const release = await response.json()
-    const latestVersion = release.tag_name?.replace(/^v/, '') || ''
-    
-    versionInfo.latest = latestVersion
-    versionInfo.hasUpdate = compareVersions(latestVersion, current) > 0
-    versionInfo.releaseUrl = release.html_url
-    versionInfo.releaseNotes = release.body
+
     versionInfo.checkTime = new Date()
-    
-    // 更新缓存
-    cachedVersionInfo = versionInfo
-    lastCheckTime = now
-    
   } catch (error) {
-    console.warn('检查版本更新失败:', error)
+    console.warn('Failed to check latest version', error)
   }
-  
+
+  cachedVersionInfo = versionInfo
+  lastCheckTime = now
   return versionInfo
 }
 
-/**
- * 格式化版本号显示
- */
 export function formatVersion(version: string): string {
   if (!version || version === '0.0.0') {
     return 'dev'
   }
-  return `v${version.replace(/^v/, '')}`
+
+  return `v${normalizeVersion(version)}`
 }

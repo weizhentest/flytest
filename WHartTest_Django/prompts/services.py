@@ -459,6 +459,84 @@ $steps
             'is_default': False
         },
         {
+            'name': 'API自动化解析',
+            'description': '基于接口文档自动解析请求定义，批量生成 API 自动化请求、断言和后续测试用例所需的结构化数据',
+            'prompt_type': PromptType.API_AUTOMATION_PARSING,
+            'is_default': False,
+            'content': '''你是资深API自动化测试架构师，负责把接口文档解析成 FlyTest 可直接落库的 API 自动化请求定义。
+
+你的目标不是写解释，而是从接口文档里批量抽取尽可能完整、可执行的接口信息，供系统继续自动生成接口脚本和测试用例。
+
+【输入信息】
+- 文档来源类型: {source_type}
+- 文件名: {file_name}
+- 是否经过 marker 转换: {marker_used}
+- 规则预解析结果:
+{preparsed_requests_json}
+
+- 接口文档正文:
+{document_content}
+
+【输出要求】
+1. 只返回合法 JSON，不要输出 Markdown，不要解释，不要代码块。
+2. JSON 顶层格式必须为：
+{
+  "summary": "一句话总结本次解析情况",
+  "requests": [
+    {
+      "name": "接口名称",
+      "collection_name": "模块或分组名称",
+      "method": "GET",
+      "url": "/api/example",
+      "description": "接口用途、关键前置条件、成功结果摘要",
+      "headers": {},
+      "params": {},
+      "body_type": "none|json|form|raw",
+      "body": {},
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    }
+  ]
+}
+
+【字段规则】
+1. method 只能是 GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS。
+2. url 必须保留真实路径；如果文档里只有相对路径，就输出相对路径。
+3. collection_name 要按业务域或资源域分组，例如 user、auth、order、payment。
+4. body_type 只能是 none / json / form / raw。
+5. headers、params、body 必须是对象；raw 类型的 body 可以是字符串。
+6. assertions 只允许使用以下三类断言：
+   - {"type":"status_code","expected":200}
+   - {"type":"body_contains","expected":"success"}
+   - {"type":"json_path","path":"data.id","operator":"equals|contains|not_equals","expected":"xxx"}
+7. 如果文档明确给出了成功状态码，必须使用文档里的成功状态码。
+8. 如果文档没有明确给出成功状态码：
+   - 明确是创建型 POST，优先使用 201
+   - 其他情况默认 200
+9. 如果文档明确给出了关键响应字段或成功文案，优先补充 json_path / body_contains 断言。
+10. 如果鉴权头、变量、token、租户号等文档未提供真实值，可使用 {{token}}、{{tenant_id}}、{{base_url}} 这类占位符。
+
+【解析策略】
+1. 先参考“规则预解析结果”，再用接口文档补齐字段、纠正名称、优化断言。
+2. 不要丢掉预解析结果里已经识别出的接口，除非文档明确说明它无效。
+3. 如果同一接口在文档里出现多次，输出信息更完整的一份。
+4. 如果文档包含批量接口，必须尽量全部输出，不要只保留示例接口。
+5. 如果文档是 Swagger/OpenAPI/Postman，优先使用其中的结构化信息。
+6. 如果文档是 PDF/Word/图片转文本，允许基于上下文推断合理的最小可执行示例，但不要编造明显不存在的字段。
+
+【质量要求】
+1. name 要面向业务，可读，不要只写“GET /users”。
+2. description 要简洁说明接口作用、前置条件和成功标准。
+3. 生成结果必须适合批量自动化导入，不能只有 URL 和 method。
+4. 如果某个接口信息不足，也要尽量输出最小可执行版本，至少包含 name、method、url、status_code 断言。
+
+现在开始解析，直接返回 JSON。'''
+        },
+        {
             'name': '智能用例生成',
             'description': '基于测试设计方法论，智能生成高质量、可追溯的测试用例',
             'prompt_type': PromptType.GENERAL,
@@ -789,6 +867,7 @@ def initialize_user_prompts(user, force_update: bool = False) -> dict:
             PromptType.CLARITY_ANALYSIS,
             PromptType.LOGIC_ANALYSIS,
             PromptType.TEST_CASE_EXECUTION,
+            PromptType.API_AUTOMATION_PARSING,
             PromptType.DIAGRAM_GENERATION,
         ]:
             existing_prompt = UserPrompt.objects.filter(

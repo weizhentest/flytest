@@ -164,31 +164,78 @@
       </a-form>
 
       <div v-else class="document-import-panel">
-        <a-alert type="info" class="import-alert">
-          <template #title>接口文档导入</template>
-          支持 Swagger / OpenAPI / Postman，以及 PDF、图片、PPTX、DOCX、XLSX、HTML、EPUB 等文档格式。
-          导入后会自动解析生成前端接口脚本，并可选批量生成测试用例。
-        </a-alert>
-
-        <div class="document-import-form">
-          <label class="file-picker">
-            <span class="file-picker-label">选择接口文档</span>
-            <input
-              class="file-input"
-              type="file"
-              accept=".json,.yaml,.yml,.txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.html,.htm,.epub"
-              @change="handleDocumentChange"
-            />
-          </label>
-          <div v-if="documentFile" class="selected-file">当前文件：{{ documentFile.name }}</div>
-          <div class="import-options">
-            <span class="import-option-label">自动批量生成测试用例</span>
-            <a-switch v-model="generateTestCases" />
+        <div class="import-hero-card">
+          <div class="import-hero-badge">AI增强解析</div>
+          <div class="import-hero-title">接口文档导入与自动化生成</div>
+          <div class="import-hero-description">
+            支持 Swagger / OpenAPI / Postman，以及 PDF、图片、PPTX、DOCX、XLSX、HTML、EPUB 等格式。
+            导入时会先做规则解析，再按需调用系统设置中的当前激活模型做 AI 增强解析，自动补全接口定义、断言，并批量生成脚本与测试用例。
           </div>
-          <div class="import-tip">
-            推荐优先上传 OpenAPI / Swagger / Postman 文件。非结构化文档会尝试自动抽取接口定义，效果取决于文档质量与本地解析环境。
+          <div class="import-hero-meta">
+            <span class="hero-pill">系统设置 > LLM配置</span>
+            <span class="hero-pill">提示词管理 > API自动化解析</span>
+            <span class="hero-pill">失败自动回退规则解析</span>
           </div>
         </div>
+
+        <div
+          class="document-dropzone"
+          :class="{ 'is-dragging': documentDragging, 'has-file': !!documentFile }"
+          @click="triggerDocumentSelect"
+          @dragenter.prevent="documentDragging = true"
+          @dragover.prevent="documentDragging = true"
+          @dragleave.prevent="documentDragging = false"
+          @drop="handleDocumentDrop"
+        >
+          <input
+            ref="documentInputRef"
+            class="file-input-hidden"
+            type="file"
+            accept=".json,.yaml,.yml,.txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.html,.htm,.epub"
+            @change="handleDocumentChange"
+          />
+          <div class="dropzone-icon">AI</div>
+          <div class="dropzone-title">
+            {{ documentFile ? '已选择接口文档，导入时将自动解析' : '拖拽接口文档到这里，或点击选择文件' }}
+          </div>
+          <div class="dropzone-subtitle">
+            推荐优先上传 OpenAPI / Swagger / Postman。非结构化文档将结合规则解析与 AI 增强解析提取接口信息。
+          </div>
+
+          <div v-if="documentFile" class="selected-file-card" @click.stop>
+            <div class="selected-file-main">
+              <div class="selected-file-name">{{ documentFile.name }}</div>
+              <div class="selected-file-meta">{{ documentFileSummary }}</div>
+            </div>
+            <a-button type="text" size="small" @click="clearDocumentFile">重新选择</a-button>
+          </div>
+        </div>
+
+        <div class="import-option-grid">
+          <div class="import-option-card import-option-card-primary">
+            <div class="option-copy">
+              <div class="option-title">AI增强解析</div>
+              <div class="option-description">
+                使用系统设置中当前激活的 AI 接口，并读取“提示词管理”中的 API 自动化解析提示词；若 AI 不可用，会自动回退到规则解析。
+              </div>
+            </div>
+            <a-switch v-model="enableAiParse" />
+          </div>
+          <div class="import-option-card">
+            <div class="option-copy">
+              <div class="option-title">批量生成测试用例</div>
+              <div class="option-description">
+                基于解析出的接口请求自动生成接口自动化脚本和测试用例，适合导入后直接进入回归设计。
+              </div>
+            </div>
+            <a-switch v-model="generateTestCases" />
+          </div>
+        </div>
+
+        <a-alert type="info" class="import-alert">
+          <template #title>导入说明</template>
+          文档导入完成后，结果面板会显示本次是否启用了 AI 增强解析、采用了哪个模型、提示词来源，以及是否回退到了规则解析。
+        </a-alert>
       </div>
     </a-modal>
 
@@ -239,6 +286,22 @@
 
     <a-drawer v-model:visible="importResultVisible" width="920px" title="文档导入结果" :footer="false">
       <div v-if="importResult" class="import-result-drawer">
+        <a-alert
+          :type="importResult.ai_requested ? (importResult.ai_used ? 'success' : 'warning') : 'info'"
+          class="import-result-alert"
+        >
+          <template #title>
+            {{
+              importResult.ai_requested
+                ? importResult.ai_used
+                  ? 'AI增强解析已生效'
+                  : 'AI增强解析未生效，已回退到规则解析'
+                : '本次未启用AI增强解析'
+            }}
+          </template>
+          {{ importResult.ai_note || '本次导入未返回额外 AI 解析说明。' }}
+        </a-alert>
+
         <a-descriptions :column="2" bordered size="small">
           <a-descriptions-item label="导入来源">{{ importResult.source_type || '-' }}</a-descriptions-item>
           <a-descriptions-item label="使用 Marker">
@@ -246,9 +309,24 @@
               {{ importResult.marker_used ? '是' : '否' }}
             </a-tag>
           </a-descriptions-item>
+          <a-descriptions-item label="AI增强解析">
+            <a-tag :color="importResult.ai_requested ? (importResult.ai_used ? 'green' : 'orange') : 'gray'">
+              {{
+                importResult.ai_requested
+                  ? importResult.ai_used
+                    ? '已启用'
+                    : '已回退'
+                  : '未开启'
+              }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="AI模型">{{ importResult.ai_model_name || '-' }}</a-descriptions-item>
           <a-descriptions-item label="生成接口">{{ importResult.created_count || 0 }}</a-descriptions-item>
           <a-descriptions-item label="生成脚本">{{ importResult.generated_script_count || 0 }}</a-descriptions-item>
           <a-descriptions-item label="生成测试用例">{{ importResult.created_testcase_count || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="提示词来源">
+            {{ importResult.ai_prompt_name || importResult.ai_prompt_source || '-' }}
+          </a-descriptions-item>
           <a-descriptions-item label="解析说明" :span="2">{{ importResult.note || '-' }}</a-descriptions-item>
         </a-descriptions>
 
@@ -338,8 +416,11 @@ const editingRequest = ref<ApiRequest | null>(null)
 const currentResult = ref<ApiExecutionRecord | null>(null)
 const importResult = ref<ApiImportResult | null>(null)
 const documentFile = ref<File | null>(null)
+const documentInputRef = ref<HTMLInputElement | null>(null)
+const documentDragging = ref(false)
 const createMode = ref<'manual' | 'document'>('manual')
 const generateTestCases = ref(true)
+const enableAiParse = ref(true)
 
 const formState = ref({
   name: '',
@@ -360,6 +441,14 @@ const filteredRequests = computed(() => {
   return requests.value.filter(item => {
     return item.name.toLowerCase().includes(keyword) || item.url.toLowerCase().includes(keyword)
   })
+})
+
+const documentFileSummary = computed(() => {
+  if (!documentFile.value) return ''
+  const size = documentFile.value.size
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(2)} MB`
 })
 
 const stringifyJson = (value: any, fallback = '{}') => {
@@ -436,8 +525,13 @@ const loadRequests = async () => {
 const resetEditor = () => {
   editingRequest.value = null
   documentFile.value = null
+  documentDragging.value = false
   createMode.value = 'manual'
   generateTestCases.value = true
+  enableAiParse.value = true
+  if (documentInputRef.value) {
+    documentInputRef.value.value = ''
+  }
   formState.value = {
     name: '',
     description: '',
@@ -478,6 +572,31 @@ const openEditModal = (record: ApiRequest) => {
 const handleDocumentChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   documentFile.value = input.files?.[0] || null
+  documentDragging.value = false
+}
+
+const triggerDocumentSelect = () => {
+  documentInputRef.value?.click()
+}
+
+const clearDocumentFile = () => {
+  documentFile.value = null
+  documentDragging.value = false
+  if (documentInputRef.value) {
+    documentInputRef.value.value = ''
+  }
+}
+
+const handleDocumentDrop = (event: DragEvent) => {
+  event.preventDefault()
+  documentDragging.value = false
+  const file = event.dataTransfer?.files?.[0] || null
+  if (file) {
+    documentFile.value = file
+    if (documentInputRef.value) {
+      documentInputRef.value.value = ''
+    }
+  }
 }
 
 const viewRequest = (record: ApiRequest) => {
@@ -544,11 +663,17 @@ const submitDocumentImport = async () => {
   }
   const res = await apiRequestApi.importDocument(props.selectedCollectionId!, documentFile.value, {
     generateTestCases: generateTestCases.value,
+    enableAiParse: enableAiParse.value,
   })
   const result = (res.data?.data || res.data) as ApiImportResult
   importResult.value = result
   importResultVisible.value = true
-  Message.success(`文档导入成功，已生成 ${result.created_count || 0} 个接口和 ${result.created_testcase_count || 0} 个测试用例`)
+  const aiMessage = result.ai_requested
+    ? result.ai_used
+      ? '，已应用AI增强解析'
+      : '，AI未生效，已回退到规则解析'
+    : ''
+  Message.success(`文档导入成功，已生成 ${result.created_count || 0} 个接口和 ${result.created_testcase_count || 0} 个测试用例${aiMessage}`)
 }
 
 const submitRequest = async (done: (closed: boolean) => void) => {
@@ -658,54 +783,193 @@ defineExpose({
 }
 
 .import-alert {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
-.document-import-form {
+.import-hero-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(13, 148, 136, 0.14), rgba(15, 23, 42, 0.06)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 252, 0.92));
+  border: 1px solid rgba(13, 148, 136, 0.16);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
 }
 
-.file-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.import-hero-badge {
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.file-picker-label {
+.import-hero-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.import-hero-description {
   font-size: 14px;
+  line-height: 1.8;
+  color: #475569;
+}
+
+.import-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #334155;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-1);
 }
 
-.file-input {
-  border: 1px dashed var(--color-border-2);
-  border-radius: 12px;
-  padding: 14px;
-  background: var(--color-fill-1);
+.document-dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 24px;
+  border-radius: 26px;
+  border: 1.5px dashed rgba(15, 118, 110, 0.26);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 250, 249, 0.88));
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
 }
 
-.selected-file,
-.import-tip {
+.document-dropzone:hover,
+.document-dropzone.is-dragging {
+  transform: translateY(-1px);
+  border-color: rgba(13, 148, 136, 0.5);
+  box-shadow: 0 18px 40px rgba(15, 118, 110, 0.12);
+}
+
+.document-dropzone.has-file {
+  border-style: solid;
+  border-color: rgba(13, 148, 136, 0.24);
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.dropzone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  box-shadow: 0 18px 36px rgba(15, 118, 110, 0.2);
+}
+
+.dropzone-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dropzone-subtitle {
+  max-width: 640px;
+  text-align: center;
   font-size: 13px;
-  color: var(--color-text-2);
+  line-height: 1.7;
+  color: #64748b;
 }
 
-.import-options {
+.selected-file-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.04);
+  width: 100%;
+  max-width: 680px;
+  margin-top: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
-.import-option-label {
-  font-size: 13px;
-  color: var(--color-text-1);
-  font-weight: 600;
+.selected-file-main {
+  min-width: 0;
+}
+
+.selected-file-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.selected-file-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.import-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.import-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.import-option-card-primary {
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.1), rgba(59, 130, 246, 0.08)),
+    rgba(255, 255, 255, 0.92);
+}
+
+.option-copy {
+  min-width: 0;
+}
+
+.option-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.option-description {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
 }
 
 .empty-tip-card {
@@ -722,6 +986,10 @@ defineExpose({
   gap: 16px;
 }
 
+.import-result-alert {
+  margin-bottom: 4px;
+}
+
 .import-tags {
   margin-bottom: 12px;
 }
@@ -736,5 +1004,17 @@ defineExpose({
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .import-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .selected-file-card,
+  .import-option-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

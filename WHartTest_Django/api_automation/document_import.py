@@ -215,6 +215,21 @@ def import_requests_from_document(file_path: str) -> DocumentImportResult:
     raise ValueError(f"暂不支持的接口文档格式: {suffix or 'unknown'}")
 
 
+def load_document_content_for_ai(file_path: str) -> tuple[str, str, bool]:
+    suffix = Path(file_path).suffix.lower()
+
+    if suffix in STRUCTURED_EXTENSIONS | TEXT_EXTENSIONS:
+        return load_text_document(file_path), "text_document", False
+
+    if suffix in NATIVE_DOCUMENT_EXTENSIONS:
+        return extract_text_document_content(file_path), "native_document", False
+
+    if suffix in MARKER_EXTENSIONS:
+        return convert_document_with_marker(file_path), "marker_markdown", True
+
+    raise ValueError(f"Unsupported document format for AI parsing: {suffix or 'unknown'}")
+
+
 def parse_structured_document(file_path: str) -> DocumentImportResult | None:
     suffix = Path(file_path).suffix.lower()
     content = Path(file_path).read_text(encoding="utf-8", errors="ignore")

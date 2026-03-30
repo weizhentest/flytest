@@ -34,12 +34,19 @@ export const apiRequestApi = {
 
   create: (data: ApiRequestForm) => request.post<ApiRequest>(`${BASE_URL}/requests/`, data),
 
-  importDocument: (collectionId: number, file: File, options?: { generateTestCases?: boolean }) => {
+  importDocument: (
+    collectionId: number,
+    file: File,
+    options?: { generateTestCases?: boolean; enableAiParse?: boolean }
+  ) => {
     const formData = new FormData()
     formData.append('collection_id', String(collectionId))
     formData.append('file', file)
     if (options?.generateTestCases !== undefined) {
       formData.append('generate_test_cases', String(options.generateTestCases))
+    }
+    if (options?.enableAiParse !== undefined) {
+      formData.append('enable_ai_parse', String(options.enableAiParse))
     }
     return request.post<ApiImportResult>(`${BASE_URL}/requests/import-document/`, formData)
   },
