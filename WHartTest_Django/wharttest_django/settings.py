@@ -129,6 +129,7 @@ INSTALLED_APPS = [
     "skills",  # Skill 管理应用。
     "testcase_templates",  # 用例模板应用。
     "ui_automation",  # UI 自动化应用。
+    "api_automation",  # API 自动化应用。
 ]
 
 # ASGI 配置（用于 Channels WebSocket）

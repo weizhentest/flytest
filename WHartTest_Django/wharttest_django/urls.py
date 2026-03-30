@@ -11,7 +11,7 @@ from django.contrib import admin
 
 
 # 导入 path/include，用于声明 URL 与组合子路由。
-from django.urls import path, include
+from django.urls import path, include, re_path
 
 # 导入项目配置，后续用于读取 MEDIA/STATIC 设置。
 from django.conf import settings
@@ -53,6 +53,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView,
 )
+from wharttest_django.spa_views import serve_spa_asset, serve_spa_index
 
 # 创建主路由器实例。
 router = DefaultRouter()
@@ -122,6 +123,8 @@ urlpatterns = [
     path("api/", include("testcase_templates.urls")),
     # 挂载 UI 自动化路由。
     path("api/ui-automation/", include("ui_automation.urls")),
+    # 挂载 API 自动化路由。
+    path("api/api-automation/", include("api_automation.urls")),
     # 挂载 OpenAPI schema 接口。
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # 挂载 Swagger UI。
@@ -136,6 +139,14 @@ urlpatterns = [
         SpectacularRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
+]
+
+urlpatterns += [
+    re_path(
+        r"^(?P<asset_path>(assets/.*|favicon\.svg|logo\.svg|app-icon\.svg|manifest\.json|FlyTest\.png|login-fingerprint\.svg|vite\.svg|\.htaccess))$",
+        serve_spa_asset,
+    ),
+    re_path(r"^(?!api/|admin/|media/|static/).*$", serve_spa_index),
 ]
 
 # 追加媒体文件访问路由（开发/容器环境使用）。

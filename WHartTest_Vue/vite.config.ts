@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+﻿import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'url'
 
@@ -12,15 +12,15 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': {
+      '^/api(?:/|$)': {
         target: 'http://localhost:8000', // 您的后端 API 地址
         changeOrigin: true,
       },
-      '/media': {
+      '^/media(?:/|$)': {
         target: 'http://localhost:8000', // 您的后端 API 地址
         changeOrigin: true,
       },
-      '/ws': {
+      '^/ws(?:/|$)': {
         target: 'ws://localhost:8000', // WebSocket 地址
         ws: true,
         changeOrigin: true,
@@ -28,3 +28,4 @@ export default defineConfig({
     },
   },
 })
+

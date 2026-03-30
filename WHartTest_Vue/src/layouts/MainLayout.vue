@@ -138,6 +138,11 @@
             <a href="#" @click="checkProjectAndNavigate($event, '/ai-diagram')">智能图表</a>
           </a-menu-item>
 
+          <a-menu-item key="api-automation" v-if="hasApiAutomationPermission">
+            <template #icon><icon-code-block /></template>
+            <a href="#" @click="checkProjectAndNavigate($event, '/api-automation')">API自动化</a>
+          </a-menu-item>
+
           <a-menu-item key="ui-automation" v-if="hasUiAutomationPermission">
             <template #icon><icon-computer /></template>
             <a href="#" @click="checkProjectAndNavigate($event, '/ui-automation')">UI自动化</a>
@@ -352,6 +357,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/llm-configs')) return 'llm-configs';
   if (path.startsWith('/langgraph-chat')) return 'langgraph-chat';
   if (path.startsWith('/ai-diagram')) return 'ai-diagram';
+  if (path.startsWith('/api-automation')) return 'api-automation';
   if (path.startsWith('/knowledge-management')) return 'knowledge-management';
   if (path.startsWith('/api-keys')) return 'api-keys';
   if (path.startsWith('/remote-mcp-configs')) return 'remote-mcp-configs';
@@ -390,6 +396,12 @@ const hasLangGraphChatPermission = computed(() => {
   return authStore.hasPermission('langgraph_integration.view_llmconfig') ||
          authStore.hasPermission('langgraph_integration.view_chatsession') ||
          authStore.hasPermission('langgraph_integration.view_chatmessage');
+});
+
+const hasApiAutomationPermission = computed(() => {
+  return authStore.hasPermission('api_automation.view_apicollection') ||
+         authStore.hasPermission('api_automation.view_apirequest') ||
+         authStore.hasPermission('api_automation.view_apienvironment');
 });
 
 const hasUiAutomationPermission = computed(() => {
