@@ -4,7 +4,7 @@ import re
 import time
 import uuid
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
 PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}")
@@ -48,7 +48,56 @@ def build_request_url(base_url: str, request_url: str) -> str:
         return request_url
     if not base_url:
         return request_url
-    return urljoin(base_url.rstrip("/") + "/", request_url.lstrip("/"))
+
+    base_parts = urlsplit(base_url.rstrip("/"))
+    request_parts = urlsplit(request_url)
+
+    base_segments = [segment for segment in base_parts.path.split("/") if segment]
+    request_path = request_parts.path.lstrip("/")
+    request_segments = [segment for segment in request_path.split("/") if segment]
+
+    overlap = 0
+    max_overlap = min(len(base_segments), len(request_segments))
+    for size in range(max_overlap, 0, -1):
+        if base_segments[-size:] == request_segments[:size]:
+            overlap = size
+            break
+
+    merged_segments = base_segments + request_segments[overlap:]
+    merged_path = "/" + "/".join(merged_segments) if merged_segments else "/"
+
+    return urlunsplit(
+        (
+            base_parts.scheme,
+            base_parts.netloc,
+            merged_path,
+            request_parts.query,
+            request_parts.fragment,
+        )
+    )
+
+
+def collect_placeholders(value: Any) -> set[str]:
+    placeholders: set[str] = set()
+    if isinstance(value, dict):
+        for item in value.values():
+            placeholders.update(collect_placeholders(item))
+    elif isinstance(value, list):
+        for item in value:
+            placeholders.update(collect_placeholders(item))
+    elif isinstance(value, str):
+        placeholders.update(PLACEHOLDER_PATTERN.findall(value))
+    return placeholders
+
+
+def find_missing_variables(variables: dict[str, Any], *values: Any) -> list[str]:
+    missing: set[str] = set()
+    for value in values:
+        for key in collect_placeholders(value):
+            resolved = variables.get(key)
+            if resolved in (None, ""):
+                missing.add(key)
+    return sorted(missing)
 
 
 def extract_json_path(data: Any, path: str) -> Any:

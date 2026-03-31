@@ -109,6 +109,12 @@
             placeholder='例如：{"token":"xxx","tenant_id":"demo"}'
           />
         </a-form-item>
+        <a-alert type="info">
+          <template #title>自动获取 Token</template>
+          如果接口头里使用了 <code>{{token}}</code> 且当前环境没有填写 token，系统会尝试自动执行登录接口。
+          可在环境变量 JSON 中配置 <code>auth_request_name</code> 或 <code>auth_request_id</code> 指定登录接口；
+          如返回结构特殊，可再配置 <code>auth_token_path</code>，例如 <code>data.token</code>。
+        </a-alert>
       </a-form>
     </a-modal>
   </div>

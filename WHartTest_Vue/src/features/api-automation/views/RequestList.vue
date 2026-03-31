@@ -1266,7 +1266,13 @@ const executeRequest = async (record: ApiRequest) => {
     const res = await apiRequestApi.execute(record.id, selectedEnvironmentId.value)
     currentResult.value = (res.data?.data || res.data) as ApiExecutionRecord
     resultVisible.value = true
-    Message.success(currentResult.value.passed ? '接口执行通过' : '接口执行完成')
+    if (currentResult.value.passed) {
+      Message.success('接口执行通过')
+    } else if (currentResult.value.status === 'error') {
+      Message.error(currentResult.value.error_message || '接口执行失败，请检查环境变量或请求配置')
+    } else {
+      Message.warning('接口执行未通过，请检查断言或响应内容')
+    }
     emit('executed')
   } catch (error: any) {
     console.error('[RequestList] 执行接口失败:', error)

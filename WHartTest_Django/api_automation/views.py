@@ -2,12 +2,16 @@ import os
 import tempfile
 import threading
 import time
+import json
+import re
 from pathlib import Path
 
 import httpx
 from django.db.models import Q
+from django.db.models import Avg, Count, Max
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models.functions import TruncDate
 from rest_framework import filters, status
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -28,7 +32,38 @@ from .serializers import (
     ApiTestCaseSerializer,
 )
 from .generation import build_request_script
-from .services import VariableResolver, build_request_url, evaluate_assertions
+from .services import (
+    VariableResolver,
+    build_request_url,
+    evaluate_assertions,
+    find_missing_variables,
+    collect_placeholders,
+    extract_json_path,
+)
+
+
+TOKEN_VARIABLE_NAMES = {"token", "access_token", "refresh_token", "refreshToken", "authorization"}
+AUTH_RESPONSE_KEY_MAP = {
+    "token": "token",
+    "access_token": "token",
+    "accessToken": "token",
+    "jwt": "token",
+    "authorization": "token",
+    "refresh_token": "refresh_token",
+    "refreshToken": "refresh_token",
+    "uid": "uid",
+    "userId": "uid",
+    "user_id": "uid",
+}
+BOOTSTRAP_OPTIONAL_EMPTY_VARIABLES = {
+    "device",
+    "registrationId",
+    "pushId",
+    "deviceId",
+    "deviceType",
+    "nickname",
+    "name",
+}
 
 
 def get_accessible_projects(user):
@@ -119,6 +154,150 @@ def _resolve_execution_environment(project: Project, environment_id=None):
     return environment or ApiEnvironment.objects.filter(project=project, is_default=True).first()
 
 
+def _get_env_setting(variables: dict, *keys: str):
+    for key in keys:
+        value = variables.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _is_auth_candidate(api_request: ApiRequest, variables: dict) -> bool:
+    combined = f"{api_request.name} {api_request.url}".lower()
+    if "refresh" in combined or "logout" in combined or "退出" in combined:
+        return False
+
+    placeholders = collect_placeholders(
+        {
+            "url": api_request.url,
+            "headers": api_request.headers,
+            "params": api_request.params,
+            "body": api_request.body,
+        }
+    )
+    token_placeholders = placeholders & TOKEN_VARIABLE_NAMES
+    if token_placeholders:
+        return False
+
+    if "login" in combined or "登录" in combined or "applogin" in combined:
+        return True
+    if "token" in combined and api_request.method.upper() == "POST":
+        return True
+    return False
+
+
+def _get_auth_requests(project: Project, variables: dict) -> list[ApiRequest]:
+    auth_request_id = _get_env_setting(variables, "__auth_request_id", "auth_request_id")
+    if auth_request_id not in (None, ""):
+        request = ApiRequest.objects.filter(collection__project=project, id=auth_request_id).first()
+        return [request] if request else []
+
+    auth_request_name = str(_get_env_setting(variables, "__auth_request_name", "auth_request_name") or "").strip().lower()
+    requests = list(
+        ApiRequest.objects.select_related("collection", "collection__project")
+        .filter(collection__project=project)
+        .order_by("id")
+    )
+
+    if auth_request_name:
+        matched = []
+        for item in requests:
+            combined = f"{item.name} {item.url}".lower()
+            if auth_request_name in combined:
+                matched.append(item)
+        if matched:
+            return matched
+
+    def score(item: ApiRequest) -> int:
+        combined = f"{item.name} {item.url}".lower()
+        total = 0
+        if not _is_auth_candidate(item, variables):
+            return -999
+        if "登录" in item.name or "login" in combined:
+            total += 40
+        if "applogin" in combined:
+            total += 30
+        if "pclogin" in combined:
+            total += 20
+        if item.method.upper() == "POST":
+            total += 10
+        return total
+
+    return [item for item in sorted(requests, key=score, reverse=True) if score(item) > 0]
+
+
+def _get_auth_request(project: Project, variables: dict) -> ApiRequest | None:
+    requests = _get_auth_requests(project, variables)
+    return requests[0] if requests else None
+
+
+def _extract_auth_variables(response_payload, variables: dict) -> dict:
+    if not isinstance(response_payload, dict):
+        return {}
+
+    explicit_token_path = _get_env_setting(variables, "__auth_token_path", "auth_token_path")
+    token_paths = []
+    if explicit_token_path:
+        token_paths.extend([part.strip() for part in str(explicit_token_path).split(",") if part.strip()])
+    token_paths.extend(
+        [
+            "data.token",
+            "data.accessToken",
+            "data.access_token",
+            "data.jwt",
+            "data.authorization",
+            "token",
+            "accessToken",
+            "access_token",
+            "authorization",
+        ]
+    )
+
+    resolved: dict[str, str] = {}
+    for path in token_paths:
+        value = extract_json_path(response_payload, path)
+        if value not in (None, ""):
+            resolved["token"] = str(value)
+            break
+
+    for path in ["data.refresh_token", "data.refreshToken", "refresh_token", "refreshToken"]:
+        value = extract_json_path(response_payload, path)
+        if value not in (None, ""):
+            resolved["refresh_token"] = str(value)
+            break
+
+    for path in ["data.uid", "data.userId", "data.user_id", "uid", "userId", "user_id"]:
+        value = extract_json_path(response_payload, path)
+        if value not in (None, ""):
+            resolved["uid"] = str(value)
+            break
+
+    return resolved
+
+
+def _extract_auth_error_message(record: ApiExecutionRecord) -> str:
+    if record.error_message:
+        return record.error_message
+    payload = (record.response_snapshot or {}).get("body")
+    if isinstance(payload, dict):
+        for key in ("message", "detail", "error", "msg"):
+            value = payload.get(key)
+            if value not in (None, ""):
+                return str(value)
+    return "登录接口未返回可用 token"
+
+
+def _missing_variables_for_bootstrap(variables: dict, auth_request: ApiRequest) -> list[str]:
+    missing = find_missing_variables(
+        variables,
+        auth_request.url,
+        auth_request.headers,
+        auth_request.params,
+        auth_request.body,
+    )
+    return [item for item in missing if item not in BOOTSTRAP_OPTIONAL_EMPTY_VARIABLES]
+
+
 def _serialize_execution_batch(records):
     serializer = ApiExecutionRecordSerializer(records, many=True)
     return {
@@ -199,9 +378,12 @@ def _execute_api_request(
     override_payload: dict | None = None,
     snapshot_extra: dict | None = None,
     assertions_override=None,
+    runtime_context: dict | None = None,
+    allow_auth_bootstrap: bool = True,
 ):
     project = api_request.collection.project
     override_payload = override_payload or {}
+    runtime_context = runtime_context or {}
 
     variables = {}
     base_url = ""
@@ -213,6 +395,7 @@ def _execute_api_request(
         base_url = environment.base_url or ""
         common_headers = environment.common_headers or {}
         timeout_ms = environment.timeout_ms or timeout_ms
+    variables.update(runtime_context.get("variables", {}))
 
     method = str(override_payload.get("method") or api_request.method).upper()
     raw_url = str(override_payload.get("url") or api_request.url)
@@ -229,6 +412,50 @@ def _execute_api_request(
     body = override_payload.get("body", api_request.body)
     timeout_ms = override_payload.get("timeout_ms") or timeout_ms
     assertions = assertions_override if assertions_override is not None else (api_request.assertions or [])
+
+    missing_variables = find_missing_variables(variables, raw_url, common_headers, merged_headers, merged_params, body)
+
+    bootstrap_error = None
+    if "token" in missing_variables and allow_auth_bootstrap and environment:
+        auth_request = _get_auth_request(project, variables)
+        if auth_request:
+            bootstrap_missing = _missing_variables_for_bootstrap(variables, auth_request)
+            if bootstrap_missing:
+                bootstrap_error = f"自动获取 token 失败，登录接口缺少环境变量: {', '.join(bootstrap_missing)}"
+            else:
+                auth_record = _execute_api_request(
+                    api_request=auth_request,
+                    executor=executor,
+                    environment=environment,
+                    request_name=f"[Auth Bootstrap] {auth_request.name}",
+                    runtime_context=runtime_context,
+                    allow_auth_bootstrap=False,
+                )
+                auth_payload = (auth_record.response_snapshot or {}).get("body")
+                auth_variables = _extract_auth_variables(auth_payload, variables)
+                if auth_variables.get("token"):
+                    runtime_context.setdefault("variables", {}).update(auth_variables)
+                    variables.update(auth_variables)
+                    if environment:
+                        updated_variables = dict(environment.variables or {})
+                        updated_variables.update(auth_variables)
+                        environment.variables = updated_variables
+                        ApiEnvironment.objects.filter(pk=environment.pk).update(
+                            variables=updated_variables,
+                            updated_at=timezone.now(),
+                        )
+                    missing_variables = find_missing_variables(
+                        variables,
+                        raw_url,
+                        common_headers,
+                        merged_headers,
+                        merged_params,
+                        body,
+                    )
+                else:
+                    bootstrap_error = auth_record.error_message or "自动获取 token 失败，登录接口响应中未识别到 token 字段"
+        else:
+            bootstrap_error = "未找到可用于自动获取 token 的登录接口，请在环境变量中配置 auth_request_id 或 auth_request_name"
 
     resolver = VariableResolver(variables)
     resolved_url = build_request_url(base_url, str(resolver.resolve(raw_url)))
@@ -272,6 +499,7 @@ def _execute_api_request(
             timeout_ms=timeout_ms,
             assertions=assertions,
         ),
+        "missing_variables": missing_variables,
     }
     if snapshot_extra:
         request_snapshot.update(snapshot_extra)
@@ -285,6 +513,12 @@ def _execute_api_request(
     error_message = ""
 
     try:
+        if missing_variables:
+            message = bootstrap_error if bootstrap_error and "token" in missing_variables else None
+            raise ValueError(
+                message or ("缺少执行所需环境变量: " + ", ".join(missing_variables))
+            )
+
         started_at = time.perf_counter()
         response = httpx.request(**request_kwargs)
         response_time = round((time.perf_counter() - started_at) * 1000, 2)
@@ -309,9 +543,15 @@ def _execute_api_request(
             passed = response.is_success
 
         execute_status = "success" if passed else "failed"
+        if not passed and not error_message and isinstance(response_payload, dict):
+            for key in ("message", "detail", "error", "msg"):
+                value = response_payload.get(key)
+                if value not in (None, ""):
+                    error_message = str(value)
+                    break
     except Exception as exc:  # noqa: BLE001
         error_message = str(exc)
-        response_snapshot = {"body": None}
+        response_snapshot = {"body": None, "error": error_message}
         passed = False
         execute_status = "error"
 
@@ -609,6 +849,7 @@ class ApiRequestViewSet(BaseModelViewSet):
             return Response({"error": "未找到可执行的接口脚本"}, status=status.HTTP_400_BAD_REQUEST)
 
         records = []
+        runtime_context = {}
         for api_request in api_requests:
             environment = _resolve_execution_environment(api_request.collection.project, environment_id)
             records.append(
@@ -616,6 +857,7 @@ class ApiRequestViewSet(BaseModelViewSet):
                     api_request=api_request,
                     executor=request.user,
                     environment=environment,
+                    runtime_context=runtime_context,
                 )
             )
         return Response(_serialize_execution_batch(records))
@@ -724,6 +966,99 @@ class ApiExecutionRecordViewSet(BaseModelViewSet):
                 queryset = queryset.none()
         return queryset
 
+    @action(detail=False, methods=["get"], url_path="report")
+    def report(self, request):
+        queryset = self.get_queryset()
+        days = request.query_params.get("days")
+        if days:
+            try:
+                days_value = max(1, min(int(days), 90))
+                since = timezone.now() - timezone.timedelta(days=days_value)
+                queryset = queryset.filter(created_at__gte=since)
+            except ValueError:
+                return Response({"error": "days 参数必须是 1-90 之间的整数"}, status=status.HTTP_400_BAD_REQUEST)
+
+        total_count = queryset.count()
+        aggregate = queryset.aggregate(
+            success_count=Count("id", filter=Q(status="success")),
+            failed_count=Count("id", filter=Q(status="failed")),
+            error_count=Count("id", filter=Q(status="error")),
+            passed_count=Count("id", filter=Q(passed=True)),
+            avg_response_time=Avg("response_time"),
+            latest_executed_at=Max("created_at"),
+        )
+
+        method_breakdown = list(
+            queryset.values("method")
+            .annotate(
+                total=Count("id"),
+                passed=Count("id", filter=Q(passed=True)),
+                failed=Count("id", filter=Q(status="failed")),
+                error=Count("id", filter=Q(status="error")),
+                avg_response_time=Avg("response_time"),
+            )
+            .order_by("method")
+        )
+
+        collection_breakdown = list(
+            queryset.values("request__collection__name")
+            .annotate(
+                total=Count("id"),
+                passed=Count("id", filter=Q(passed=True)),
+                failed=Count("id", filter=Q(status="failed")),
+                error=Count("id", filter=Q(status="error")),
+            )
+            .order_by("-total", "request__collection__name")
+        )
+
+        failing_requests = list(
+            queryset.filter(passed=False)
+            .values("request_id", "request_name", "request__collection__name")
+            .annotate(
+                total=Count("id"),
+                latest_executed_at=Max("created_at"),
+                latest_status_code=Max("status_code"),
+            )
+            .order_by("-total", "request_name")[:10]
+        )
+
+        trend = list(
+            queryset.annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(
+                total=Count("id"),
+                passed=Count("id", filter=Q(passed=True)),
+                failed=Count("id", filter=Q(status="failed")),
+                error=Count("id", filter=Q(status="error")),
+            )
+            .order_by("day")
+        )
+
+        recent_records = queryset.order_by("-created_at")[:10]
+        recent_records_payload = ApiExecutionRecordSerializer(recent_records, many=True).data
+
+        pass_rate = round(((aggregate["passed_count"] or 0) / total_count) * 100, 2) if total_count else 0
+
+        return Response(
+            {
+                "summary": {
+                    "total_count": total_count,
+                    "success_count": aggregate["success_count"] or 0,
+                    "failed_count": aggregate["failed_count"] or 0,
+                    "error_count": aggregate["error_count"] or 0,
+                    "passed_count": aggregate["passed_count"] or 0,
+                    "pass_rate": pass_rate,
+                    "avg_response_time": round(float(aggregate["avg_response_time"] or 0), 2) if aggregate["avg_response_time"] else None,
+                    "latest_executed_at": aggregate["latest_executed_at"],
+                },
+                "method_breakdown": method_breakdown,
+                "collection_breakdown": collection_breakdown,
+                "failing_requests": failing_requests,
+                "trend": trend,
+                "recent_records": recent_records_payload,
+            }
+        )
+
 
 class ApiTestCaseViewSet(BaseModelViewSet):
     queryset = ApiTestCase.objects.select_related("project", "request", "creator")
@@ -792,6 +1127,7 @@ class ApiTestCaseViewSet(BaseModelViewSet):
             return Response({"error": "未找到可执行的测试用例"}, status=status.HTTP_400_BAD_REQUEST)
 
         records = []
+        runtime_context = {}
         for test_case in test_cases:
             environment = _resolve_execution_environment(test_case.project, environment_id)
             overrides, assertions, snapshot_extra = _build_test_case_execution_payload(test_case)
@@ -804,6 +1140,7 @@ class ApiTestCaseViewSet(BaseModelViewSet):
                     override_payload=overrides,
                     snapshot_extra=snapshot_extra,
                     assertions_override=assertions,
+                    runtime_context=runtime_context,
                 )
             )
         return Response(_serialize_execution_batch(records))

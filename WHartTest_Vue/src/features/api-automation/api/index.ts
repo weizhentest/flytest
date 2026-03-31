@@ -7,6 +7,7 @@ import type {
   ApiEnvironmentForm,
   ApiExecutionBatchResult,
   ApiExecutionRecord,
+  ApiExecutionReport,
   ApiImportResult,
   ApiImportJob,
   ApiRequest,
@@ -118,6 +119,9 @@ export const executionRecordApi = {
     request.get<ApiExecutionRecord[]>(`${BASE_URL}/execution-records/`, { params }),
 
   get: (id: number) => request.get<ApiExecutionRecord>(`${BASE_URL}/execution-records/${id}/`),
+
+  report: (params?: { project?: number; collection?: number; days?: number }) =>
+    request.get<ApiExecutionReport>(`${BASE_URL}/execution-records/report/`, { params }),
 
   delete: (id: number) => request.delete(`${BASE_URL}/execution-records/${id}/`),
 }

@@ -102,7 +102,62 @@ export interface ApiExecutionRecord {
   executor: number | null
   executor_name?: string
   environment_name?: string
+  request_collection_name?: string
   created_at: string
+}
+
+export interface ApiExecutionReportSummary {
+  total_count: number
+  success_count: number
+  failed_count: number
+  error_count: number
+  passed_count: number
+  pass_rate: number
+  avg_response_time: number | null
+  latest_executed_at: string | null
+}
+
+export interface ApiExecutionReportMethodItem {
+  method: string
+  total: number
+  passed: number
+  failed: number
+  error: number
+  avg_response_time: number | null
+}
+
+export interface ApiExecutionReportCollectionItem {
+  request__collection__name: string | null
+  total: number
+  passed: number
+  failed: number
+  error: number
+}
+
+export interface ApiExecutionReportFailingItem {
+  request_id: number | null
+  request_name: string
+  request__collection__name: string | null
+  total: number
+  latest_executed_at: string | null
+  latest_status_code: number | null
+}
+
+export interface ApiExecutionReportTrendItem {
+  day: string
+  total: number
+  passed: number
+  failed: number
+  error: number
+}
+
+export interface ApiExecutionReport {
+  summary: ApiExecutionReportSummary
+  method_breakdown: ApiExecutionReportMethodItem[]
+  collection_breakdown: ApiExecutionReportCollectionItem[]
+  failing_requests: ApiExecutionReportFailingItem[]
+  trend: ApiExecutionReportTrendItem[]
+  recent_records: ApiExecutionRecord[]
 }
 
 export interface ApiExecutionBatchResult {

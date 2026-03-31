@@ -13,6 +13,7 @@ from .ai_parser import AIEnhancementResult
 from .ai_case_generator import AITestCaseGenerationResult, GeneratedCaseDraft
 from .document_import import ParsedRequestData
 from .models import ApiCollection, ApiRequest, ApiTestCase
+from .services import build_request_url
 
 
 class ApiAutomationImportDocumentTests(TestCase):
@@ -88,6 +89,7 @@ class ApiAutomationImportDocumentTests(TestCase):
             {
                 "collection_id": str(self.collection.id),
                 "generate_test_cases": "true",
+                "async_mode": "false",
                 "file": upload,
             },
             format="multipart",
@@ -121,6 +123,7 @@ class ApiAutomationImportDocumentTests(TestCase):
             {
                 "collection_id": str(self.collection.id),
                 "generate_test_cases": "false",
+                "async_mode": "false",
                 "file": upload,
             },
             format="multipart",
@@ -137,7 +140,7 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(ApiRequest.objects.count(), 1)
         self.assertEqual(ApiTestCase.objects.count(), 0)
 
-    @patch("api_automation.views.enhance_import_result_with_ai")
+    @patch("api_automation.import_service.enhance_import_result_with_ai")
     def test_import_document_uses_ai_enhancement_when_available(self, mock_enhance):
         mock_enhance.return_value = AIEnhancementResult(
             requested=True,
@@ -177,6 +180,7 @@ class ApiAutomationImportDocumentTests(TestCase):
                 "collection_id": str(self.collection.id),
                 "generate_test_cases": "true",
                 "enable_ai_parse": "true",
+                "async_mode": "false",
                 "file": upload,
             },
             format="multipart",
@@ -285,6 +289,7 @@ class ApiAutomationImportDocumentTests(TestCase):
             {
                 "collection_id": str(self.collection.id),
                 "generate_test_cases": "true",
+                "async_mode": "false",
                 "file": upload,
             },
             format="multipart",
@@ -408,3 +413,157 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["skipped_requests"], 1)
         self.assertEqual(payload["created_testcase_count"], 0)
         mock_generate.assert_not_called()
+
+
+class ApiAutomationExecutionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_superuser(
+            username="execadmin",
+            email="execadmin@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=self.user)
+
+        self.project = Project.objects.create(
+            name="API Execution Project",
+            description="project for execution tests",
+            creator=self.user,
+        )
+        self.collection = ApiCollection.objects.create(
+            project=self.project,
+            name="Execution APIs",
+            creator=self.user,
+        )
+
+    def _payload(self, response):
+        if isinstance(response.data, dict) and "data" in response.data:
+            return response.data["data"]
+        return response.data
+
+    def test_build_request_url_deduplicates_common_api_prefix(self):
+        self.assertEqual(
+            build_request_url("https://cms-test.9635.com.cn/api", "api/live/getLiveToken"),
+            "https://cms-test.9635.com.cn/api/live/getLiveToken",
+        )
+        self.assertEqual(
+            build_request_url("https://cms-test.9635.com.cn/api", "/api/live/getLiveToken"),
+            "https://cms-test.9635.com.cn/api/live/getLiveToken",
+        )
+        self.assertEqual(
+            build_request_url("https://cms-test.9635.com.cn/api", "live/getLiveToken"),
+            "https://cms-test.9635.com.cn/api/live/getLiveToken",
+        )
+
+    def test_execute_request_reports_missing_environment_variables(self):
+        environment = self.project.api_environments.create(
+            name="Execution Env",
+            base_url="https://cms-test.9635.com.cn/api",
+            variables={"token": "", "nkey": "", "auth_request_name": "APP密码登录"},
+            creator=self.user,
+            is_default=True,
+        )
+        ApiRequest.objects.create(
+            collection=self.collection,
+            name="APP密码登录",
+            method="POST",
+            url="user/appLogin",
+            params={"phone": "{{phone}}", "password": "{{password}}"},
+            created_by=self.user,
+        )
+        request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Protected endpoint",
+            method="GET",
+            url="api/live/getLiveToken",
+            headers={"Authorization": "{{token}}"},
+            params={"nkey": "{{nkey}}", "uid": "{{uid}}"},
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            f"/api/api-automation/requests/{request.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "error")
+        self.assertFalse(payload["passed"])
+        self.assertIn("自动获取 token 失败", payload["error_message"])
+        self.assertIn("phone", payload["error_message"])
+        self.assertIn("password", payload["error_message"])
+        self.assertEqual(
+            payload["request_snapshot"]["url"],
+            "https://cms-test.9635.com.cn/api/live/getLiveToken",
+        )
+
+    @patch("api_automation.views.httpx.request")
+    def test_execute_request_bootstraps_token_from_auth_request(self, mock_request):
+        environment = self.project.api_environments.create(
+            name="Execution Env",
+            base_url="https://cms-test.9635.com.cn/api",
+            variables={
+                "token": "",
+                "phone": "13800138000",
+                "password": "secret123",
+                "auth_request_name": "APP密码登录",
+            },
+            creator=self.user,
+            is_default=True,
+        )
+        ApiRequest.objects.create(
+            collection=self.collection,
+            name="APP密码登录",
+            method="POST",
+            url="user/appLogin",
+            params={"phone": "{{phone}}", "password": "{{password}}"},
+            created_by=self.user,
+        )
+        protected_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Protected endpoint",
+            method="GET",
+            url="api/live/getLiveToken",
+            headers={"Authorization": "{{token}}"},
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+
+        class MockResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        def side_effect(**kwargs):
+            url = kwargs["url"]
+            if url.endswith("/user/appLogin"):
+                return MockResponse(200, {"code": 200, "data": {"token": "AUTO_TOKEN_123"}})
+            if url.endswith("/api/live/getLiveToken"):
+                self.assertEqual(kwargs["headers"]["Authorization"], "AUTO_TOKEN_123")
+                return MockResponse(200, {"code": 200, "message": "success"})
+            raise AssertionError(f"Unexpected url: {url}")
+
+        mock_request.side_effect = side_effect
+
+        response = self.client.post(
+            f"/api/api-automation/requests/{protected_request.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "success")
+        self.assertTrue(payload["passed"])
+        self.assertEqual(payload["request_snapshot"]["missing_variables"], [])
+        environment.refresh_from_db()
+        self.assertEqual(environment.variables["token"], "AUTO_TOKEN_123")

@@ -62,6 +62,7 @@ class ApiEnvironmentSerializer(serializers.ModelSerializer):
 class ApiExecutionRecordSerializer(serializers.ModelSerializer):
     executor_name = serializers.CharField(source="executor.username", read_only=True)
     environment_name = serializers.CharField(source="environment.name", read_only=True)
+    request_collection_name = serializers.CharField(source="request.collection.name", read_only=True)
 
     class Meta:
         model = ApiExecutionRecord
