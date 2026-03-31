@@ -11,15 +11,16 @@ import yaml
 from .ai_parser import enhance_import_result_with_ai
 from .document_import import DocumentImportResult, ParsedRequestData, import_requests_from_document, load_document_content_for_ai
 from .generation import generate_script_and_test_case
-from .models import ApiCollection, ApiRequest, ApiTestCase
+from .models import ApiCollection, ApiEnvironment, ApiRequest, ApiTestCase
 from .serializers import ApiRequestSerializer, ApiTestCaseSerializer
 
 ProgressCallback = Callable[[int, str, str], None] | None
 
 ABSOLUTE_URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.I)
+LABELLED_URL_PATTERN = re.compile(r"^(?P<label>[^:：]{1,24})\s*[:：]\s*(?P<url>https?://[^\s\"'<>]+)", re.I)
 FULL_BASE_URL_LABEL_PATTERN = re.compile(
     r"(?:base[_\s-]?url|server(?:\s+url)?|server\s+address|api\s+server|api\s+domain|"
-    r"\u57fa\u7840\u5730\u5740|\u73af\u5883\u5730\u5740|\u670d\u52a1\u5730\u5740|\u670d\u52a1\u5668\u5730\u5740)"
+    r"\u57fa\u7840\u5730\u5740|\u73af\u5883\u5730\u5740|\u670d\u52a1\u5730\u5740|\u670d\u52a1\u5668\u5730\u5740|\u670d\u52a1\u5730\u5740)"
     r"\s*[:：]\s*(https?://[^\s\"'<>]+)",
     re.I,
 )
@@ -30,8 +31,7 @@ HOST_LABEL_PATTERN = re.compile(
     re.I,
 )
 SCHEME_LABEL_PATTERN = re.compile(
-    r"(?:scheme|protocol|schema|"
-    r"\u534f\u8bae|\u8bf7\u6c42\u534f\u8bae)"
+    r"(?:scheme|protocol|schema|\u534f\u8bae|\u8bf7\u6c42\u534f\u8bae)"
     r"\s*[:：]\s*(https?)",
     re.I,
 )
@@ -41,6 +41,35 @@ BASE_PATH_LABEL_PATTERN = re.compile(
     r"\s*[:：]\s*(/[^\s\"'<>]*)",
     re.I,
 )
+PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}")
+
+ENVIRONMENT_LABEL_MAP = {
+    "production": "生产环境",
+    "prod": "生产环境",
+    "live": "生产环境",
+    "正式": "生产环境",
+    "生产": "生产环境",
+    "线上": "生产环境",
+    "test": "测试环境",
+    "qa": "测试环境",
+    "测试": "测试环境",
+    "uat": "预发环境",
+    "staging": "预发环境",
+    "预发": "预发环境",
+    "sandbox": "预发环境",
+    "dev": "开发环境",
+    "开发": "开发环境",
+    "local": "本地环境",
+    "本地": "本地环境",
+}
+
+ENVIRONMENT_PRIORITY = {
+    "测试环境": 0,
+    "预发环境": 1,
+    "生产环境": 2,
+    "开发环境": 3,
+    "本地环境": 4,
+}
 
 
 def _report(progress_callback: ProgressCallback, percent: int, stage: str, message: str):
@@ -179,30 +208,65 @@ def _load_structured_document(file_path: str) -> dict | None:
     return None
 
 
-def _extract_structured_base_url(file_path: str) -> str:
+def _extract_structured_environment_urls(file_path: str) -> list[tuple[str, str]]:
     data = _load_structured_document(file_path)
     if not isinstance(data, dict):
-        return ""
+        return []
+
+    environments: list[tuple[str, str]] = []
 
     servers = data.get("servers") or []
-    if servers and isinstance(servers[0], dict):
-        return str(servers[0].get("url") or "").strip().rstrip("/")
+    for index, server in enumerate(servers):
+        if isinstance(server, dict):
+            url = str(server.get("url") or "").strip().rstrip("/")
+            if not url:
+                continue
+            description = str(server.get("description") or server.get("name") or "").strip()
+            environments.append((description or f"环境{index + 1}", url))
+
+    if environments:
+        return environments
 
     if "swagger" in data and "host" in data:
         schemes = data.get("schemes") or ["http"]
         scheme = str(schemes[0]).strip() if schemes else "http"
         host = str(data.get("host") or "").strip()
         base_path = str(data.get("basePath") or "").strip()
-        if not host:
-            return ""
-        if base_path and not base_path.startswith("/"):
-            base_path = f"/{base_path}"
-        return f"{scheme}://{host}{base_path}".rstrip("/")
+        if host:
+            if base_path and not base_path.startswith("/"):
+                base_path = f"/{base_path}"
+            environments.append(("默认环境", f"{scheme}://{host}{base_path}".rstrip("/")))
 
-    return ""
+    return environments
 
 
-def _extract_text_base_url(document_content: str) -> str:
+def _normalize_environment_name(label: str, index: int) -> str:
+    normalized_label = label.strip()
+    lowered = normalized_label.lower()
+    for keyword, env_name in ENVIRONMENT_LABEL_MAP.items():
+        if keyword in lowered or keyword in normalized_label:
+            return env_name
+    return normalized_label or f"环境{index + 1}"
+
+
+def _extract_text_environment_urls(document_content: str) -> list[tuple[str, str]]:
+    environments: list[tuple[str, str]] = []
+    for raw_line in document_content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        matched = LABELLED_URL_PATTERN.match(line)
+        if not matched:
+            continue
+        label = matched.group("label").strip()
+        url = matched.group("url").strip().rstrip("/")
+        if not url:
+            continue
+        environments.append((label, url))
+    return environments
+
+
+def _extract_fallback_base_url(document_content: str, parsed_requests: list[ParsedRequestData], file_path: str) -> str:
     explicit_full = FULL_BASE_URL_LABEL_PATTERN.search(document_content)
     explicit_base_path_match = BASE_PATH_LABEL_PATTERN.search(document_content)
     explicit_base_path = explicit_base_path_match.group(1).strip() if explicit_base_path_match else ""
@@ -217,15 +281,15 @@ def _extract_text_base_url(document_content: str) -> str:
         return explicit_url
 
     host_match = HOST_LABEL_PATTERN.search(document_content)
-    if not host_match:
-        return ""
+    if host_match:
+        scheme_match = SCHEME_LABEL_PATTERN.search(document_content)
+        scheme = scheme_match.group(1).lower() if scheme_match else "http"
+        return f"{scheme}://{host_match.group(1)}{explicit_base_path}".rstrip("/")
 
-    scheme_match = SCHEME_LABEL_PATTERN.search(document_content)
-    scheme = scheme_match.group(1).lower() if scheme_match else "http"
-    return f"{scheme}://{host_match.group(1)}{explicit_base_path}".rstrip("/")
+    structured_envs = _extract_structured_environment_urls(file_path)
+    if structured_envs:
+        return structured_envs[0][1]
 
-
-def _extract_common_base_url_from_requests(parsed_requests: list[ParsedRequestData]) -> str:
     absolute_urls = [urlparse(item.url) for item in parsed_requests if urlparse(item.url).scheme and urlparse(item.url).netloc]
     if not absolute_urls:
         return ""
@@ -247,27 +311,41 @@ def _extract_common_base_url_from_requests(parsed_requests: list[ParsedRequestDa
     return f"{first.scheme}://{first.netloc}{common_path}".rstrip("/")
 
 
-def _build_environment_draft(file_path: str, parsed_requests: list[ParsedRequestData]) -> dict:
-    document_content, _, _ = load_document_content_for_ai(file_path)
-    structured_base_url = _extract_structured_base_url(file_path)
-    explicit_text_base_url = _extract_text_base_url(document_content)
-    request_base_url = _extract_common_base_url_from_requests(parsed_requests)
+def _build_environment_name(base_name: str, collection: ApiCollection) -> str:
+    normalized = (base_name or "").strip()
+    if not normalized:
+        normalized = f"{collection.name}-环境"
+    return normalized[:100]
 
-    base_url = structured_base_url or explicit_text_base_url or request_base_url
 
+def _build_unique_environment_name(project, base_name: str, exclude_id: int | None = None) -> str:
+    candidate_name = base_name
+    suffix = 2
+    queryset = ApiEnvironment.objects.filter(project=project)
+    if exclude_id:
+        queryset = queryset.exclude(id=exclude_id)
+    while queryset.filter(name=candidate_name).exists():
+        candidate_name = f"{base_name[:94]}-{suffix}"
+        suffix += 1
+    return candidate_name
+
+
+def _collect_common_headers(parsed_requests: list[ParsedRequestData]) -> dict[str, str]:
     common_headers: dict[str, str] = {}
     if parsed_requests:
         first_headers = parsed_requests[0].headers or {}
         for key, value in first_headers.items():
             if all((item.headers or {}).get(key) == value for item in parsed_requests[1:]):
                 common_headers[key] = value
+    return common_headers
 
+
+def _collect_variables(document_content: str, parsed_requests: list[ParsedRequestData]) -> dict[str, str]:
     variables: dict[str, str] = {}
-    placeholder_pattern = re.compile(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}")
     for item in parsed_requests:
         for candidate in [item.url, *(item.headers or {}).values(), *(item.params or {}).values()]:
             if isinstance(candidate, str):
-                for match in placeholder_pattern.finditer(candidate):
+                for match in PLACEHOLDER_PATTERN.finditer(candidate):
                     key = match.group(1)
                     if key != "base_url":
                         variables.setdefault(key, "")
@@ -275,14 +353,104 @@ def _build_environment_draft(file_path: str, parsed_requests: list[ParsedRequest
     if "token" in document_content.lower() and "token" not in variables:
         variables["token"] = ""
 
-    return {
-        "name": "文档解析环境草稿",
-        "base_url": base_url,
-        "common_headers": common_headers,
-        "variables": variables,
-        "timeout_ms": 30000,
-        "is_default": False,
-    }
+    return variables
+
+
+def _build_environment_drafts(file_path: str, parsed_requests: list[ParsedRequestData]) -> list[dict]:
+    document_content, _, _ = load_document_content_for_ai(file_path)
+    common_headers = _collect_common_headers(parsed_requests)
+    variables = _collect_variables(document_content, parsed_requests)
+
+    draft_candidates: list[dict] = []
+    seen_urls: set[str] = set()
+
+    for index, (label, base_url) in enumerate(_extract_text_environment_urls(document_content) or _extract_structured_environment_urls(file_path)):
+        if not base_url or base_url in seen_urls:
+            continue
+        seen_urls.add(base_url)
+        draft_candidates.append(
+            {
+                "name": _normalize_environment_name(label, index),
+                "base_url": base_url,
+                "common_headers": common_headers,
+                "variables": dict(variables),
+                "timeout_ms": 30000,
+                "is_default": False,
+            }
+        )
+
+    if not draft_candidates:
+        fallback_url = _extract_fallback_base_url(document_content, parsed_requests, file_path)
+        if fallback_url or common_headers or variables:
+            draft_candidates.append(
+                {
+                    "name": "文档解析环境草稿",
+                    "base_url": fallback_url,
+                    "common_headers": common_headers,
+                    "variables": variables,
+                    "timeout_ms": 30000,
+                    "is_default": False,
+                }
+            )
+
+    draft_candidates.sort(key=lambda item: ENVIRONMENT_PRIORITY.get(item["name"], 99))
+    return draft_candidates
+
+
+def _create_or_reuse_environments(collection: ApiCollection, user, environment_drafts: list[dict]) -> list[ApiEnvironment]:
+    saved_environments: list[ApiEnvironment] = []
+
+    for index, environment_draft in enumerate(environment_drafts):
+        base_url = str(environment_draft.get("base_url") or "").strip()
+        common_headers = environment_draft.get("common_headers") or {}
+        variables = environment_draft.get("variables") or {}
+        timeout_ms = int(environment_draft.get("timeout_ms") or 30000)
+        draft_name = str(environment_draft.get("name") or f"环境{index + 1}").strip()
+
+        if not base_url and not common_headers and not variables:
+            continue
+
+        if base_url:
+            existing = ApiEnvironment.objects.filter(project=collection.project, base_url=base_url).first()
+            if existing:
+                updated = False
+                merged_headers = dict(common_headers)
+                merged_headers.update(existing.common_headers or {})
+                merged_variables = dict(variables)
+                merged_variables.update(existing.variables or {})
+                if merged_headers != (existing.common_headers or {}):
+                    existing.common_headers = merged_headers
+                    updated = True
+                if merged_variables != (existing.variables or {}):
+                    existing.variables = merged_variables
+                    updated = True
+                desired_base_name = _build_environment_name(draft_name, collection)
+                desired_name = _build_unique_environment_name(collection.project, desired_base_name, exclude_id=existing.id)
+                if existing.name != desired_name and existing.name.startswith("自动解析环境-"):
+                    existing.name = desired_name
+                    updated = True
+                if updated:
+                    existing.save(update_fields=["name", "common_headers", "variables", "updated_at"])
+                saved_environments.append(existing)
+                continue
+
+        base_name = _build_environment_name(draft_name, collection)
+        candidate_name = _build_unique_environment_name(collection.project, base_name)
+
+        saved_environments.append(
+            ApiEnvironment.objects.create(
+                project=collection.project,
+                name=candidate_name,
+                base_url=base_url,
+                common_headers=common_headers,
+                variables=variables,
+                timeout_ms=timeout_ms,
+                is_default=False,
+                creator=user,
+            )
+        )
+
+    return saved_environments
 
 
 def process_document_import(
@@ -354,6 +522,11 @@ def process_document_import(
         enabled=generate_test_cases,
     )
 
+    environment_drafts = _build_environment_drafts(file_path, parsed_requests)
+    saved_environments = _create_or_reuse_environments(collection, user, environment_drafts)
+    primary_environment_draft = environment_drafts[0] if environment_drafts else None
+    primary_environment = saved_environments[0] if saved_environments else None
+
     serializer = ApiRequestSerializer(created_requests, many=True)
     serialized_requests = serializer.data
     generated_scripts = [
@@ -380,7 +553,20 @@ def process_document_import(
         "ai_prompt_source": ai_result.prompt_source if ai_result else None,
         "ai_prompt_name": ai_result.prompt_name if ai_result else None,
         "ai_model_name": ai_result.model_name if ai_result else None,
-        "environment_draft": _build_environment_draft(file_path, parsed_requests),
+        "environment_draft": primary_environment_draft,
+        "environment_items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "base_url": item.base_url,
+                "is_default": item.is_default,
+            }
+            for item in saved_environments
+        ],
+        "environment_auto_saved": bool(saved_environments),
+        "environment_auto_saved_count": len(saved_environments),
+        "environment_id": primary_environment.id if primary_environment else None,
+        "environment_name": primary_environment.name if primary_environment else None,
         "items": serialized_requests,
         "generated_scripts": generated_scripts,
         "test_cases": testcase_serializer.data,

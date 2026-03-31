@@ -26,6 +26,7 @@ from .serializers import (
     ApiRequestSerializer,
     ApiTestCaseSerializer,
 )
+from .generation import build_request_script
 from .services import VariableResolver, build_request_url, evaluate_assertions
 
 
@@ -108,6 +109,245 @@ def _run_import_job(job_id: int, file_path: str):
 def _start_import_job(job_id: int, file_path: str):
     worker = threading.Thread(target=_run_import_job, args=(job_id, file_path), daemon=True)
     worker.start()
+
+
+def _resolve_execution_environment(project: Project, environment_id=None):
+    environment = None
+    if environment_id:
+        environment = ApiEnvironment.objects.filter(project=project, pk=environment_id).first()
+    return environment or ApiEnvironment.objects.filter(project=project, is_default=True).first()
+
+
+def _serialize_execution_batch(records):
+    serializer = ApiExecutionRecordSerializer(records, many=True)
+    return {
+        "total_count": len(records),
+        "success_count": sum(1 for record in records if record.status == "success"),
+        "failed_count": sum(1 for record in records if record.status == "failed"),
+        "error_count": sum(1 for record in records if record.status == "error"),
+        "items": serializer.data,
+    }
+
+
+def _collect_request_scope(user, scope: str, *, project_id=None, collection_id=None, ids=None):
+    queryset = ApiRequest.objects.select_related("collection", "collection__project", "created_by").filter(
+        collection__project__in=get_accessible_projects(user)
+    )
+
+    if scope == "selected":
+        if not ids:
+            return []
+        return list(queryset.filter(id__in=ids).order_by("collection_id", "order", "created_at"))
+
+    if scope == "collection":
+        if not collection_id:
+            return []
+        root_collection = ApiCollection.objects.filter(
+            pk=collection_id,
+            project__in=get_accessible_projects(user),
+        ).first()
+        if not root_collection:
+            return []
+        return list(queryset.filter(collection_id__in=collect_collection_ids(root_collection)).order_by("order", "created_at"))
+
+    if scope == "project":
+        if not project_id:
+            return []
+        return list(queryset.filter(collection__project_id=project_id).order_by("collection_id", "order", "created_at"))
+
+    return []
+
+
+def _collect_test_case_scope(user, scope: str, *, project_id=None, collection_id=None, ids=None):
+    queryset = ApiTestCase.objects.select_related("project", "request", "request__collection", "creator").filter(
+        project__in=get_accessible_projects(user)
+    )
+
+    if scope == "selected":
+        if not ids:
+            return []
+        return list(queryset.filter(id__in=ids).order_by("created_at"))
+
+    if scope == "collection":
+        if not collection_id:
+            return []
+        root_collection = ApiCollection.objects.filter(
+            pk=collection_id,
+            project__in=get_accessible_projects(user),
+        ).first()
+        if not root_collection:
+            return []
+        return list(
+            queryset.filter(request__collection_id__in=collect_collection_ids(root_collection)).order_by("created_at")
+        )
+
+    if scope == "project":
+        if not project_id:
+            return []
+        return list(queryset.filter(project_id=project_id).order_by("created_at"))
+
+    return []
+
+
+def _execute_api_request(
+    *,
+    api_request: ApiRequest,
+    executor,
+    environment: ApiEnvironment | None = None,
+    request_name: str | None = None,
+    override_payload: dict | None = None,
+    snapshot_extra: dict | None = None,
+    assertions_override=None,
+):
+    project = api_request.collection.project
+    override_payload = override_payload or {}
+
+    variables = {}
+    base_url = ""
+    common_headers = {}
+    timeout_ms = api_request.timeout_ms
+
+    if environment:
+        variables.update(environment.variables or {})
+        base_url = environment.base_url or ""
+        common_headers = environment.common_headers or {}
+        timeout_ms = environment.timeout_ms or timeout_ms
+
+    method = str(override_payload.get("method") or api_request.method).upper()
+    raw_url = str(override_payload.get("url") or api_request.url)
+
+    merged_headers = dict(api_request.headers or {})
+    if isinstance(override_payload.get("headers"), dict):
+        merged_headers.update(override_payload["headers"])
+
+    merged_params = dict(api_request.params or {})
+    if isinstance(override_payload.get("params"), dict):
+        merged_params.update(override_payload["params"])
+
+    body_type = override_payload.get("body_type") or api_request.body_type
+    body = override_payload.get("body", api_request.body)
+    timeout_ms = override_payload.get("timeout_ms") or timeout_ms
+    assertions = assertions_override if assertions_override is not None else (api_request.assertions or [])
+
+    resolver = VariableResolver(variables)
+    resolved_url = build_request_url(base_url, str(resolver.resolve(raw_url)))
+    resolved_headers = {
+        **resolver.resolve(common_headers or {}),
+        **resolver.resolve(merged_headers or {}),
+    }
+    resolved_params = resolver.resolve(merged_params or {})
+    resolved_body = resolver.resolve(body)
+
+    request_kwargs = {
+        "method": method,
+        "url": resolved_url,
+        "headers": resolved_headers,
+        "params": resolved_params,
+        "timeout": max(timeout_ms / 1000, 1),
+        "follow_redirects": True,
+    }
+
+    if body_type == "json":
+        request_kwargs["json"] = resolved_body or {}
+    elif body_type == "form":
+        request_kwargs["data"] = resolved_body or {}
+    elif body_type == "raw":
+        request_kwargs["content"] = resolved_body if isinstance(resolved_body, str) else str(resolved_body)
+
+    request_snapshot = {
+        "method": method,
+        "url": resolved_url,
+        "headers": resolved_headers,
+        "params": resolved_params,
+        "body_type": body_type,
+        "body": resolved_body,
+        "generated_script": build_request_script(
+            method=method,
+            url=raw_url,
+            headers=merged_headers,
+            params=merged_params,
+            body_type=body_type,
+            body=body,
+            timeout_ms=timeout_ms,
+            assertions=assertions,
+        ),
+    }
+    if snapshot_extra:
+        request_snapshot.update(snapshot_extra)
+
+    response_snapshot = {}
+    status_code = None
+    response_time = None
+    assertions_results = []
+    passed = False
+    execute_status = "error"
+    error_message = ""
+
+    try:
+        started_at = time.perf_counter()
+        response = httpx.request(**request_kwargs)
+        response_time = round((time.perf_counter() - started_at) * 1000, 2)
+        status_code = response.status_code
+        try:
+            response_payload = response.json()
+        except ValueError:
+            response_payload = response.text
+
+        response_snapshot = {
+            "headers": dict(response.headers),
+            "body": response_payload,
+        }
+
+        assertions_results, passed = evaluate_assertions(
+            assertions,
+            response.status_code,
+            response.text,
+            response_payload if isinstance(response_payload, (dict, list)) else None,
+        )
+        if not assertions_results:
+            passed = response.is_success
+
+        execute_status = "success" if passed else "failed"
+    except Exception as exc:  # noqa: BLE001
+        error_message = str(exc)
+        response_snapshot = {"body": None}
+        passed = False
+        execute_status = "error"
+
+    return ApiExecutionRecord.objects.create(
+        project=project,
+        request=api_request,
+        environment=environment,
+        request_name=request_name or api_request.name,
+        method=method,
+        url=resolved_url,
+        status=execute_status,
+        passed=passed,
+        status_code=status_code,
+        response_time=response_time,
+        request_snapshot=request_snapshot,
+        response_snapshot=response_snapshot,
+        assertions_results=assertions_results,
+        error_message=error_message,
+        executor=executor,
+    )
+
+
+def _build_test_case_execution_payload(test_case: ApiTestCase):
+    script = test_case.script or {}
+    overrides = script.get("request_overrides") if isinstance(script, dict) else {}
+    if not isinstance(overrides, dict):
+        overrides = {}
+
+    assertions = test_case.assertions or test_case.request.assertions or []
+    snapshot_extra = {
+        "test_case_id": test_case.id,
+        "test_case_name": test_case.name,
+        "test_case_status": test_case.status,
+        "test_case_tags": test_case.tags or [],
+        "test_case_script": script,
+    }
+    return overrides, assertions, snapshot_extra
 
 
 class ApiCollectionViewSet(BaseModelViewSet):
@@ -278,120 +518,44 @@ class ApiRequestViewSet(BaseModelViewSet):
     @action(detail=True, methods=["post"])
     def execute(self, request, pk=None):
         api_request = self.get_object()
-        project = api_request.collection.project
-
-        environment = None
-        environment_id = request.data.get("environment_id")
-        if environment_id:
-            environment = ApiEnvironment.objects.filter(project=project, pk=environment_id).first()
-        if environment is None:
-            environment = ApiEnvironment.objects.filter(project=project, is_default=True).first()
-
-        variables = {}
-        base_url = ""
-        common_headers = {}
-        timeout_ms = api_request.timeout_ms
-
-        if environment:
-            variables.update(environment.variables or {})
-            base_url = environment.base_url or ""
-            common_headers = environment.common_headers or {}
-            timeout_ms = environment.timeout_ms or timeout_ms
-
-        resolver = VariableResolver(variables)
-
-        resolved_url = build_request_url(base_url, str(resolver.resolve(api_request.url)))
-        resolved_headers = {
-            **resolver.resolve(common_headers or {}),
-            **resolver.resolve(api_request.headers or {}),
-        }
-        resolved_params = resolver.resolve(api_request.params or {})
-        resolved_body = resolver.resolve(api_request.body)
-
-        request_kwargs = {
-            "method": api_request.method,
-            "url": resolved_url,
-            "headers": resolved_headers,
-            "params": resolved_params,
-            "timeout": max(timeout_ms / 1000, 1),
-            "follow_redirects": True,
-        }
-
-        if api_request.body_type == "json":
-            request_kwargs["json"] = resolved_body or {}
-        elif api_request.body_type == "form":
-            request_kwargs["data"] = resolved_body or {}
-        elif api_request.body_type == "raw":
-            request_kwargs["content"] = resolved_body if isinstance(resolved_body, str) else str(resolved_body)
-
-        request_snapshot = {
-            "method": api_request.method,
-            "url": resolved_url,
-            "headers": resolved_headers,
-            "params": resolved_params,
-            "body_type": api_request.body_type,
-            "body": resolved_body,
-        }
-
-        response_snapshot = {}
-        status_code = None
-        response_time = None
-        assertions_results = []
-        passed = False
-        execute_status = "error"
-        error_message = ""
-
-        try:
-            started_at = time.perf_counter()
-            response = httpx.request(**request_kwargs)
-            response_time = round((time.perf_counter() - started_at) * 1000, 2)
-            status_code = response.status_code
-            try:
-                response_payload = response.json()
-            except ValueError:
-                response_payload = response.text
-
-            response_snapshot = {
-                "headers": dict(response.headers),
-                "body": response_payload,
-            }
-
-            assertions_results, passed = evaluate_assertions(
-                api_request.assertions or [],
-                response.status_code,
-                response.text,
-                response_payload if isinstance(response_payload, (dict, list)) else None,
-            )
-            if not assertions_results:
-                passed = response.is_success
-
-            execute_status = "success" if passed else "failed"
-        except Exception as exc:  # noqa: BLE001
-            error_message = str(exc)
-            response_snapshot = {"body": None}
-            passed = False
-            execute_status = "error"
-
-        record = ApiExecutionRecord.objects.create(
-            project=project,
-            request=api_request,
-            environment=environment,
-            request_name=api_request.name,
-            method=api_request.method,
-            url=resolved_url,
-            status=execute_status,
-            passed=passed,
-            status_code=status_code,
-            response_time=response_time,
-            request_snapshot=request_snapshot,
-            response_snapshot=response_snapshot,
-            assertions_results=assertions_results,
-            error_message=error_message,
+        environment = _resolve_execution_environment(api_request.collection.project, request.data.get("environment_id"))
+        record = _execute_api_request(
+            api_request=api_request,
             executor=request.user,
+            environment=environment,
         )
-
         serializer = ApiExecutionRecordSerializer(record)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="execute-batch")
+    def execute_batch(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        environment_id = request.data.get("environment_id")
+
+        api_requests = _collect_request_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not api_requests:
+            return Response({"error": "未找到可执行的接口脚本"}, status=status.HTTP_400_BAD_REQUEST)
+
+        records = []
+        for api_request in api_requests:
+            environment = _resolve_execution_environment(api_request.collection.project, environment_id)
+            records.append(
+                _execute_api_request(
+                    api_request=api_request,
+                    executor=request.user,
+                    environment=environment,
+                )
+            )
+        return Response(_serialize_execution_batch(records))
 
 
 class ApiEnvironmentViewSet(BaseModelViewSet):
@@ -472,3 +636,55 @@ class ApiTestCaseViewSet(BaseModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def execute(self, request, pk=None):
+        test_case = self.get_object()
+        environment = _resolve_execution_environment(test_case.project, request.data.get("environment_id"))
+        overrides, assertions, snapshot_extra = _build_test_case_execution_payload(test_case)
+        record = _execute_api_request(
+            api_request=test_case.request,
+            executor=request.user,
+            environment=environment,
+            request_name=test_case.name,
+            override_payload=overrides,
+            snapshot_extra=snapshot_extra,
+            assertions_override=assertions,
+        )
+        serializer = ApiExecutionRecordSerializer(record)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="execute-batch")
+    def execute_batch(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        environment_id = request.data.get("environment_id")
+
+        test_cases = _collect_test_case_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not test_cases:
+            return Response({"error": "未找到可执行的测试用例"}, status=status.HTTP_400_BAD_REQUEST)
+
+        records = []
+        for test_case in test_cases:
+            environment = _resolve_execution_environment(test_case.project, environment_id)
+            overrides, assertions, snapshot_extra = _build_test_case_execution_payload(test_case)
+            records.append(
+                _execute_api_request(
+                    api_request=test_case.request,
+                    executor=request.user,
+                    environment=environment,
+                    request_name=test_case.name,
+                    override_payload=overrides,
+                    snapshot_extra=snapshot_extra,
+                    assertions_override=assertions,
+                )
+            )
+        return Response(_serialize_execution_batch(records))

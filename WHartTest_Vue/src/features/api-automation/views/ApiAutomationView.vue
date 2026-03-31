@@ -3,23 +3,24 @@
     <CollectionPanel ref="collectionPanelRef" @select="onCollectionSelect" @updated="onCollectionUpdated" />
     <div class="layout-content">
       <RequestList
-        v-if="activeTab === 'requests'"
+        v-show="activeTab === 'requests'"
         ref="requestListRef"
         :selected-collection-id="selectedCollectionId"
         @executed="executionRecordListRef?.refresh?.()"
         @updated="onRequestUpdated"
       />
       <TestCaseList
-        v-else-if="activeTab === 'test-cases'"
+        v-show="activeTab === 'test-cases'"
         ref="testCaseListRef"
         :selected-collection-id="selectedCollectionId"
+        @executed="executionRecordListRef?.refresh?.()"
       />
       <EnvironmentList
-        v-else-if="activeTab === 'environments'"
+        v-show="activeTab === 'environments'"
         ref="environmentListRef"
       />
       <ExecutionRecordList
-        v-else
+        v-show="activeTab === 'execution-records'"
         ref="executionRecordListRef"
       />
     </div>
@@ -71,6 +72,7 @@ const onCollectionUpdated = () => {
 const onRequestUpdated = () => {
   collectionPanelRef.value?.refresh?.()
   testCaseListRef.value?.refresh?.()
+  environmentListRef.value?.refresh?.()
 }
 
 watch(

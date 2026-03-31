@@ -34,6 +34,7 @@
           <span class="workspace-dot"></span>
           <span>AI Workspace</span>
         </div>
+        <ImportJobStatusBadge v-if="hasApiAutomationPermission" />
       </div>
       <div class="user-info">
         <button
@@ -268,6 +269,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useThemeStore } from '@/store/themeStore';
 import { brandLogoUrl } from '@/utils/assetUrl';
+import ImportJobStatusBadge from '@/features/api-automation/components/ImportJobStatusBadge.vue';
 import {
   getCurrentVersion,
   formatVersion,

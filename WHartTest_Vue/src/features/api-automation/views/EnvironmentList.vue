@@ -76,7 +76,7 @@
           </a-col>
           <a-col :span="12">
             <a-form-item field="base_url" label="基础地址">
-              <a-input v-model="formState.base_url" placeholder="例如：http://127.0.0.1:8000" />
+              <a-input v-model="formState.base_url" placeholder="例如：https://api.example.com/v1" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -106,7 +106,7 @@
           <a-textarea
             v-model="formState.variablesText"
             :auto-size="{ minRows: 6, maxRows: 12 }"
-            placeholder='例如：{"token":"xxx","base_url":"http://127.0.0.1:8000"}'
+            placeholder='例如：{"token":"xxx","tenant_id":"demo"}'
           />
         </a-form-item>
       </a-form>

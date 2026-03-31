@@ -5,6 +5,7 @@ import type {
   ApiCollectionForm,
   ApiEnvironment,
   ApiEnvironmentForm,
+  ApiExecutionBatchResult,
   ApiExecutionRecord,
   ApiImportResult,
   ApiImportJob,
@@ -73,6 +74,14 @@ export const apiRequestApi = {
     request.post<ApiExecutionRecord>(`${BASE_URL}/requests/${id}/execute/`, {
       environment_id: environmentId,
     }),
+
+  executeBatch: (data: {
+    scope: 'selected' | 'collection' | 'project'
+    ids?: number[]
+    collection_id?: number
+    project_id?: number
+    environment_id?: number
+  }) => request.post<ApiExecutionBatchResult>(`${BASE_URL}/requests/execute-batch/`, data),
 }
 
 export const importJobApi = {
@@ -108,6 +117,19 @@ export const testCaseApi = {
     request.get<ApiTestCase[]>(`${BASE_URL}/test-cases/`, { params }),
 
   get: (id: number) => request.get<ApiTestCase>(`${BASE_URL}/test-cases/${id}/`),
+
+  execute: (id: number, environmentId?: number) =>
+    request.post<ApiExecutionRecord>(`${BASE_URL}/test-cases/${id}/execute/`, {
+      environment_id: environmentId,
+    }),
+
+  executeBatch: (data: {
+    scope: 'selected' | 'collection' | 'project'
+    ids?: number[]
+    collection_id?: number
+    project_id?: number
+    environment_id?: number
+  }) => request.post<ApiExecutionBatchResult>(`${BASE_URL}/test-cases/execute-batch/`, data),
 
   delete: (id: number) => request.delete(`${BASE_URL}/test-cases/${id}/`),
 }

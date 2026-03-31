@@ -21,6 +21,15 @@
         >
           <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
         </a-select>
+        <a-button :disabled="!selectedRequestIds.length" @click="executeSelectedRequests">
+          执行选中
+        </a-button>
+        <a-button :disabled="!selectedCollectionId" @click="executeCollectionRequests">
+          执行当前集合
+        </a-button>
+        <a-button :disabled="!projectId" @click="executeProjectRequests">
+          执行当前项目
+        </a-button>
         <a-button type="primary" :disabled="!selectedCollectionId" @click="openCreateModal">
           新增接口
         </a-button>
@@ -32,7 +41,13 @@
     </div>
 
     <div v-else class="content-section">
-      <a-table :data="filteredRequests" :loading="loading" :pagination="false" row-key="id">
+      <a-table
+        :data="filteredRequests"
+        :loading="loading"
+        :pagination="false"
+        row-key="id"
+        :row-selection="requestRowSelection"
+      >
         <template #columns>
           <a-table-column title="方法" :width="90">
             <template #cell="{ record }">
@@ -445,94 +460,21 @@
         </a-tabs>
       </div>
     </a-drawer>
-
-    <a-drawer v-model:visible="importTaskVisible" width="420px" title="后台解析任务" :footer="false">
-      <div class="import-task-drawer">
-        <a-alert type="info" class="import-task-alert">
-          <template #title>关闭这个面板不会中断后台解析</template>
-          任务会在服务端继续执行，完成后会自动弹出结果通知。
-        </a-alert>
-
-        <a-empty v-if="!visibleImportJobs.length" description="当前没有可展示的解析任务" />
-
-        <div v-else class="import-task-list">
-          <div v-for="job in visibleImportJobs" :key="job.id" class="import-task-card">
-            <div class="import-task-head">
-              <div class="import-task-name">{{ job.source_name }}</div>
-              <a-tag
-                :color="
-                  job.status === 'success'
-                    ? 'green'
-                    : job.status === 'failed'
-                      ? 'red'
-                      : job.status === 'running'
-                        ? 'arcoblue'
-                        : 'gold'
-                "
-              >
-                {{
-                  job.status === 'success'
-                    ? '已完成'
-                    : job.status === 'failed'
-                      ? '已失败'
-                      : job.status === 'running'
-                        ? '解析中'
-                        : '排队中'
-                }}
-              </a-tag>
-            </div>
-            <div class="import-task-desc">{{ job.progress_message || '正在准备解析接口文档。' }}</div>
-            <div class="import-task-progress">
-              <a-progress :percent="Math.max(0, Math.min(job.progress_percent, 100)) / 100" :show-text="false" />
-              <span class="import-task-progress-text">{{ Math.max(0, Math.min(job.progress_percent, 100)) }}%</span>
-            </div>
-            <div class="import-task-steps">
-              <div
-                v-for="step in importTaskSteps"
-                :key="`${job.id}-${step.key}`"
-                class="import-task-step"
-                :class="`is-${getTaskStepState(job, step.key)}`"
-              >
-                <span class="import-task-step-dot"></span>
-                <span class="import-task-step-label">{{ step.title }}</span>
-              </div>
-            </div>
-            <div v-if="job.status === 'failed' && job.error_message" class="import-task-error">
-              失败原因：{{ job.error_message }}
-            </div>
-          </div>
-        </div>
-      </div>
-    </a-drawer>
-
-    <button
-      v-if="visibleImportJobs.length"
-      class="import-task-float"
-      type="button"
-      @click="importTaskVisible = true"
-    >
-      <span class="import-task-float-badge">{{ visibleImportJobs.length }}</span>
-      <div class="import-task-float-copy">
-        <div class="import-task-float-title">文档解析中</div>
-        <div class="import-task-float-desc">{{ activeImportJobSummary }}</div>
-      </div>
-      <div class="import-task-float-progress">
-        <a-progress :percent="activeImportJobProgressRatio" :show-text="false" />
-      </div>
-    </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { Message, Notification } from '@arco-design/web-vue'
+import { Message } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
-import { apiRequestApi, environmentApi, importJobApi } from '../api'
+import { apiRequestApi, environmentApi } from '../api'
 import { useApiImportDrafts } from '../state/importDraft'
+import { useApiImportJobs } from '../state/importJobs'
 import type {
   ApiEnvironment,
-  ApiImportJob,
+  ApiExecutionBatchResult,
   ApiExecutionRecord,
+  ApiImportJob,
   ApiImportResult,
   ApiRequest,
   ApiRequestForm,
@@ -576,10 +518,10 @@ const searchKeyword = ref('')
 const requests = ref<ApiRequest[]>([])
 const environments = ref<ApiEnvironment[]>([])
 const selectedEnvironmentId = ref<number | undefined>(undefined)
+const selectedRequestIds = ref<number[]>([])
 const editorVisible = ref(false)
 const resultVisible = ref(false)
 const importResultVisible = ref(false)
-const importTaskVisible = ref(false)
 const editingRequest = ref<ApiRequest | null>(null)
 const currentResult = ref<ApiExecutionRecord | null>(null)
 const importResult = ref<ApiImportResult | null>(null)
@@ -597,9 +539,8 @@ const importProgressStatus = ref<'idle' | 'uploading' | 'processing' | 'success'
 const importProgressMessage = ref('')
 const importProgressError = ref('')
 const importProgressFileName = ref('')
-const trackedImportJobIds = ref<number[]>([])
-const activeImportJobs = ref<ApiImportJob[]>([])
-const recentImportJobs = ref<ApiImportJob[]>([])
+
+const { syncProject, trackImportJob, registerFinishedHandler } = useApiImportJobs()
 
 const importProgressSteps = [
   { title: '上传接口文档', description: '将 Word、PDF、Swagger 等接口文档上传到 FlyTest。' },
@@ -609,18 +550,7 @@ const importProgressSteps = [
   { title: '写入 FlyTest', description: '把接口、脚本和测试用例保存到当前集合。' },
 ]
 
-const importTaskSteps = [
-  { key: 'uploaded', title: '文档已上传' },
-  { key: 'queued', title: '进入后台队列' },
-  { key: 'rule_parse', title: '规则解析' },
-  { key: 'ai_parse', title: 'AI增强解析' },
-  { key: 'save_requests', title: '写入接口' },
-  { key: 'generate_cases', title: '生成脚本与用例' },
-  { key: 'completed', title: '完成' },
-]
-
 let importProgressTimer: ReturnType<typeof window.setInterval> | null = null
-let importJobPollingTimer: ReturnType<typeof window.setInterval> | null = null
 
 const formState = ref({
   name: '',
@@ -643,34 +573,14 @@ const filteredRequests = computed(() => {
   })
 })
 
-const activeImportJobSummary = computed(() => {
-  if (activeImportJobs.value.length === 0 && recentImportJobs.value.length > 0) {
-    const latestJob = recentImportJobs.value[0]
-    return latestJob.status === 'failed'
-      ? '最近一次解析失败，点击查看原因'
-      : '最近一次解析已完成，点击查看记录'
-  }
-  if (!activeImportJobs.value.length) return '暂无后台任务'
-  if (activeImportJobs.value.length === 1) {
-    return activeImportJobs.value[0].progress_message || '正在解析接口文档'
-  }
-  return `当前有 ${activeImportJobs.value.length} 个文档解析任务在后台运行`
-})
-
-const activeImportJobProgressRatio = computed(() => {
-  if (activeImportJobs.value.length === 0 && recentImportJobs.value.length > 0) {
-    return recentImportJobs.value[0].status === 'success' ? 1 : 0
-  }
-  if (!activeImportJobs.value.length) return 0
-  const total = activeImportJobs.value.reduce((sum, item) => sum + Math.max(0, Math.min(item.progress_percent, 100)), 0)
-  return total / activeImportJobs.value.length / 100
-})
-
-const visibleImportJobs = computed(() => {
-  const activeIds = new Set(activeImportJobs.value.map(item => item.id))
-  const merged = [...activeImportJobs.value, ...recentImportJobs.value.filter(item => !activeIds.has(item.id))]
-  return merged.slice(0, 8)
-})
+const requestRowSelection = computed(() => ({
+  type: 'checkbox' as const,
+  showCheckedAll: true,
+  selectedRowKeys: selectedRequestIds.value,
+  onChange: (rowKeys: Array<string | number>) => {
+    selectedRequestIds.value = rowKeys.map(key => Number(key))
+  },
+}))
 
 const documentFileSummary = computed(() => {
   if (!documentFile.value) return ''
@@ -706,29 +616,6 @@ const clearImportProgressTimer = () => {
   }
 }
 
-const getImportJobStorageKey = () => `flytest-api-import-jobs:${projectId.value || 'unknown'}`
-
-const persistTrackedImportJobs = () => {
-  localStorage.setItem(getImportJobStorageKey(), JSON.stringify(trackedImportJobIds.value))
-}
-
-const loadTrackedImportJobs = () => {
-  try {
-    const raw = localStorage.getItem(getImportJobStorageKey())
-    trackedImportJobIds.value = raw ? JSON.parse(raw) : []
-  } catch {
-    trackedImportJobIds.value = []
-  }
-  activeImportJobs.value = []
-}
-
-const clearImportJobPolling = () => {
-  if (importJobPollingTimer) {
-    window.clearInterval(importJobPollingTimer)
-    importJobPollingTimer = null
-  }
-}
-
 const resetImportProgress = () => {
   clearImportProgressTimer()
   importProgressActive.value = false
@@ -760,30 +647,6 @@ const syncProcessingStage = () => {
   }
   importProgressStage.value = 4
   importProgressMessage.value = '正在把解析结果写入当前接口集合。'
-}
-
-const getTaskStepState = (job: ApiImportJob, stepKey: string) => {
-  const sequence = importTaskSteps.map(item => item.key)
-  const currentIndex = sequence.indexOf(job.progress_stage || '')
-  const targetIndex = sequence.indexOf(stepKey)
-
-  if (job.status === 'failed') {
-    if (stepKey === job.progress_stage) return 'failed'
-    if (targetIndex !== -1 && currentIndex !== -1 && targetIndex < currentIndex) return 'finished'
-    return 'pending'
-  }
-
-  if (job.status === 'success') {
-    return 'finished'
-  }
-
-  if (stepKey === job.progress_stage) return 'active'
-  if (targetIndex !== -1 && currentIndex !== -1 && targetIndex < currentIndex) return 'finished'
-  return 'pending'
-}
-
-const rememberRecentImportJob = (job: ApiImportJob) => {
-  recentImportJobs.value = [job, ...recentImportJobs.value.filter(item => item.id !== job.id)].slice(0, 6)
 }
 
 const startImportProgress = (fileName: string) => {
@@ -843,98 +706,6 @@ const failImportProgress = (message: string) => {
   syncProcessingStage()
 }
 
-const handleImportJobSuccess = async (job: ApiImportJob) => {
-  activeImportJobs.value = activeImportJobs.value.filter(item => item.id !== job.id)
-  rememberRecentImportJob(job)
-  const result = job.result_payload
-  if (!result) {
-    Notification.warning({
-      title: '接口文档解析完成',
-      content: '任务已结束，但没有返回可展示的解析结果。',
-    })
-    return
-  }
-
-  importResult.value = result
-  importResultVisible.value = true
-  saveDraftsFromImport(result, projectId.value || job.project, props.selectedCollectionId || job.collection)
-  await loadRequests()
-  emit('updated')
-  Notification.success({
-    title: '接口文档解析完成',
-    content: `已生成 ${result.created_count || 0} 个接口和 ${result.created_testcase_count || 0} 个测试用例。`,
-  })
-}
-
-const handleImportJobFailed = (job: ApiImportJob) => {
-  activeImportJobs.value = activeImportJobs.value.filter(item => item.id !== job.id)
-  rememberRecentImportJob(job)
-  importTaskVisible.value = true
-  Notification.error({
-    title: '接口文档解析失败',
-    content: job.error_message || job.progress_message || '后台解析任务失败，请稍后重试。',
-  })
-}
-
-const pollImportJobs = async () => {
-  if (!trackedImportJobIds.value.length) {
-    clearImportJobPolling()
-    return
-  }
-
-  const currentIds = [...trackedImportJobIds.value]
-  const jobs = await Promise.all(
-    currentIds.map(async jobId => {
-      const res = await importJobApi.get(jobId)
-      return (res.data?.data || res.data) as ApiImportJob
-    })
-  )
-
-  activeImportJobs.value = jobs
-    .filter(job => job.status === 'pending' || job.status === 'running')
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-
-  jobs
-    .filter(job => job.status === 'success' || job.status === 'failed')
-    .forEach(job => rememberRecentImportJob(job))
-
-  for (const job of jobs) {
-    if (job.status === 'success') {
-      trackedImportJobIds.value = trackedImportJobIds.value.filter(id => id !== job.id)
-      persistTrackedImportJobs()
-      await handleImportJobSuccess(job)
-      continue
-    }
-    if (job.status === 'failed') {
-      trackedImportJobIds.value = trackedImportJobIds.value.filter(id => id !== job.id)
-      persistTrackedImportJobs()
-      handleImportJobFailed(job)
-    }
-  }
-
-  if (!trackedImportJobIds.value.length) {
-    clearImportJobPolling()
-  }
-}
-
-const ensureImportJobPolling = () => {
-  if (importJobPollingTimer || !trackedImportJobIds.value.length) return
-  importJobPollingTimer = window.setInterval(() => {
-    pollImportJobs().catch(error => {
-      console.error('[RequestList] 轮询导入任务失败:', error)
-    })
-  }, 5000)
-}
-
-const trackImportJob = (job: ApiImportJob) => {
-  if (!trackedImportJobIds.value.includes(job.id)) {
-    trackedImportJobIds.value.push(job.id)
-    persistTrackedImportJobs()
-  }
-  activeImportJobs.value = [job, ...activeImportJobs.value.filter(item => item.id !== job.id)]
-  ensureImportJobPolling()
-}
-
 const stringifyJson = (value: any, fallback = '{}') => {
   if (value === null || value === undefined || value === '') return fallback
   if (typeof value === 'string') return value
@@ -987,6 +758,7 @@ const loadEnvironments = async () => {
 const loadRequests = async () => {
   if (!projectId.value || !props.selectedCollectionId) {
     requests.value = []
+    selectedRequestIds.value = []
     return
   }
   loading.value = true
@@ -997,14 +769,29 @@ const loadRequests = async () => {
     })
     const data = res.data?.data || res.data || []
     requests.value = Array.isArray(data) ? data : []
+    const availableIds = new Set(requests.value.map(item => item.id))
+    selectedRequestIds.value = selectedRequestIds.value.filter(id => availableIds.has(id))
   } catch (error) {
     console.error('[RequestList] 获取接口失败:', error)
     Message.error(getErrorMessage(error))
     requests.value = []
+    selectedRequestIds.value = []
   } finally {
     loading.value = false
   }
 }
+
+const unregisterImportFinishedHandler = registerFinishedHandler(async job => {
+  if (job.project !== projectId.value) return
+  const result = job.result_payload
+  if (!result) return
+
+  importResult.value = result
+  importResultVisible.value = true
+  saveDraftsFromImport(result, projectId.value || job.project, job.collection)
+  await loadRequests()
+  emit('updated')
+})
 
 const resetEditor = () => {
   editingRequest.value = null
@@ -1206,7 +993,6 @@ const submitDocumentImport = async () => {
     clearImportProgressTimer()
     resetImportProgress()
     trackImportJob(job)
-    importTaskVisible.value = true
     Message.success('接口文档解析任务已提交，后台会继续执行，完成后会自动提示你。')
   } catch (error: any) {
     failImportProgress(getErrorMessage(error))
@@ -1256,6 +1042,33 @@ const deleteRequest = async (id: number) => {
   }
 }
 
+const showBatchExecutionMessage = (label: string, summary: ApiExecutionBatchResult) => {
+  const text = `${label}完成：共 ${summary.total_count} 条，成功 ${summary.success_count} 条，断言失败 ${summary.failed_count} 条，异常 ${summary.error_count} 条。`
+  if (summary.failed_count || summary.error_count) {
+    Message.warning(text)
+    return
+  }
+  Message.success(text)
+}
+
+const executeRequestBatch = async (payload: {
+  scope: 'selected' | 'collection' | 'project'
+  ids?: number[]
+  collection_id?: number
+  project_id?: number
+  environment_id?: number
+}, label: string) => {
+  try {
+    const res = await apiRequestApi.executeBatch(payload)
+    const summary = (res.data?.data || res.data) as ApiExecutionBatchResult
+    showBatchExecutionMessage(label, summary)
+    emit('executed')
+  } catch (error: any) {
+    console.error('[RequestList] 批量执行接口失败:', error)
+    Message.error(error?.error || '批量执行接口失败')
+  }
+}
+
 const executeRequest = async (record: ApiRequest) => {
   try {
     const res = await apiRequestApi.execute(record.id, selectedEnvironmentId.value)
@@ -1269,12 +1082,56 @@ const executeRequest = async (record: ApiRequest) => {
   }
 }
 
+const executeSelectedRequests = async () => {
+  if (!selectedRequestIds.value.length) {
+    Message.warning('请先选择要执行的接口')
+    return
+  }
+  await executeRequestBatch(
+    {
+      scope: 'selected',
+      ids: selectedRequestIds.value,
+      environment_id: selectedEnvironmentId.value,
+    },
+    '选中接口执行'
+  )
+}
+
+const executeCollectionRequests = async () => {
+  if (!props.selectedCollectionId) {
+    Message.warning('请先选择接口集合')
+    return
+  }
+  await executeRequestBatch(
+    {
+      scope: 'collection',
+      collection_id: props.selectedCollectionId,
+      environment_id: selectedEnvironmentId.value,
+    },
+    '当前集合执行'
+  )
+}
+
+const executeProjectRequests = async () => {
+  if (!projectId.value) {
+    Message.warning('请先选择项目')
+    return
+  }
+  await executeRequestBatch(
+    {
+      scope: 'project',
+      project_id: projectId.value,
+      environment_id: selectedEnvironmentId.value,
+    },
+    '项目接口执行'
+  )
+}
+
 watch(
   () => projectId.value,
-  () => {
-    loadTrackedImportJobs()
-    ensureImportJobPolling()
-    pollImportJobs().catch(() => undefined)
+  value => {
+    syncProject(value)
+    selectedRequestIds.value = []
     loadEnvironments()
     loadRequests()
   },
@@ -1284,6 +1141,7 @@ watch(
 watch(
   () => props.selectedCollectionId,
   () => {
+    selectedRequestIds.value = []
     loadRequests()
   },
   { immediate: true }
@@ -1291,7 +1149,7 @@ watch(
 
 onUnmounted(() => {
   clearImportProgressTimer()
-  clearImportJobPolling()
+  unregisterImportFinishedHandler()
 })
 
 defineExpose({

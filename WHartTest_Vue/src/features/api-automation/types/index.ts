@@ -104,6 +104,14 @@ export interface ApiExecutionRecord {
   created_at: string
 }
 
+export interface ApiExecutionBatchResult {
+  total_count: number
+  success_count: number
+  failed_count: number
+  error_count: number
+  items: ApiExecutionRecord[]
+}
+
 export interface ApiGeneratedScript {
   request_id: number
   request_name: string
@@ -146,6 +154,11 @@ export interface ApiImportResult {
   ai_prompt_name?: string | null
   ai_model_name?: string | null
   environment_draft?: Partial<ApiEnvironmentForm> | null
+  environment_items?: Partial<ApiEnvironmentForm>[]
+  environment_auto_saved?: boolean
+  environment_auto_saved_count?: number
+  environment_id?: number | null
+  environment_name?: string | null
   items: ApiRequest[]
   generated_scripts: ApiGeneratedScript[]
   test_cases: ApiTestCase[]
