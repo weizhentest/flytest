@@ -115,9 +115,13 @@ watch(activeTab, newTab => {
   display: flex;
   width: 100%;
   height: 100%;
-  gap: 10px;
+  gap: 18px;
   overflow: hidden;
-  background-color: var(--color-bg-1);
+  padding: 8px;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(248, 250, 252, 0.82));
+  border-radius: 28px;
 }
 
 @media (max-width: 768px) {
@@ -129,12 +133,25 @@ watch(activeTab, newTab => {
 .layout-content {
   flex: 1;
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
-  padding: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.94));
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  padding: 28px;
+}
+
+@media (max-width: 1200px) {
+  .api-automation-layout {
+    gap: 14px;
+    padding: 4px;
+  }
+
+  .layout-content {
+    padding: 22px;
+  }
 }
 </style>

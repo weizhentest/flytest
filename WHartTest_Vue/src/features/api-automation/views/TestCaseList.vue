@@ -12,25 +12,29 @@
         />
       </div>
       <div class="header-right">
-        <a-select
-          v-model="selectedEnvironmentId"
-          :loading="environmentLoading"
-          allow-clear
-          placeholder="执行环境"
-          style="width: 220px"
-        >
-          <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
-        </a-select>
-        <a-button :disabled="!selectedTestCaseIds.length" @click="executeSelectedTestCases">
-          执行选中
-        </a-button>
-        <a-button :disabled="!selectedCollectionId" @click="executeCollectionTestCases">
-          执行当前集合
-        </a-button>
-        <a-button :disabled="!projectId" @click="executeProjectTestCases">
-          执行当前项目
-        </a-button>
-        <a-button @click="loadTestCases">刷新</a-button>
+        <div class="toolbar-group toolbar-group--filter">
+          <a-select
+            v-model="selectedEnvironmentId"
+            class="toolbar-select"
+            :loading="environmentLoading"
+            allow-clear
+            placeholder="执行环境"
+          >
+            <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
+          </a-select>
+        </div>
+        <div class="toolbar-group toolbar-group--actions">
+          <a-button :disabled="!selectedTestCaseIds.length" @click="executeSelectedTestCases">
+            执行选中
+          </a-button>
+          <a-button :disabled="!selectedCollectionId" @click="executeCollectionTestCases">
+            执行当前集合
+          </a-button>
+          <a-button :disabled="!projectId" @click="executeProjectTestCases">
+            执行当前项目
+          </a-button>
+          <a-button @click="loadTestCases">刷新</a-button>
+        </div>
       </div>
     </div>
 
@@ -40,6 +44,7 @@
 
     <div v-else class="content-section">
       <a-table
+        v-model:selectedKeys="selectedTestCaseIds"
         :data="filteredTestCases"
         :loading="loading"
         :pagination="false"
@@ -183,14 +188,10 @@ const filteredTestCases = computed(() => {
   })
 })
 
-const testCaseRowSelection = computed(() => ({
+const testCaseRowSelection = {
   type: 'checkbox' as const,
   showCheckedAll: true,
-  selectedRowKeys: selectedTestCaseIds.value,
-  onChange: (rowKeys: Array<string | number>) => {
-    selectedTestCaseIds.value = rowKeys.map(key => Number(key))
-  },
-}))
+}
 
 const formatDate = (value?: string) => {
   if (!value) return '-'
@@ -383,29 +384,82 @@ defineExpose({
 .test-case-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
 .api-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .header-left,
 .header-right {
   display: flex;
   align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.header-left {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.header-right {
+  flex: 1 1 520px;
+  justify-content: flex-end;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
 
+.toolbar-group--actions {
+  justify-content: flex-end;
+}
+
+.toolbar-select {
+  width: 220px;
+}
+
 .empty-tip-card {
-  padding: 32px;
-  border-radius: 24px;
+  padding: 44px;
+  border-radius: 28px;
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.content-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.content-section :deep(.arco-table-container) {
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
+}
+
+.content-section :deep(.arco-table-th) {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.content-section :deep(.arco-table-td) {
+  padding-top: 15px;
+  padding-bottom: 15px;
 }
 
 .detail-drawer {
@@ -424,5 +478,28 @@ defineExpose({
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 1200px) {
+  .header-right {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .api-page-header {
+    align-items: stretch;
+  }
+
+  .header-left,
+  .header-right,
+  .toolbar-group,
+  .toolbar-select {
+    width: 100%;
+  }
+
+  .toolbar-select {
+    min-width: 0;
+  }
 }
 </style>

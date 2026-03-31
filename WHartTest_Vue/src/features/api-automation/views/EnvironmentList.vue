@@ -293,22 +293,53 @@ defineExpose({
 .environment-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
 .api-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .header-left,
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+}
+
+.header-left {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.header-right {
+  justify-content: flex-end;
+}
+
+.content-section :deep(.arco-table-container) {
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
+}
+
+.content-section :deep(.arco-table-th) {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.content-section :deep(.arco-table-td) {
+  padding-top: 15px;
+  padding-bottom: 15px;
 }
 
 .env-prefill-banner {
@@ -317,8 +348,8 @@ defineExpose({
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
-  padding: 16px 18px;
-  border-radius: 20px;
+  padding: 18px 20px;
+  border-radius: 22px;
   border: 1px solid rgba(59, 130, 246, 0.14);
   background:
     linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(20, 184, 166, 0.08)),
@@ -347,5 +378,20 @@ defineExpose({
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .api-page-header {
+    align-items: stretch;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-right {
+    justify-content: flex-start;
+  }
 }
 </style>

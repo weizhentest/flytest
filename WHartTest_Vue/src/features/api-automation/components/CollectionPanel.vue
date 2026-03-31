@@ -286,8 +286,8 @@ defineExpose({
 
 <style scoped>
 .collection-panel-wrapper {
-  width: 280px;
-  min-width: 220px;
+  width: 320px;
+  min-width: 280px;
   max-width: 100%;
   height: 100%;
   display: flex;
@@ -297,18 +297,33 @@ defineExpose({
 
 .collection-panel {
   height: 100%;
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+}
+
+.collection-panel :deep(.arco-card-header) {
+  padding: 22px 22px 10px;
+  border-bottom: none;
+}
+
+.collection-panel :deep(.arco-card-body) {
+  height: 100%;
+  padding: 0 22px 22px;
 }
 
 .collection-panel-content {
   display: flex;
   height: 100%;
   flex-direction: column;
+  gap: 18px;
 }
 
 .collection-panel-header {
   display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 12px;
+  margin-bottom: 4px;
 }
 
 .collection-actions {
@@ -317,12 +332,31 @@ defineExpose({
 }
 
 .collection-action-button {
-  min-width: 64px;
+  min-width: 72px;
 }
 
 .tree-container {
   flex: 1;
   overflow: auto;
+  padding: 8px 4px 4px 0;
+}
+
+.tree-container :deep(.arco-tree-node) {
+  margin-bottom: 8px;
+}
+
+.tree-container :deep(.arco-tree-node-title) {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.tree-container :deep(.arco-tree-node-title:hover) {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.tree-container :deep(.arco-tree-node-selected .arco-tree-node-title) {
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .collection-loading-container {
@@ -335,7 +369,7 @@ defineExpose({
 @media (max-width: 768px) {
   .collection-panel-wrapper {
     width: 100%;
-    height: 280px;
+    height: 340px;
     min-width: 0;
   }
 }

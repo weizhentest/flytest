@@ -12,27 +12,41 @@
         />
       </div>
       <div class="header-right">
-        <a-select
-          v-model="selectedEnvironmentId"
-          :loading="environmentLoading"
-          allow-clear
-          placeholder="执行环境"
-          style="width: 220px"
-        >
-          <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
-        </a-select>
-        <a-button :disabled="!selectedRequestIds.length" @click="executeSelectedRequests">
-          执行选中
-        </a-button>
-        <a-button :disabled="!selectedCollectionId" @click="executeCollectionRequests">
-          执行当前集合
-        </a-button>
-        <a-button :disabled="!projectId" @click="executeProjectRequests">
-          执行当前项目
-        </a-button>
-        <a-button type="primary" :disabled="!selectedCollectionId" @click="openCreateModal">
-          新增接口
-        </a-button>
+        <div class="toolbar-group toolbar-group--filter">
+          <a-select
+            v-model="selectedEnvironmentId"
+            class="toolbar-select"
+            :loading="environmentLoading"
+            allow-clear
+            placeholder="执行环境"
+          >
+            <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
+          </a-select>
+        </div>
+        <div class="toolbar-group toolbar-group--actions">
+          <a-button :disabled="!selectedRequestIds.length" @click="executeSelectedRequests">
+            执行选中
+          </a-button>
+          <a-button :disabled="!selectedCollectionId" @click="executeCollectionRequests">
+            执行当前集合
+          </a-button>
+          <a-button :disabled="!projectId" @click="executeProjectRequests">
+            执行当前项目
+          </a-button>
+          <a-dropdown trigger="click" @select="handleSelectedCaseGenerationAction">
+            <a-button :disabled="!selectedRequestIds.length">
+              AI生成用例
+            </a-button>
+            <template #content>
+              <a-doption value="generate" :disabled="!selectedRequestIds.length">批量生成</a-doption>
+              <a-doption value="regenerate" :disabled="!selectedRequestIds.length">重新生成</a-doption>
+              <a-doption value="append" :disabled="!selectedRequestIds.length">追加生成</a-doption>
+            </template>
+          </a-dropdown>
+          <a-button type="primary" :disabled="!selectedCollectionId" @click="openCreateModal">
+            新增接口
+          </a-button>
+        </div>
       </div>
     </div>
 
@@ -42,11 +56,15 @@
 
     <div v-else class="content-section">
       <a-table
+        v-model:selectedKeys="selectedRequestIds"
+        v-model:expanded-keys="expandedRequestKeys"
         :data="filteredRequests"
         :loading="loading"
         :pagination="false"
         row-key="id"
         :row-selection="requestRowSelection"
+        :expandable="{ width: 48 }"
+        @expand="handleRequestExpand"
       >
         <template #columns>
           <a-table-column title="方法" :width="90">
@@ -61,13 +79,26 @@
               <a-tag color="cyan">{{ record.assertions?.length || 0 }}</a-tag>
             </template>
           </a-table-column>
+          <a-table-column title="测试用例" :width="110" align="center">
+            <template #cell="{ record }">
+              <a-tag color="purple">{{ record.test_case_count || 0 }}</a-tag>
+            </template>
+          </a-table-column>
           <a-table-column title="更新时间" :width="180">
             <template #cell="{ record }">{{ formatDate(record.updated_at) }}</template>
           </a-table-column>
-          <a-table-column title="操作" :width="260" align="center" fixed="right">
+          <a-table-column title="操作" :width="330" align="center" fixed="right">
             <template #cell="{ record }">
               <a-space :size="4">
                 <a-button type="text" size="small" @click="executeRequest(record)">执行</a-button>
+                <a-dropdown trigger="click" @select="value => handleSingleCaseGenerationAction(record, value)">
+                  <a-button type="text" size="small">AI用例</a-button>
+                  <template #content>
+                    <a-doption value="generate">生成</a-doption>
+                    <a-doption value="regenerate">重生成</a-doption>
+                    <a-doption value="append">追加生成</a-doption>
+                  </template>
+                </a-dropdown>
                 <a-button type="text" size="small" @click="openEditModal(record)">编辑</a-button>
                 <a-button type="text" size="small" @click="viewRequest(record)">详情</a-button>
                 <a-popconfirm content="确认删除该接口吗？" @ok="deleteRequest(record.id)">
@@ -76,6 +107,47 @@
               </a-space>
             </template>
           </a-table-column>
+        </template>
+
+        <template #expand-row="{ record }">
+          <div class="request-case-panel">
+            <div class="request-case-panel__header">
+              <div>
+                <div class="request-case-panel__title">接口测试用例</div>
+                <div class="request-case-panel__subtitle">
+                  当前接口下的测试用例会直接绑定到该接口，可在这里查看和继续生成。
+                </div>
+              </div>
+              <div class="request-case-panel__actions">
+                <a-button size="small" @click="generateCasesForRequest(record, 'generate')">AI生成</a-button>
+                <a-button size="small" @click="generateCasesForRequest(record, 'regenerate')">重新生成</a-button>
+                <a-button size="small" @click="generateCasesForRequest(record, 'append')">追加生成</a-button>
+              </div>
+            </div>
+
+            <div v-if="requestTestCaseLoadingMap[record.id]" class="request-case-panel__loading">
+              <a-spin />
+            </div>
+            <a-empty
+              v-else-if="!(requestTestCaseMap[record.id]?.length)"
+              description="当前接口下还没有测试用例，可直接使用 AI 生成。"
+            />
+            <div v-else class="request-case-list">
+              <div v-for="testCase in requestTestCaseMap[record.id]" :key="testCase.id" class="request-case-card">
+                <div class="request-case-card__main">
+                  <div class="request-case-card__name">{{ testCase.name }}</div>
+                  <div class="request-case-card__desc">{{ testCase.description || '暂无描述' }}</div>
+                  <a-space wrap>
+                    <a-tag :color="statusTagColorMap[testCase.status]">{{ statusLabelMap[testCase.status] }}</a-tag>
+                    <a-tag v-for="tag in testCase.tags || []" :key="tag" color="arcoblue">{{ tag }}</a-tag>
+                  </a-space>
+                </div>
+                <div class="request-case-card__meta">
+                  <span>{{ formatDate(testCase.updated_at) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </template>
       </a-table>
     </div>
@@ -467,7 +539,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
-import { apiRequestApi, environmentApi } from '../api'
+import { apiRequestApi, environmentApi, testCaseApi } from '../api'
 import { useApiImportDrafts } from '../state/importDraft'
 import { useApiImportJobs } from '../state/importJobs'
 import type {
@@ -478,6 +550,8 @@ import type {
   ApiImportResult,
   ApiRequest,
   ApiRequestForm,
+  ApiTestCase,
+  ApiTestCaseGenerationResult,
 } from '../types'
 
 const props = defineProps<{
@@ -511,6 +585,18 @@ const methodColorMap: Record<string, string> = {
   OPTIONS: 'cyan',
 }
 
+const statusLabelMap: Record<ApiTestCase['status'], string> = {
+  draft: '草稿',
+  ready: '就绪',
+  disabled: '停用',
+}
+
+const statusTagColorMap: Record<ApiTestCase['status'], string> = {
+  draft: 'gray',
+  ready: 'green',
+  disabled: 'red',
+}
+
 const loading = ref(false)
 const environmentLoading = ref(false)
 const submitLoading = ref(false)
@@ -519,6 +605,9 @@ const requests = ref<ApiRequest[]>([])
 const environments = ref<ApiEnvironment[]>([])
 const selectedEnvironmentId = ref<number | undefined>(undefined)
 const selectedRequestIds = ref<number[]>([])
+const expandedRequestKeys = ref<number[]>([])
+const requestTestCaseMap = ref<Record<number, ApiTestCase[]>>({})
+const requestTestCaseLoadingMap = ref<Record<number, boolean>>({})
 const editorVisible = ref(false)
 const resultVisible = ref(false)
 const importResultVisible = ref(false)
@@ -573,14 +662,12 @@ const filteredRequests = computed(() => {
   })
 })
 
-const requestRowSelection = computed(() => ({
+type CaseGenerationMode = 'generate' | 'append' | 'regenerate'
+
+const requestRowSelection = {
   type: 'checkbox' as const,
   showCheckedAll: true,
-  selectedRowKeys: selectedRequestIds.value,
-  onChange: (rowKeys: Array<string | number>) => {
-    selectedRequestIds.value = rowKeys.map(key => Number(key))
-  },
-}))
+}
 
 const documentFileSummary = computed(() => {
   if (!documentFile.value) return ''
@@ -759,6 +846,8 @@ const loadRequests = async () => {
   if (!projectId.value || !props.selectedCollectionId) {
     requests.value = []
     selectedRequestIds.value = []
+    expandedRequestKeys.value = []
+    requestTestCaseMap.value = {}
     return
   }
   loading.value = true
@@ -771,13 +860,57 @@ const loadRequests = async () => {
     requests.value = Array.isArray(data) ? data : []
     const availableIds = new Set(requests.value.map(item => item.id))
     selectedRequestIds.value = selectedRequestIds.value.filter(id => availableIds.has(id))
+    expandedRequestKeys.value = expandedRequestKeys.value.filter(id => availableIds.has(id))
   } catch (error) {
     console.error('[RequestList] 获取接口失败:', error)
     Message.error(getErrorMessage(error))
     requests.value = []
     selectedRequestIds.value = []
+    expandedRequestKeys.value = []
+    requestTestCaseMap.value = {}
   } finally {
     loading.value = false
+  }
+}
+
+const loadRequestTestCases = async (requestId: number, force = false) => {
+  if (!projectId.value) return
+  if (!force && requestTestCaseMap.value[requestId]) return
+
+  requestTestCaseLoadingMap.value = {
+    ...requestTestCaseLoadingMap.value,
+    [requestId]: true,
+  }
+  try {
+    const res = await testCaseApi.list({
+      project: projectId.value,
+      request: requestId,
+    })
+    const data = res.data?.data || res.data || []
+    requestTestCaseMap.value = {
+      ...requestTestCaseMap.value,
+      [requestId]: Array.isArray(data) ? data : [],
+    }
+  } catch (error) {
+    console.error('[RequestList] 获取接口下测试用例失败:', error)
+    Message.error('获取接口下测试用例失败')
+    requestTestCaseMap.value = {
+      ...requestTestCaseMap.value,
+      [requestId]: [],
+    }
+  } finally {
+    requestTestCaseLoadingMap.value = {
+      ...requestTestCaseLoadingMap.value,
+      [requestId]: false,
+    }
+  }
+}
+
+const handleRequestExpand = async (rowKey: string | number) => {
+  const requestId = Number(rowKey)
+  if (!Number.isFinite(requestId)) return
+  if (expandedRequestKeys.value.includes(requestId)) {
+    await loadRequestTestCases(requestId)
   }
 }
 
@@ -1069,6 +1202,51 @@ const executeRequestBatch = async (payload: {
   }
 }
 
+const showCaseGenerationMessage = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
+  const modeLabelMap: Record<CaseGenerationMode, string> = {
+    generate: '生成',
+    append: '追加生成',
+    regenerate: '重新生成',
+  }
+  const text = `${modeLabelMap[mode]}完成：处理 ${summary.processed_requests}/${summary.total_requests} 个接口，新增 ${summary.created_testcase_count} 条测试用例。`
+  if (summary.skipped_requests) {
+    Message.warning(`${text} 跳过 ${summary.skipped_requests} 个已有用例的接口。`)
+    return
+  }
+  Message.success(text)
+}
+
+const generateCasesByScope = async (
+  payload: {
+    scope: 'selected' | 'collection' | 'project'
+    ids?: number[]
+    collection_id?: number
+    project_id?: number
+    mode: CaseGenerationMode
+    count_per_request?: number
+  },
+  targetRequestIds: number[] = []
+) => {
+  try {
+    const res = await apiRequestApi.generateTestCases(payload)
+    const summary = (res.data?.data || res.data) as ApiTestCaseGenerationResult
+    showCaseGenerationMessage(summary, payload.mode)
+    await loadRequests()
+    const requestIdsToRefresh = targetRequestIds.length
+      ? targetRequestIds
+      : summary.items.map(item => item.request_id)
+    for (const requestId of requestIdsToRefresh) {
+      if (expandedRequestKeys.value.includes(requestId)) {
+        await loadRequestTestCases(requestId, true)
+      }
+    }
+    emit('updated')
+  } catch (error: any) {
+    console.error('[RequestList] AI 生成测试用例失败:', error)
+    Message.error(error?.error || 'AI 生成测试用例失败')
+  }
+}
+
 const executeRequest = async (record: ApiRequest) => {
   try {
     const res = await apiRequestApi.execute(record.id, selectedEnvironmentId.value)
@@ -1080,6 +1258,42 @@ const executeRequest = async (record: ApiRequest) => {
     console.error('[RequestList] 执行接口失败:', error)
     Message.error(error?.error || '执行接口失败')
   }
+}
+
+const generateCasesForRequest = async (record: ApiRequest, mode: CaseGenerationMode) => {
+  await generateCasesByScope(
+    {
+      scope: 'selected',
+      ids: [record.id],
+      mode,
+      count_per_request: 3,
+    },
+    [record.id]
+  )
+}
+
+const handleSingleCaseGenerationAction = async (record: ApiRequest, value: string | number | boolean) => {
+  const mode = String(value) as CaseGenerationMode
+  if (!['generate', 'append', 'regenerate'].includes(mode)) return
+  await generateCasesForRequest(record, mode)
+}
+
+const handleSelectedCaseGenerationAction = async (value: string | number | boolean) => {
+  const mode = String(value) as CaseGenerationMode
+  if (!['generate', 'append', 'regenerate'].includes(mode)) return
+  if (!selectedRequestIds.value.length) {
+    Message.warning('请先选择要生成测试用例的接口')
+    return
+  }
+  await generateCasesByScope(
+    {
+      scope: 'selected',
+      ids: selectedRequestIds.value,
+      mode,
+      count_per_request: 3,
+    },
+    selectedRequestIds.value
+  )
 }
 
 const executeSelectedRequests = async () => {
@@ -1142,6 +1356,8 @@ watch(
   () => props.selectedCollectionId,
   () => {
     selectedRequestIds.value = []
+    expandedRequestKeys.value = []
+    requestTestCaseMap.value = {}
     loadRequests()
   },
   { immediate: true }
@@ -1161,22 +1377,197 @@ defineExpose({
 .request-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
 .api-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  padding: 22px 24px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .header-left,
 .header-right {
   display: flex;
   align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.header-left {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.header-right {
+  flex: 1 1 520px;
+  justify-content: flex-end;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.toolbar-group--filter {
+  flex: 0 1 auto;
+}
+
+.toolbar-group--actions {
+  justify-content: flex-end;
+}
+
+.toolbar-select {
+  width: 220px;
+}
+
+.content-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.content-section :deep(.arco-table-container) {
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
+}
+
+.content-section :deep(.arco-table-th) {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.content-section :deep(.arco-table-td) {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.request-case-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 26px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.request-case-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.request-case-panel__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.request-case-panel__subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.request-case-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.request-case-panel__loading {
+  padding: 18px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.request-case-list {
+  display: grid;
+  gap: 12px;
+}
+
+.request-case-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.request-case-card__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.request-case-card__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.request-case-card__desc {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+  word-break: break-word;
+}
+
+.request-case-card__meta {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .header-right {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .api-page-header {
+    align-items: stretch;
+  }
+
+  .header-left,
+  .header-right,
+  .toolbar-group,
+  .toolbar-select {
+    width: 100%;
+  }
+
+  .toolbar-select {
+    min-width: 0;
+  }
+
+  .request-case-card {
+    flex-direction: column;
+  }
+
+  .request-case-card__meta {
+    white-space: normal;
+  }
 }
 
 .create-mode-switch {
@@ -1564,8 +1955,8 @@ defineExpose({
 }
 
 .empty-tip-card {
-  padding: 32px;
-  border-radius: 24px;
+  padding: 44px;
+  border-radius: 28px;
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(148, 163, 184, 0.16);
 }

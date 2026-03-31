@@ -12,6 +12,7 @@ import type {
   ApiRequest,
   ApiRequestForm,
   ApiTestCase,
+  ApiTestCaseGenerationResult,
 } from '../types'
 
 const BASE_URL = '/api-automation'
@@ -82,6 +83,15 @@ export const apiRequestApi = {
     project_id?: number
     environment_id?: number
   }) => request.post<ApiExecutionBatchResult>(`${BASE_URL}/requests/execute-batch/`, data),
+
+  generateTestCases: (data: {
+    scope: 'selected' | 'collection' | 'project'
+    ids?: number[]
+    collection_id?: number
+    project_id?: number
+    mode: 'generate' | 'append' | 'regenerate'
+    count_per_request?: number
+  }) => request.post<ApiTestCaseGenerationResult>(`${BASE_URL}/requests/generate-test-cases/`, data),
 }
 
 export const importJobApi = {

@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from projects.models import Project
 
 from .ai_parser import AIEnhancementResult
+from .ai_case_generator import AITestCaseGenerationResult, GeneratedCaseDraft
 from .document_import import ParsedRequestData
 from .models import ApiCollection, ApiRequest, ApiTestCase
 
@@ -314,3 +315,96 @@ class ApiAutomationImportDocumentTests(TestCase):
 
         self.assertIn(response.status_code, {status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND})
         self.assertEqual(ApiRequest.objects.count(), 0)
+
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_generate_test_cases_endpoint_creates_cases_for_selected_requests(self, mock_generate):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            headers={},
+            params={},
+            body_type="json",
+            body={"sku": "A100"},
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI generated 2 cases",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            cases=[
+                GeneratedCaseDraft(
+                    name="Create order - 成功校验",
+                    description="验证下单成功",
+                    status="ready",
+                    tags=["ai-generated", "positive"],
+                    assertions=[{"type": "status_code", "expected": 200}],
+                    request_overrides={"headers": {}, "params": {}, "body_type": "json", "body": {"sku": "A100"}, "timeout_ms": 30000},
+                ),
+                GeneratedCaseDraft(
+                    name="Create order - 关键字段校验",
+                    description="验证关键响应字段",
+                    status="ready",
+                    tags=["ai-generated", "regression"],
+                    assertions=[{"type": "status_code", "expected": 200}],
+                    request_overrides={"headers": {}, "params": {}, "body_type": "json", "body": {"sku": "A100"}, "timeout_ms": 30000},
+                ),
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/generate-test-cases/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "generate",
+                "count_per_request": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["total_requests"], 1)
+        self.assertEqual(payload["created_testcase_count"], 2)
+        self.assertEqual(payload["items"][0]["request_id"], api_request.id)
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 2)
+
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_generate_mode_skips_request_with_existing_cases(self, mock_generate):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="List reports",
+            method="GET",
+            url="/api/reports",
+            created_by=self.user,
+        )
+        ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="Existing report case",
+            status="ready",
+            script={"request": {"method": "GET", "url": "/api/reports"}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/generate-test-cases/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "generate",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["skipped_requests"], 1)
+        self.assertEqual(payload["created_testcase_count"], 0)
+        mock_generate.assert_not_called()

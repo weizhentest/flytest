@@ -34,6 +34,7 @@ export interface ApiRequest {
   body: any
   assertions: Array<Record<string, any>>
   generated_script?: Record<string, any>
+  test_case_count?: number
   timeout_ms: number
   order: number
   created_by: number | null
@@ -138,6 +139,35 @@ export interface ApiTestCase {
   creator_name?: string
   created_at: string
   updated_at: string
+}
+
+export interface ApiTestCaseGenerationItem {
+  request_id: number
+  request_name: string
+  request_method: string
+  request_url: string
+  mode: 'generate' | 'append' | 'regenerate'
+  skipped?: boolean
+  skipped_reason?: string
+  created_count: number
+  ai_used: boolean
+  note?: string
+  prompt_name?: string | null
+  prompt_source?: string | null
+  model_name?: string | null
+  items: ApiTestCase[]
+}
+
+export interface ApiTestCaseGenerationResult {
+  scope: 'selected' | 'collection' | 'project'
+  mode: 'generate' | 'append' | 'regenerate'
+  total_requests: number
+  processed_requests: number
+  skipped_requests: number
+  created_testcase_count: number
+  ai_used_count: number
+  note?: string
+  items: ApiTestCaseGenerationItem[]
 }
 
 export interface ApiImportResult {

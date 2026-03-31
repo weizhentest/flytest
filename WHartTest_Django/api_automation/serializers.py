@@ -27,6 +27,7 @@ class ApiRequestSerializer(serializers.ModelSerializer):
     project_id = serializers.IntegerField(source="collection.project_id", read_only=True)
     creator_name = serializers.CharField(source="created_by.username", read_only=True)
     generated_script = serializers.SerializerMethodField()
+    test_case_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ApiRequest
@@ -44,6 +45,9 @@ class ApiRequestSerializer(serializers.ModelSerializer):
             timeout_ms=obj.timeout_ms,
             assertions=obj.assertions,
         )
+
+    def get_test_case_count(self, obj) -> int:
+        return obj.test_cases.count()
 
 
 class ApiEnvironmentSerializer(serializers.ModelSerializer):

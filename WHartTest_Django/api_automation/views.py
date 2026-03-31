@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from projects.models import Project
 from wharttest_django.viewsets import BaseModelViewSet
 
+from .ai_case_generator import create_test_cases_from_drafts, generate_test_case_drafts_with_ai
 from .import_service import process_document_import
 from .models import ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
 from .serializers import (
@@ -350,6 +351,68 @@ def _build_test_case_execution_payload(test_case: ApiTestCase):
     return overrides, assertions, snapshot_extra
 
 
+def _serialize_generation_case_items(test_cases: list[ApiTestCase]):
+    serializer = ApiTestCaseSerializer(test_cases, many=True)
+    return serializer.data
+
+
+def _generate_request_test_cases(
+    *,
+    api_request: ApiRequest,
+    user,
+    mode: str,
+    count_per_request: int,
+):
+    existing_cases = list(api_request.test_cases.order_by("created_at"))
+    if mode == "generate" and existing_cases:
+        return {
+            "request_id": api_request.id,
+            "request_name": api_request.name,
+            "request_method": api_request.method,
+            "request_url": api_request.url,
+            "mode": mode,
+            "skipped": True,
+            "skipped_reason": "当前接口已存在测试用例，请使用重新生成或追加生成。",
+            "created_count": 0,
+            "ai_used": False,
+            "note": "已跳过已有测试用例的接口。",
+            "items": [],
+        }
+
+    generation_result = generate_test_case_drafts_with_ai(
+        api_request=api_request,
+        user=user,
+        existing_cases=existing_cases,
+        mode=mode,
+        count=count_per_request,
+    )
+
+    if mode == "regenerate" and existing_cases:
+        ApiTestCase.objects.filter(id__in=[item.id for item in existing_cases]).delete()
+        existing_cases = []
+
+    created_cases = create_test_cases_from_drafts(
+        api_request=api_request,
+        drafts=generation_result.cases,
+        creator=user,
+    )
+    return {
+        "request_id": api_request.id,
+        "request_name": api_request.name,
+        "request_method": api_request.method,
+        "request_url": api_request.url,
+        "mode": mode,
+        "skipped": False,
+        "created_count": len(created_cases),
+        "ai_used": generation_result.used_ai,
+        "note": generation_result.note,
+        "prompt_name": generation_result.prompt_name,
+        "prompt_source": generation_result.prompt_source,
+        "model_name": generation_result.model_name,
+        "items": _serialize_generation_case_items(created_cases),
+    }
+
+
 class ApiCollectionViewSet(BaseModelViewSet):
     queryset = ApiCollection.objects.select_related("project", "parent", "creator")
     serializer_class = ApiCollectionSerializer
@@ -556,6 +619,62 @@ class ApiRequestViewSet(BaseModelViewSet):
                 )
             )
         return Response(_serialize_execution_batch(records))
+
+    @action(detail=False, methods=["post"], url_path="generate-test-cases")
+    def generate_test_cases(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        mode = str(request.data.get("mode") or "generate").strip().lower()
+        count_per_request = max(1, min(int(request.data.get("count_per_request") or 3), 10))
+
+        if mode not in {"generate", "append", "regenerate"}:
+            return Response({"error": "mode 仅支持 generate、append、regenerate"}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_requests = _collect_request_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not api_requests:
+            return Response({"error": "未找到可生成测试用例的接口"}, status=status.HTTP_400_BAD_REQUEST)
+
+        items = []
+        created_total = 0
+        skipped_count = 0
+        ai_used_count = 0
+        notes: list[str] = []
+
+        for api_request in api_requests:
+            item = _generate_request_test_cases(
+                api_request=api_request,
+                user=request.user,
+                mode=mode,
+                count_per_request=count_per_request,
+            )
+            items.append(item)
+            created_total += item["created_count"]
+            skipped_count += 1 if item.get("skipped") else 0
+            ai_used_count += 1 if item.get("ai_used") else 0
+            if item.get("note"):
+                notes.append(str(item["note"]))
+
+        return Response(
+            {
+                "scope": scope,
+                "mode": mode,
+                "total_requests": len(api_requests),
+                "processed_requests": len(api_requests) - skipped_count,
+                "skipped_requests": skipped_count,
+                "created_testcase_count": created_total,
+                "ai_used_count": ai_used_count,
+                "note": " ".join(notes[:5]),
+                "items": items,
+            }
+        )
 
 
 class ApiEnvironmentViewSet(BaseModelViewSet):
