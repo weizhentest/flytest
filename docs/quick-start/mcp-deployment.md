@@ -10,7 +10,7 @@
 
 ## 注意！！！
 
-- **Docker 部署**：API Key 会在容器启动时自动初始化，默认 Key 为 `wharttest-default-mcp-key-2025`
+- **Docker 部署**：API Key 会在容器启动时自动初始化，默认 Key 为 `flytest-default-mcp-key-2025`
 - **源码部署**：需要在数据库迁移完成后，手动执行 `python manage.py init_admin` 初始化，默认 Key 同上
 
 ## 安装部署

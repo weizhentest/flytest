@@ -16,9 +16,9 @@
 
 GitHub Actions 会自动构建并推送以下三个镜像：
 
-- `ghcr.io/YOUR_USERNAME/wharttest-backend:latest` - Django 后端
-- `ghcr.io/YOUR_USERNAME/wharttest-frontend:latest` - Vue 前端
-- `ghcr.io/YOUR_USERNAME/wharttest-mcp:latest` - MCP 服务
+- `ghcr.io/YOUR_USERNAME/flytest-backend:latest` - Django 后端
+- `ghcr.io/YOUR_USERNAME/flytest-frontend:latest` - Vue 前端
+- `ghcr.io/YOUR_USERNAME/flytest-mcp:latest` - MCP 服务
 
 ### 3. 镜像标签策略
 
@@ -43,11 +43,11 @@ GitHub Actions 会自动构建并推送以下三个镜像：
 ```yaml
 services:
   backend:
-    image: ghcr.io/mg-duan/wharttest-backend:latest
+    image: ghcr.io/mg-duan/flytest-backend:latest
   frontend:
-    image: ghcr.io/mg-duan/wharttest-frontend:latest
+    image: ghcr.io/mg-duan/flytest-frontend:latest
   mcp:
-    image: ghcr.io/mg-duan/wharttest-mcp:latest
+    image: ghcr.io/mg-duan/flytest-mcp:latest
 ```
 
 ### 3. 设置镜像为公开（可选）
@@ -96,7 +96,7 @@ services:
     # build:
     #   context: ./FlyTest_Django
     #   dockerfile: Dockerfile
-    image: ghcr.io/your-github-username/wharttest-backend:latest
+    image: ghcr.io/your-github-username/flytest-backend:latest
 ```
 
 然后运行：
@@ -112,7 +112,7 @@ docker-compose up -d
 ```yaml
 services:
   backend:
-    image: ghcr.io/mg-duan/wharttest-backend:v1.0.0
+    image: ghcr.io/mg-duan/flytest-backend:v1.0.0
 ```
 
 ## 验证部署
@@ -245,7 +245,7 @@ DJANGO_ALLOWED_HOSTS=your-domain.com,www.your-domain.com
 DJANGO_CORS_ALLOWED_ORIGINS=https://your-domain.com
 
 # MCP 配置（如果使用）
-WHARTTEST_API_KEY=your-api-key
+FLYTEST_API_KEY=your-api-key
 ```
 
 ## 清理资源
@@ -259,9 +259,9 @@ docker-compose down
 ### 删除镜像
 
 ```bash
-docker image rm ghcr.io/your-github-username/wharttest-backend:latest
-docker image rm ghcr.io/your-github-username/wharttest-frontend:latest
-docker image rm ghcr.io/your-github-username/wharttest-mcp:latest
+docker image rm ghcr.io/your-github-username/flytest-backend:latest
+docker image rm ghcr.io/your-github-username/flytest-frontend:latest
+docker image rm ghcr.io/your-github-username/flytest-mcp:latest
 ```
 
 ### 清理构建缓存

@@ -177,7 +177,7 @@ v1.4.0 版本重点增强了 AI 智能交互能力和自动化测试生态。新
 
 #### Skills 生态扩展
 - 集成 `agent-browser` 工具，支持更强大的浏览器自动化操作
-- 新增 `wharttest_skills` 工具集，支持测试用例管理、项目查询及截图上传
+- 新增 `flytest_skills` 工具集，支持测试用例管理、项目查询及截图上传
 - 新增 `playwright-skill` 工具，提供专业的 Playwright 自动化测试能力
 - 适配标题生成模式知识库参数，并增加 Prompt 模块 ID 支持
 

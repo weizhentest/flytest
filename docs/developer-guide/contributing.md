@@ -88,7 +88,7 @@ docs(readme): 更新安装说明
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/MGdaasLab/WHartTest.git
+   git clone https://github.com/MGdaasLab/FlyTest.git
    cd FlyTest_Vue
    ```
 

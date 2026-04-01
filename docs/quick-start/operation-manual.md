@@ -356,7 +356,7 @@ curl -X POST http://localhost:8917/v1/models -d "{\"model_name\": \"bge-m3\", \"
 
 ## 15. key管理
 
-描述：FlyTest平台的api的key。目前是给 wharttest_mcp 使用的，可以使大模型拥有查询、保存、执行等能力。
+描述：FlyTest平台的api的key。目前是给 flytest_mcp 使用的，可以使大模型拥有查询、保存、执行等能力。
 
 注意！！！
 
@@ -372,7 +372,7 @@ v1.4.0（包括v1.4.0）之后的版本，还需要修改对应的skills。
 
 描述：docker默认会配置俩个mcp。
 
-FlyTest-Tools：使大模型拥有操控wharttest平台的能力。
+FlyTest-Tools：使大模型拥有操控flytest平台的能力。
 
 Playwright-MCP：使大模型拥有操作浏览器的能力。
 

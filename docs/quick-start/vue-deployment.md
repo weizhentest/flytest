@@ -17,7 +17,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/MGdaasLab/WHartTest.git
+git clone https://github.com/MGdaasLab/FlyTest.git
 
 # 进入项目目录
 cd FlyTest_Vue

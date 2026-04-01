@@ -12,17 +12,17 @@ services:
   # PostgreSQL 数据库服务（生产环境默认启用）
   postgres:
     image: ${DOCKER_POSTGRES_IMAGE:-postgres:16-alpine}
-    container_name: wharttest-postgres
+    container_name: flytest-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-wharttest}
+      POSTGRES_DB: ${POSTGRES_DB:-flytest}
     ports:
       - "8919:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
@@ -33,13 +33,13 @@ services:
   # Redis 服务 - Celery的broker和backend
   redis:
     image: ${DOCKER_REDIS_IMAGE:-redis:7-alpine}
-    container_name: wharttest-redis
+    container_name: flytest-redis
     ports:
       - "8911:6379"
     volumes:
       - redis-data:/data
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
@@ -50,12 +50,12 @@ services:
 
   # 后端 Django 服务（包含Celery Worker和Beat）
   backend:
-    image: ${DOCKER_BACKEND_IMAGE:-ghcr.io/mgdaaslab/wharttest-backend:latest}
+    image: ${DOCKER_BACKEND_IMAGE:-ghcr.io/mgdaaslab/flytest-backend:latest}
     # 如果需要本地构建，注释掉上面的image行，取消注释下面的build部分
     # build:
     #   context: ./FlyTest_Django
     #   dockerfile: Dockerfile
-    container_name: wharttest-backend
+    container_name: flytest-backend
     # 启动逻辑已移至 Dockerfile 的 ENTRYPOINT 和 supervisord.conf
     ports:
       - "8912:8000"
@@ -73,7 +73,7 @@ services:
       # PostgreSQL 配置（DATABASE_TYPE=postgres 时使用）
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - POSTGRES_DB=${POSTGRES_DB:-wharttest}
+      - POSTGRES_DB=${POSTGRES_DB:-flytest}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       # 其他配置
@@ -101,7 +101,7 @@ services:
       qdrant:
         condition: service_started
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/')" ]
@@ -112,18 +112,18 @@ services:
 
   # 前端 Vue 服务
   frontend:
-    image: ${DOCKER_FRONTEND_IMAGE:-ghcr.io/mgdaaslab/wharttest-frontend:latest}
+    image: ${DOCKER_FRONTEND_IMAGE:-ghcr.io/mgdaaslab/flytest-frontend:latest}
     # 如果需要本地构建，注释掉上面的image行，取消注释下面的build部分
     # build:
     #   context: ./FlyTest_Vue
     #   dockerfile: Dockerfile
-    container_name: wharttest-frontend
+    container_name: flytest-frontend
     ports:
       - "8913:80"
     depends_on:
       - backend
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
@@ -134,18 +134,18 @@ services:
 
   # MCP 服务（独立容器）
   mcp:
-    image: ${DOCKER_MCP_IMAGE:-ghcr.io/mgdaaslab/wharttest-mcp:latest}
+    image: ${DOCKER_MCP_IMAGE:-ghcr.io/mgdaaslab/flytest-mcp:latest}
     # 如果需要本地构建，注释掉上面的image行，取消注释下面的build部分
     # build:
     #   context: ./FlyTest_MCP
     #   dockerfile: Dockerfile
-    container_name: wharttest-mcp
+    container_name: flytest-mcp
     user: root
     environment:
       # FlyTest Tools 配置
-      - WHARTTEST_BACKEND_URL=${WHARTTEST_BACKEND_URL:-http://backend:8000}
+      - FLYTEST_BACKEND_URL=${FLYTEST_BACKEND_URL:-http://backend:8000}
       # 使用系统自动生成的默认API Key，生产环境请在.env中覆盖
-      - WHARTTEST_API_KEY=${WHARTTEST_API_KEY:-wharttest-default-mcp-key-2025}
+      - FLYTEST_API_KEY=${FLYTEST_API_KEY:-flytest-default-mcp-key-2025}
       # MS MCP API 配置（可选）
       - MS_API_HOST=${MS_API_HOST:-http://ms.example.com}
       - MS_ACCESS_KEY=${MS_ACCESS_KEY:-your_16byte_key1}
@@ -158,7 +158,7 @@ services:
     depends_on:
       - backend
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/')" ]
@@ -170,7 +170,7 @@ services:
   # Playwright MCP 服务（官方Docker镜像）
   playwright-mcp:
     image: ${DOCKER_PLAYWRIGHT_MCP_IMAGE:-mcr.microsoft.com/playwright/mcp}
-    container_name: wharttest-playwright-mcp
+    container_name: flytest-playwright-mcp
     user: root # 以 root 用户运行,确保有权限写入挂载目录
     entrypoint: node
     command: [ "cli.js", "--no-sandbox", "--host", "0.0.0.0", "--allowed-hosts", "*", "--config", "/app/playwright-mcp-config.json" ]
@@ -180,7 +180,7 @@ services:
       - ./data/playwright-screenshots:/tmp/playwright-output # 使用本地目录挂载
       - ./FlyTest_MCP/playwright-mcp-config.json:/app/playwright-mcp-config.json:ro # 挂载配置文件
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8931/mcp" ]
@@ -192,13 +192,13 @@ services:
   # Qdrant 向量数据库服务
   qdrant:
     image: ${DOCKER_QDRANT_IMAGE:-qdrant/qdrant:latest}
-    container_name: wharttest-qdrant
+    container_name: flytest-qdrant
     ports:
       - "8918:6333"  # REST API
     volumes:
       - qdrant-data:/qdrant/storage
     networks:
-      - wharttest-network
+      - flytest-network
     restart: unless-stopped
     deploy:
       resources:
@@ -208,7 +208,7 @@ services:
   # Xinference 模型推理服务（Embedding + Reranker）
   # xinference:
   #   image: xprobe/xinference:latest-cpu
-  #   container_name: wharttest-xinference
+  #   container_name: flytest-xinference
   #   ports:
   #     - "8917:9997"
   #   volumes:
@@ -217,7 +217,7 @@ services:
   #   environment:
   #     - HF_ENDPOINT=https://hf-mirror.com
   #   networks:
-  #     - wharttest-network
+  #     - flytest-network
   #   restart: unless-stopped
   #   command: xinference-local -H 0.0.0.0
   #   healthcheck:
@@ -242,7 +242,7 @@ services:
 #   -d '{"model_name": "bge-reranker-v2-m3", "model_type": "rerank", "model_uid": "bge-reranker-v2-m3"}'
 
 networks:
-  wharttest-network:
+  flytest-network:
     driver: bridge
 
 volumes:

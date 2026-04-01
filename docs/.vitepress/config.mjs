@@ -7,7 +7,7 @@ export default defineConfig({
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: true,
-  base: process.env.DEPLOY_TYPE === 'baota' ? '/docs/' : '/WHartTest/',
+  base: process.env.DEPLOY_TYPE === 'baota' ? '/docs/' : '/FlyTest/',
   head: [
     ['meta', { name: 'keywords', content: 'FlyTest, 测试自动化, AI 测试, 知识库, LangChain, LangGraph, MCP, Django, Vue, VitePress' }],
     ['meta', { property: 'og:title', content: 'FlyTest 文档' }],
@@ -112,7 +112,7 @@ export default defineConfig({
 
     // 如需展示仓库链接，请在此处配置你们的仓库地址
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/MGdaasLab/WHartTest' }
+      { icon: 'github', link: 'https://github.com/MGdaasLab/FlyTest' }
     ]
   }
 })

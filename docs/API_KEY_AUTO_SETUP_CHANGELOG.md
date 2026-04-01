@@ -8,7 +8,7 @@
 
 ### 1. 自动创建默认API Key
 
-- **固定Key值**: `wharttest-default-mcp-key-2025`
+- **固定Key值**: `flytest-default-mcp-key-2025`
 - **自动创建**: 后端首次启动时通过 `init_admin` 命令自动生成
 - **Key名称**: "Default MCP Key (Auto-generated)"
 - **描述**: 包含安全提示，提醒生产环境更换
@@ -52,7 +52,7 @@ docker-compose up -d     # 直接启动
 # 新增：自动创建默认API Key
 from api_keys.models import APIKey
 
-default_api_key_value = "wharttest-default-mcp-key-2025"
+default_api_key_value = "flytest-default-mcp-key-2025"
 
 APIKey.objects.create(
     user=admin_user,
@@ -68,28 +68,28 @@ APIKey.objects.create(
 **文件**: `.env.example` (根目录)
 ```bash
 # 旧值
-WHARTTEST_API_KEY=your_api_key_here
+FLYTEST_API_KEY=your_api_key_here
 
 # 新值
-WHARTTEST_API_KEY=wharttest-default-mcp-key-2025
+FLYTEST_API_KEY=flytest-default-mcp-key-2025
 ```
 
 **文件**: `FlyTest_MCP/.env.example`
 ```bash
 # 旧值
-WHARTTEST_API_KEY=your_api_key_here
+FLYTEST_API_KEY=your_api_key_here
 
 # 新值
-WHARTTEST_API_KEY=wharttest-default-mcp-key-2025
+FLYTEST_API_KEY=flytest-default-mcp-key-2025
 ```
 
 **文件**: `docker-compose.yml`
 ```yaml
 # 旧值
-- WHARTTEST_API_KEY=${WHARTTEST_API_KEY:-}
+- FLYTEST_API_KEY=${FLYTEST_API_KEY:-}
 
 # 新值
-- WHARTTEST_API_KEY=${WHARTTEST_API_KEY:-wharttest-default-mcp-key-2025}
+- FLYTEST_API_KEY=${FLYTEST_API_KEY:-flytest-default-mcp-key-2025}
 ```
 
 ### 文档更新
@@ -128,7 +128,7 @@ docker-compose up -d
 
 # 5. 更新配置
 vim .env
-# WHARTTEST_API_KEY=新创建的安全密钥
+# FLYTEST_API_KEY=新创建的安全密钥
 
 # 6. 重启MCP服务
 docker-compose restart mcp
@@ -197,8 +197,8 @@ docker-compose restart mcp
 如果需要回滚到手动配置方式：
 
 1. 修改 `init_admin.py`，移除自动创建Key的代码
-2. 恢复 `.env.example` 中的 `WHARTTEST_API_KEY=your_api_key_here`
-3. 修改 `docker-compose.yml`，设置 `WHARTTEST_API_KEY=${WHARTTEST_API_KEY:-}`
+2. 恢复 `.env.example` 中的 `FLYTEST_API_KEY=your_api_key_here`
+3. 修改 `docker-compose.yml`，设置 `FLYTEST_API_KEY=${FLYTEST_API_KEY:-}`
 4. 更新文档，恢复手动配置说明
 
 ## 📝 后续改进建议

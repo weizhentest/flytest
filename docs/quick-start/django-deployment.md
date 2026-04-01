@@ -11,7 +11,7 @@ Docker 提供了环境一致性，是生产环境部署的首选方案。
 ```bash
 使用 Docker 部署 (推荐)
 # 1. 克隆仓库
-git clone https://github.com/MGdaasLab/WHartTest.git
+git clone https://github.com/MGdaasLab/FlyTest.git
 cd FlyTest
 
 # 2. 配置环境变量

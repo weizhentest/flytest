@@ -27,7 +27,7 @@
 ## 快速上手（简要）
 1. 克隆仓库并进入项目根目录：
    ```bash
-   git clone https://github.com/MGdaasLab/WHartTest.git
+   git clone https://github.com/MGdaasLab/FlyTest.git
    cd FlyTest
    ```
 2. 使用 Docker Compose 启动所有服务：

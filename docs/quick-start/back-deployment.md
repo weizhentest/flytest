@@ -21,7 +21,7 @@ pip install uv
 
 #### 2. 克隆项目
 ```bash
-git clone https://github.com/MGdaasLab/WHartTest.git
+git clone https://github.com/MGdaasLab/FlyTest.git
 cd FlyTest_Django
 ```
 
@@ -61,5 +61,5 @@ uv run python manage.py init_admin
 #### 7.. 启动服务
 ```bash
 # 开发环境启动
-uv run uvicorn wharttest_django.asgi:application --reload --host 127.0.0.1 --port 8000
+uv run uvicorn flytest_django.asgi:application --reload --host 127.0.0.1 --port 8000
 ```

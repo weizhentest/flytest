@@ -29,7 +29,7 @@ docker-compose up -d
 首次启动时，系统会自动创建：
 
 ### 1. 默认API Key
-- **Key值**: `wharttest-default-mcp-key-2025`
+- **Key值**: `flytest-default-mcp-key-2025`
 - **用途**: MCP服务访问后端API
 
 ### 2. 默认MCP配置
@@ -60,7 +60,7 @@ docker-compose up -d
 
 ```bash
 # 替换为你的新Key
-WHARTTEST_API_KEY=你复制的新Key
+FLYTEST_API_KEY=你复制的新Key
 ```
 
 ### 步骤4：重启MCP服务
@@ -97,7 +97,7 @@ docker-compose up -d
 
 ```bash
 # 测试API Key是否有效
-curl -H "X-API-Key: wharttest-default-mcp-key-2025" \
+curl -H "X-API-Key: flytest-default-mcp-key-2025" \
   http://localhost:8912/api/projects/
 
 # 应该返回项目列表JSON

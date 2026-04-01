@@ -36,8 +36,8 @@ tmp/
 docker-images
 tmp-uiux-skill/
 ui-ux-pro-max-skill-main.zip
-WHartTest-master/
-WHartTest-master.zip
+FlyTest-master/
+FlyTest-master.zip
 *.zip
 
 # Cache directories
@@ -70,8 +70,8 @@ docs/_build/
 docs/.vitepress/cache/
 # Playwright截图目录
 playwright-screenshots/
-WHartTest_Django/chat_history.sqlite-shm
-WHartTest_Django/chat_history.sqlite-wal
+FlyTest_Django/chat_history.sqlite-shm
+FlyTest_Django/chat_history.sqlite-wal
 .gemini/settings.json
-WHartTest_Actuator/browsers/
-WHartTest_Django/celerybeat-schedule
+FlyTest_Actuator/browsers/
+FlyTest_Django/celerybeat-schedule
