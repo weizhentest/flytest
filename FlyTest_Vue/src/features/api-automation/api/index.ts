@@ -95,6 +95,7 @@ export const apiRequestApi = {
     project_id?: number
     mode: 'generate' | 'append' | 'regenerate'
     count_per_request?: number
+    apply_changes?: boolean
   }) => request.post<ApiResponse<ApiTestCaseGenerationResult>>(`${BASE_URL}/requests/generate-test-cases/`, data),
 }
 

@@ -46,6 +46,9 @@ DEFAULT_AI_CASE_GENERATION_REFERENCE_DOCUMENT_LIMIT = 1
 DEFAULT_AI_CASE_GENERATION_REFERENCE_CHUNK_LIMIT = 2
 DEFAULT_AI_CASE_GENERATION_REFERENCE_CANDIDATE_LIMIT = 24
 DEFAULT_AI_CASE_GENERATION_REFERENCE_TEXT_LIMIT = 220
+DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_BASE_LIMIT = 3
+DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_RETRIEVAL_LIMIT = 3
+DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_RETRIEVAL_THRESHOLD = 0.15
 
 SUPPORTED_BODY_TYPES = {"none", "json", "form", "urlencoded", "multipart", "raw", "xml", "graphql", "binary"}
 SUPPORTED_CASE_STATUSES = {"draft", "ready", "disabled"}
@@ -779,6 +782,129 @@ def _select_reference_entries(entries: list[dict[str, Any]], limit: int) -> list
     return ranked[:limit]
 
 
+def _build_knowledge_retrieval_query(api_request: ApiRequest, search_terms: list[str]) -> str:
+    request_spec = serialize_request_spec(api_request)
+    query_parts = [
+        str(api_request.name or "").strip(),
+        f"{api_request.method} {api_request.url}".strip(),
+        str(api_request.description or "").strip(),
+    ]
+    body_mode = str(request_spec.get("body_mode") or "").strip()
+    if body_mode and body_mode != "none":
+        query_parts.append(f"body_mode={body_mode}")
+    if search_terms:
+        query_parts.append("keywords: " + " ".join(search_terms[:6]))
+    return "\n".join(part for part in query_parts if part).strip()
+
+
+def _collect_knowledge_references_with_hybrid_search(
+    api_request: ApiRequest,
+    search_terms: list[str],
+) -> dict[str, Any]:
+    project = api_request.collection.project
+    query_text = _build_knowledge_retrieval_query(api_request, search_terms)
+    knowledge_bases = list(
+        project.knowledge_bases.filter(is_active=True, documents__status="completed")
+        .distinct()
+        .order_by("-updated_at")[:DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_BASE_LIMIT]
+    )
+    summary: dict[str, Any] = {
+        "query": _truncate_reference_text(query_text, 180),
+        "knowledge_base_count": len(knowledge_bases),
+        "searched_knowledge_bases": [kb.name for kb in knowledge_bases],
+        "used_hybrid_search": False,
+        "fallback_used": False,
+        "result_count": 0,
+    }
+    if not query_text or not knowledge_bases:
+        return {"references": [], "summary": summary}
+
+    try:
+        from knowledge.services import VectorStoreManager
+    except Exception as exc:  # noqa: BLE001
+        summary["fallback_used"] = True
+        summary["error"] = _truncate_reference_text(exc, 180)
+        return {"references": [], "summary": summary}
+
+    aggregated: list[dict[str, Any]] = []
+    errors: list[str] = []
+    seen_keys: set[str] = set()
+    for kb in knowledge_bases:
+        try:
+            manager = VectorStoreManager(kb)
+            results = manager.similarity_search(
+                query_text,
+                k=DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_RETRIEVAL_LIMIT,
+                score_threshold=DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_RETRIEVAL_THRESHOLD,
+            )
+            for index, result in enumerate(results):
+                metadata = result.get("metadata") or {}
+                content = str(result.get("content") or metadata.get("page_content") or "").strip()
+                if not content:
+                    continue
+                title = str(metadata.get("title") or metadata.get("source") or kb.name).strip()
+                similarity_score = float(result.get("similarity_score") or 0.0)
+                lexical_score, matched_terms = _score_reference_candidate(
+                    api_request=api_request,
+                    title=f"{title} {kb.name}",
+                    content=content,
+                    search_terms=search_terms,
+                )
+                dedup_key = "|".join(
+                    [
+                        str(kb.id),
+                        str(metadata.get("document_id") or ""),
+                        str(metadata.get("chunk_index") or ""),
+                        _digest_text(content)[:16],
+                    ]
+                )
+                if dedup_key in seen_keys:
+                    continue
+                seen_keys.add(dedup_key)
+                aggregated.append(
+                    {
+                        "source": "knowledge_chunk",
+                        "title": _truncate_reference_text(title, 120),
+                        "container_title": _truncate_reference_text(kb.name, 120),
+                        "snippet": _build_reference_snippet(content, search_terms),
+                        "score": max(int(round(similarity_score * 100)), lexical_score),
+                        "matched_terms": matched_terms,
+                        "recency_rank": max(DEFAULT_AI_CASE_GENERATION_KNOWLEDGE_RETRIEVAL_LIMIT - index, 0),
+                        "similarity_score": round(similarity_score, 4),
+                        "retrieval_method": "hybrid",
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "Knowledge hybrid retrieval unavailable for request %s in KB %s: %s",
+                api_request.id,
+                kb.id,
+                exc,
+            )
+            errors.append(f"{kb.name}: {exc}")
+
+    aggregated.sort(
+        key=lambda item: (
+            float(item.get("similarity_score") or 0.0),
+            int(item.get("score") or 0),
+            int(item.get("recency_rank") or 0),
+            str(item.get("title") or ""),
+        ),
+        reverse=True,
+    )
+    references = aggregated[:DEFAULT_AI_CASE_GENERATION_REFERENCE_CHUNK_LIMIT]
+    summary.update(
+        {
+            "used_hybrid_search": bool(references),
+            "fallback_used": not bool(references),
+            "result_count": len(references),
+        }
+    )
+    if errors:
+        summary["errors"] = [_truncate_reference_text(item, 160) for item in errors[:2]]
+    return {"references": references, "summary": summary}
+
+
 def _collect_requirement_module_references(api_request: ApiRequest, search_terms: list[str]) -> list[dict[str, Any]]:
     project = api_request.collection.project
     query = _build_reference_query(search_terms, ["title", "content", "document__title", "document__description"])
@@ -923,11 +1049,23 @@ def _collect_knowledge_document_references(api_request: ApiRequest, search_terms
 def _build_generation_reference_context(api_request: ApiRequest) -> dict[str, Any]:
     project = api_request.collection.project
     search_terms = _build_reference_search_terms(api_request)
+    knowledge_retrieval = _collect_knowledge_references_with_hybrid_search(api_request, search_terms)
+    knowledge_references = list(knowledge_retrieval.get("references") or [])
+    if not knowledge_references:
+        knowledge_references = _collect_knowledge_chunk_references(api_request, search_terms) + _collect_knowledge_document_references(
+            api_request, search_terms
+        )
+        knowledge_summary = dict(knowledge_retrieval.get("summary") or {})
+        knowledge_summary["fallback_result_count"] = len(knowledge_references)
+        knowledge_retrieval = {
+            "references": knowledge_references,
+            "summary": knowledge_summary,
+        }
+
     references = (
         _collect_requirement_module_references(api_request, search_terms)
         + _collect_requirement_document_references(api_request, search_terms)
-        + _collect_knowledge_chunk_references(api_request, search_terms)
-        + _collect_knowledge_document_references(api_request, search_terms)
+        + knowledge_references
     )
     references.sort(
         key=lambda item: (
@@ -951,6 +1089,7 @@ def _build_generation_reference_context(api_request: ApiRequest) -> dict[str, An
         "reference_count": len(references),
         "search_terms": search_terms[:6],
         "source_counts": source_counts,
+        "knowledge_retrieval": knowledge_retrieval.get("summary") or {},
     }
     if references:
         summary["generation_hint"] = "Prefer explicit requirement rules and project knowledge snippets when designing edge cases and assertions."
@@ -1543,6 +1682,39 @@ def _summarize_case_draft(api_request: ApiRequest, draft: GeneratedCaseDraft) ->
         "override_sections": _collect_override_sections(api_request, normalized_overrides),
         "body_mode": str(normalized_overrides.get("body_mode") or "none"),
     }
+
+
+def _summarize_persisted_test_case(api_request: ApiRequest, test_case: ApiTestCase) -> dict[str, Any]:
+    normalized_overrides = _canonicalize_request_overrides(serialize_test_case_override(test_case))
+    assertion_specs = serialize_assertion_specs(test_case)
+    extractor_specs = serialize_extractor_specs(test_case)
+    assertion_types = sorted(
+        {
+            str(item.get("assertion_type") or item.get("type") or "").strip()
+            for item in assertion_specs
+            if isinstance(item, dict) and str(item.get("assertion_type") or item.get("type") or "").strip()
+        }
+    )
+    extractor_variables = [
+        str(item.get("variable_name") or "").strip()
+        for item in extractor_specs
+        if isinstance(item, dict) and str(item.get("variable_name") or "").strip()
+    ]
+    return {
+        "name": str(test_case.name or ""),
+        "status": str(test_case.status or ""),
+        "tags": list(test_case.tags or []),
+        "assertion_count": len(assertion_specs),
+        "extractor_count": len(extractor_specs),
+        "assertion_types": assertion_types,
+        "extractor_variables": extractor_variables,
+        "override_sections": _collect_override_sections(api_request, normalized_overrides),
+        "body_mode": str(normalized_overrides.get("body_mode") or "none"),
+    }
+
+
+def summarize_persisted_test_cases(api_request: ApiRequest, test_cases: list[ApiTestCase]) -> list[dict[str, Any]]:
+    return [_summarize_persisted_test_case(api_request, test_case) for test_case in test_cases]
 
 
 def _summarize_case_drafts(api_request: ApiRequest, drafts: list[GeneratedCaseDraft]) -> list[dict[str, Any]]:

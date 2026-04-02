@@ -30,6 +30,7 @@ from .ai_case_generator import (
     _normalize_request_overrides,
     create_test_cases_from_drafts,
     generate_test_case_drafts_with_ai,
+    summarize_persisted_test_cases,
 )
 from .execution import ExecutionRunContext, execute_api_request
 from .import_service import process_document_import
@@ -1296,12 +1297,35 @@ def _serialize_generation_case_items(test_cases: list[ApiTestCase]):
     return serializer.data
 
 
+def _build_case_replacement_summary(
+    existing_case_summaries: list[dict],
+    proposed_case_summaries: list[dict],
+) -> dict[str, object]:
+    existing_names = [str(item.get("name") or "").strip() for item in existing_case_summaries if str(item.get("name") or "").strip()]
+    proposed_names = [str(item.get("name") or "").strip() for item in proposed_case_summaries if str(item.get("name") or "").strip()]
+    existing_name_set = set(existing_names)
+    proposed_name_set = set(proposed_names)
+    removed_case_names = [name for name in existing_names if name not in proposed_name_set]
+    added_case_names = [name for name in proposed_names if name not in existing_name_set]
+    unchanged_case_names = [name for name in proposed_names if name in existing_name_set]
+    return {
+        "existing_count": len(existing_case_summaries),
+        "proposed_count": len(proposed_case_summaries),
+        "will_remove_count": len(existing_case_summaries),
+        "will_create_count": len(proposed_case_summaries),
+        "removed_case_names": removed_case_names,
+        "added_case_names": added_case_names,
+        "unchanged_case_names": unchanged_case_names,
+    }
+
+
 def _generate_request_test_cases(
     *,
     api_request: ApiRequest,
     user,
     mode: str,
     count_per_request: int,
+    apply_changes: bool = False,
 ):
     existing_cases = list(api_request.test_cases.order_by("created_at"))
     if mode == "generate" and existing_cases:
@@ -1332,6 +1356,37 @@ def _generate_request_test_cases(
         count=count_per_request,
     )
 
+    existing_case_summaries = summarize_persisted_test_cases(api_request, existing_cases)
+    proposed_case_summaries = generation_result.case_summaries
+    replacement_summary = _build_case_replacement_summary(existing_case_summaries, proposed_case_summaries)
+
+    if mode == "regenerate" and not apply_changes:
+        return {
+            "request_id": api_request.id,
+            "request_name": api_request.name,
+            "request_method": api_request.method,
+            "request_url": api_request.url,
+            "mode": mode,
+            "skipped": False,
+            "preview_only": True,
+            "requires_confirmation": True,
+            "created_count": 0,
+            "ai_used": generation_result.used_ai,
+            "ai_cache_hit": generation_result.cache_hit,
+            "ai_cache_key": generation_result.cache_key,
+            "ai_duration_ms": generation_result.duration_ms,
+            "ai_lock_wait_ms": generation_result.lock_wait_ms,
+            "note": generation_result.note,
+            "prompt_name": generation_result.prompt_name,
+            "prompt_source": generation_result.prompt_source,
+            "model_name": generation_result.model_name,
+            "case_summaries": proposed_case_summaries,
+            "existing_case_summaries": existing_case_summaries,
+            "proposed_case_summaries": proposed_case_summaries,
+            "replacement_summary": replacement_summary,
+            "items": [],
+        }
+
     if mode == "regenerate" and existing_cases:
         ApiTestCase.objects.filter(id__in=[item.id for item in existing_cases]).delete()
         existing_cases = []
@@ -1348,6 +1403,8 @@ def _generate_request_test_cases(
         "request_url": api_request.url,
         "mode": mode,
         "skipped": False,
+        "preview_only": False,
+        "requires_confirmation": False,
         "created_count": len(created_cases),
         "ai_used": generation_result.used_ai,
         "ai_cache_hit": generation_result.cache_hit,
@@ -1358,7 +1415,10 @@ def _generate_request_test_cases(
         "prompt_name": generation_result.prompt_name,
         "prompt_source": generation_result.prompt_source,
         "model_name": generation_result.model_name,
-        "case_summaries": generation_result.case_summaries,
+        "case_summaries": proposed_case_summaries,
+        "existing_case_summaries": existing_case_summaries if mode == "regenerate" else [],
+        "proposed_case_summaries": proposed_case_summaries,
+        "replacement_summary": replacement_summary if mode == "regenerate" else None,
         "items": _serialize_generation_case_items(created_cases),
     }
 
@@ -1623,6 +1683,7 @@ class ApiRequestViewSet(BaseModelViewSet):
         collection_id = request.data.get("collection_id")
         mode = str(request.data.get("mode") or "generate").strip().lower()
         count_per_request = max(1, min(int(request.data.get("count_per_request") or 3), 10))
+        apply_changes = bool(_coerce_bool(request.data.get("apply_changes"), False))
 
         if mode not in {"generate", "append", "regenerate"}:
             return Response({"error": "mode 仅支持 generate、append、regenerate"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1642,6 +1703,7 @@ class ApiRequestViewSet(BaseModelViewSet):
         skipped_count = 0
         ai_used_count = 0
         ai_cache_hit_count = 0
+        preview_only_count = 0
         notes: list[str] = []
 
         for api_request in api_requests:
@@ -1650,12 +1712,14 @@ class ApiRequestViewSet(BaseModelViewSet):
                 user=request.user,
                 mode=mode,
                 count_per_request=count_per_request,
+                apply_changes=apply_changes,
             )
             items.append(item)
             created_total += item["created_count"]
             skipped_count += 1 if item.get("skipped") else 0
             ai_used_count += 1 if item.get("ai_used") else 0
             ai_cache_hit_count += 1 if item.get("ai_cache_hit") else 0
+            preview_only_count += 1 if item.get("preview_only") else 0
             if item.get("note"):
                 notes.append(str(item["note"]))
 
@@ -1669,6 +1733,9 @@ class ApiRequestViewSet(BaseModelViewSet):
                 "created_testcase_count": created_total,
                 "ai_used_count": ai_used_count,
                 "ai_cache_hit_count": ai_cache_hit_count,
+                "preview_only": bool(preview_only_count),
+                "requires_confirmation": bool(preview_only_count),
+                "preview_request_count": preview_only_count,
                 "note": " ".join(notes[:5]),
                 "items": items,
             }

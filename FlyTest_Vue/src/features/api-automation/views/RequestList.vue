@@ -649,6 +649,15 @@ const requestCaseTotal = computed(() =>
 )
 
 type CaseGenerationMode = 'generate' | 'append' | 'regenerate'
+type CaseGenerationPayload = {
+  scope: 'selected' | 'collection' | 'project'
+  ids?: number[]
+  collection_id?: number
+  project_id?: number
+  mode: CaseGenerationMode
+  count_per_request?: number
+  apply_changes?: boolean
+}
 
 const requestRowSelection = {
   type: 'checkbox' as const,
@@ -1197,6 +1206,15 @@ const showCaseGenerationMessage = (summary: ApiTestCaseGenerationResult, mode: C
   Message.success(text)
 }
 
+const formatCaseSummaryLine = (caseItem: NonNullable<ApiTestCaseGenerationResult['items'][number]['case_summaries']>[number]) => {
+  const detailParts = [
+    caseItem.assertion_types.length ? `断言: ${caseItem.assertion_types.join(', ')}` : '断言: -',
+    caseItem.extractor_variables.length ? `提取变量: ${caseItem.extractor_variables.join(', ')}` : '提取变量: -',
+    caseItem.override_sections.length ? `覆盖字段: ${caseItem.override_sections.join(', ')}` : '覆盖字段: 无额外覆盖',
+  ]
+  return [`  - ${caseItem.name}`, `    ${detailParts.join(' | ')}`]
+}
+
 const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
   const lines: string[] = []
   summary.items.forEach(item => {
@@ -1210,14 +1228,42 @@ const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
     lines.push(header)
     if (metaParts.length) lines.push(`  ${metaParts.join(' / ')}`)
     item.case_summaries.forEach(caseItem => {
-      const detailParts = [
-        caseItem.assertion_types.length ? `断言: ${caseItem.assertion_types.join(', ')}` : '断言: -',
-        caseItem.extractor_variables.length ? `提取变量: ${caseItem.extractor_variables.join(', ')}` : '提取变量: -',
-        caseItem.override_sections.length ? `覆盖字段: ${caseItem.override_sections.join(', ')}` : '覆盖字段: 无额外覆盖',
-      ]
-      lines.push(`  - ${caseItem.name}`)
-      lines.push(`    ${detailParts.join(' | ')}`)
+      lines.push(...formatCaseSummaryLine(caseItem))
     })
+  })
+  return lines
+}
+
+const buildRegeneratePreviewLines = (summary: ApiTestCaseGenerationResult) => {
+  const lines: string[] = []
+  summary.items.forEach(item => {
+    if (!item.preview_only) return
+    const replacement = item.replacement_summary
+    lines.push(`${item.request_name} (${item.request_method} ${item.request_url})`)
+    lines.push(
+      `  当前 ${replacement?.existing_count ?? item.existing_case_summaries?.length ?? 0} 条用例，候选 ${replacement?.proposed_count ?? item.proposed_case_summaries?.length ?? 0} 条用例`
+    )
+    if (replacement?.removed_case_names?.length) {
+      lines.push(`  将移除: ${replacement.removed_case_names.join(', ')}`)
+    }
+    if (replacement?.added_case_names?.length) {
+      lines.push(`  将新增: ${replacement.added_case_names.join(', ')}`)
+    }
+    if (replacement?.unchanged_case_names?.length) {
+      lines.push(`  同名替换: ${replacement.unchanged_case_names.join(', ')}`)
+    }
+    if (item.existing_case_summaries?.length) {
+      lines.push('  当前用例:')
+      item.existing_case_summaries.forEach(caseItem => {
+        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
+      })
+    }
+    if (item.proposed_case_summaries?.length) {
+      lines.push('  候选用例:')
+      item.proposed_case_summaries.forEach(caseItem => {
+        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
+      })
+    }
   })
   return lines
 }
@@ -1237,20 +1283,52 @@ const showCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: C
   })
 }
 
+const confirmRegeneratePreview = (summary: ApiTestCaseGenerationResult) =>
+  new Promise<boolean>(resolve => {
+    const lines = buildRegeneratePreviewLines(summary)
+    let settled = false
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    Modal.confirm({
+      title: 'AI重生成预览',
+      okText: '确认替换',
+      cancelText: '取消',
+      alignCenter: true,
+      width: 980,
+      maskClosable: false,
+      content: () =>
+        h(
+          'div',
+          {
+            style:
+              'white-space: pre-wrap; line-height: 1.75; font-size: 13px; max-height: 68vh; overflow-y: auto;',
+          },
+          lines.join('\n')
+        ),
+      onOk: () => finish(true),
+      onCancel: () => finish(false),
+    })
+  })
+
 const generateCasesByScope = async (
-  payload: {
-    scope: 'selected' | 'collection' | 'project'
-    ids?: number[]
-    collection_id?: number
-    project_id?: number
-    mode: CaseGenerationMode
-    count_per_request?: number
-  },
+  payload: CaseGenerationPayload,
   targetRequestIds: number[] = []
 ) => {
   try {
     const res = await apiRequestApi.generateTestCases(payload)
     const summary = res.data.data
+    if (summary.preview_only && payload.mode === 'regenerate' && !payload.apply_changes) {
+      const confirmed = await confirmRegeneratePreview(summary)
+      if (!confirmed) {
+        Message.info('已取消替换当前测试用例')
+        return
+      }
+      await generateCasesByScope({ ...payload, apply_changes: true }, targetRequestIds)
+      return
+    }
     showCaseGenerationMessage(summary, payload.mode)
     showCaseGenerationInsight(summary, payload.mode)
     await loadRequests()

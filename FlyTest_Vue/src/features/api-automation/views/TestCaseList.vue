@@ -191,6 +191,7 @@ import type { ApiEnvironment, ApiExecutionBatchResult, ApiHttpEditorModel, ApiRe
 interface TestCaseGroup { key: string; requestId: number | null; requestName: string; requestMethod: string; requestUrl: string; totalCount: number; readyCount: number; updatedAt?: string; cases: ApiTestCase[] }
 interface TestCaseEditorForm { name: string; description: string; status: ApiTestCase['status']; tagsText: string; editor: ApiHttpEditorModel; workflow_steps: ApiTestCaseWorkflowEditorStep[]; scriptExtras: Record<string, any> }
 type CaseGenerationMode = 'generate' | 'append' | 'regenerate'
+type CaseGenerationPayload = { scope: 'selected' | 'collection' | 'project'; ids?: number[]; collection_id?: number; project_id?: number; mode: CaseGenerationMode; count_per_request?: number; apply_changes?: boolean }
 
 const props = defineProps<{ selectedCollectionId?: number; selectedCollectionName?: string; selectedRequestId?: number; selectedRequestName?: string }>()
 const emit = defineEmits<{ (e: 'executed'): void }>()
@@ -467,7 +468,7 @@ const executeCurrentScopeTestCases = async () => {
   return executeBatch({ scope: 'project', project_id: projectId.value, environment_id: selectedEnvironmentId.value }, '项目测试用例执行')
 }
 
-const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
+const legacyBuildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
   const lines: string[] = []
   summary.items.forEach(item => {
     if (item.skipped || !item.case_summaries?.length) return
@@ -490,6 +491,98 @@ const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
   return lines
 }
 
+const legacyShowCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
+  const lines = buildCaseSummaryLines(summary)
+  if (!lines.length) return
+  const title = mode === 'append' ? 'AI追加结果' : mode === 'regenerate' ? 'AI重生成结果' : 'AI生成结果'
+  Modal.info({
+    title,
+    okText: '知道了',
+    alignCenter: true,
+    width: 880,
+    content: () => h('div', { style: 'white-space: pre-wrap; line-height: 1.75; font-size: 13px;' }, lines.join('\n')),
+  })
+}
+
+const legacyGenerateCases = async (mode: CaseGenerationMode) => {
+  if (!props.selectedRequestId) return Message.warning('请先在左侧选择一个接口')
+  caseGenerationLoadingMode.value = mode
+  try {
+    const res = await apiRequestApi.generateTestCases({ scope: 'selected', ids: [props.selectedRequestId], mode, count_per_request: 3 })
+    const summary: ApiTestCaseGenerationResult = res.data.data
+    showCaseGenerationInsight(summary, mode)
+    const modeLabel = mode === 'append' ? '追加生成' : mode === 'regenerate' ? '重新生成' : '生成'
+    const cacheText = summary.ai_cache_hit_count ? ` 命中缓存 ${summary.ai_cache_hit_count} 个接口。` : ''
+    const text = `${modeLabel}完成：处理 ${summary.processed_requests}/${summary.total_requests} 个接口，新增 ${summary.created_testcase_count} 条测试用例。${cacheText}`
+    summary.skipped_requests ? Message.warning(`${text} 跳过 ${summary.skipped_requests} 个已有用例的接口。`) : Message.success(text)
+    await loadTestCases()
+  } catch (error: any) {
+    console.error('[TestCaseList] AI 生成测试用例失败:', error)
+    Message.error(error?.error || 'AI 生成测试用例失败')
+  } finally {
+    caseGenerationLoadingMode.value = ''
+  }
+}
+
+const formatCaseSummaryLine = (caseItem: NonNullable<ApiTestCaseGenerationResult['items'][number]['case_summaries']>[number]) => [
+  `  - ${caseItem.name}`,
+  `    断言: ${caseItem.assertion_types.length ? caseItem.assertion_types.join(', ') : '-'} | 提取变量: ${
+    caseItem.extractor_variables.length ? caseItem.extractor_variables.join(', ') : '-'
+  } | 覆盖字段: ${caseItem.override_sections.length ? caseItem.override_sections.join(', ') : '无额外覆盖'}`,
+]
+
+const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
+  const lines: string[] = []
+  summary.items.forEach(item => {
+    if (item.skipped || !item.case_summaries?.length) return
+    const metaParts = [
+      item.ai_used ? 'AI生成' : '模板回退',
+      item.ai_cache_hit ? '命中缓存' : null,
+      item.ai_duration_ms ? `耗时 ${Math.round(item.ai_duration_ms)} ms` : null,
+    ].filter(Boolean)
+    lines.push(`${item.request_name} (${item.request_method} ${item.request_url})`)
+    if (metaParts.length) lines.push(`  ${metaParts.join(' / ')}`)
+    item.case_summaries.forEach(caseItem => {
+      lines.push(...formatCaseSummaryLine(caseItem))
+    })
+  })
+  return lines
+}
+
+const buildRegeneratePreviewLines = (summary: ApiTestCaseGenerationResult) => {
+  const lines: string[] = []
+  summary.items.forEach(item => {
+    if (!item.preview_only) return
+    const replacement = item.replacement_summary
+    lines.push(`${item.request_name} (${item.request_method} ${item.request_url})`)
+    lines.push(
+      `  当前 ${replacement?.existing_count ?? item.existing_case_summaries?.length ?? 0} 条用例，候选 ${replacement?.proposed_count ?? item.proposed_case_summaries?.length ?? 0} 条用例`
+    )
+    if (replacement?.removed_case_names?.length) {
+      lines.push(`  将移除: ${replacement.removed_case_names.join(', ')}`)
+    }
+    if (replacement?.added_case_names?.length) {
+      lines.push(`  将新增: ${replacement.added_case_names.join(', ')}`)
+    }
+    if (replacement?.unchanged_case_names?.length) {
+      lines.push(`  同名替换: ${replacement.unchanged_case_names.join(', ')}`)
+    }
+    if (item.existing_case_summaries?.length) {
+      lines.push('  当前用例:')
+      item.existing_case_summaries.forEach(caseItem => {
+        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
+      })
+    }
+    if (item.proposed_case_summaries?.length) {
+      lines.push('  候选用例:')
+      item.proposed_case_summaries.forEach(caseItem => {
+        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
+      })
+    }
+  })
+  return lines
+}
+
 const showCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
   const lines = buildCaseSummaryLines(summary)
   if (!lines.length) return
@@ -503,12 +596,56 @@ const showCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: C
   })
 }
 
+const confirmRegeneratePreview = (summary: ApiTestCaseGenerationResult) =>
+  new Promise<boolean>(resolve => {
+    const lines = buildRegeneratePreviewLines(summary)
+    let settled = false
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    Modal.confirm({
+      title: 'AI重生成预览',
+      okText: '确认替换',
+      cancelText: '取消',
+      alignCenter: true,
+      width: 980,
+      maskClosable: false,
+      content: () =>
+        h(
+          'div',
+          {
+            style:
+              'white-space: pre-wrap; line-height: 1.75; font-size: 13px; max-height: 68vh; overflow-y: auto;',
+          },
+          lines.join('\n')
+        ),
+      onOk: () => finish(true),
+      onCancel: () => finish(false),
+    })
+  })
+
+const runCaseGeneration = async (payload: CaseGenerationPayload) => {
+  const res = await apiRequestApi.generateTestCases(payload)
+  const summary: ApiTestCaseGenerationResult = res.data.data
+  if (summary.preview_only && payload.mode === 'regenerate' && !payload.apply_changes) {
+    const confirmed = await confirmRegeneratePreview(summary)
+    if (!confirmed) {
+      Message.info('已取消替换当前测试用例')
+      return null
+    }
+    return runCaseGeneration({ ...payload, apply_changes: true })
+  }
+  return summary
+}
+
 const generateCases = async (mode: CaseGenerationMode) => {
   if (!props.selectedRequestId) return Message.warning('请先在左侧选择一个接口')
   caseGenerationLoadingMode.value = mode
   try {
-    const res = await apiRequestApi.generateTestCases({ scope: 'selected', ids: [props.selectedRequestId], mode, count_per_request: 3 })
-    const summary: ApiTestCaseGenerationResult = res.data.data
+    const summary = await runCaseGeneration({ scope: 'selected', ids: [props.selectedRequestId], mode, count_per_request: 3 })
+    if (!summary) return
     showCaseGenerationInsight(summary, mode)
     const modeLabel = mode === 'append' ? '追加生成' : mode === 'regenerate' ? '重新生成' : '生成'
     const cacheText = summary.ai_cache_hit_count ? ` 命中缓存 ${summary.ai_cache_hit_count} 个接口。` : ''

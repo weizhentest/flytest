@@ -996,6 +996,243 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
         self.assertLessEqual(prompt_text.count('"source": "knowledge_document"'), 1)
         cache.clear()
 
+    @patch("api_automation.ai_case_generator._collect_knowledge_references_with_hybrid_search")
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_prompt_prefers_hybrid_knowledge_retrieval_when_available(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+        mock_hybrid_references,
+    ):
+        cache.clear()
+        self._seed_reference_context()
+        mock_hybrid_references.return_value = {
+            "references": [
+                {
+                    "source": "knowledge_chunk",
+                    "title": "订单接口语义检索片段",
+                    "container_title": "CMS接口知识库",
+                    "snippet": "semantic retrieval says inventory not enough should return 409 and provide a clear error message.",
+                    "score": 92,
+                    "matched_terms": ["orders"],
+                    "recency_rank": 3,
+                    "similarity_score": 0.92,
+                    "retrieval_method": "hybrid",
+                }
+            ],
+            "summary": {
+                "query": "POST /api/orders",
+                "knowledge_base_count": 1,
+                "searched_knowledge_bases": ["CMS接口知识库"],
+                "used_hybrid_search": True,
+                "fallback_used": False,
+                "result_count": 1,
+            },
+        }
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with hybrid retrieval.",
+                    "cases": [
+                        {
+                            "name": "Create order - hybrid retrieval",
+                            "description": "Uses hybrid retrieval knowledge.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn('"used_hybrid_search": true', prompt_text)
+        self.assertIn("semantic retrieval says inventory not enough should return 409", prompt_text)
+        self.assertNotIn("/api/webhooks/notify", prompt_text)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator._collect_knowledge_references_with_hybrid_search")
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_falls_back_to_keyword_knowledge_context_when_hybrid_retrieval_is_unavailable(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+        mock_hybrid_references,
+    ):
+        cache.clear()
+        self._seed_reference_context()
+        mock_hybrid_references.return_value = {
+            "references": [],
+            "summary": {
+                "query": "POST /api/orders",
+                "knowledge_base_count": 1,
+                "searched_knowledge_bases": ["CMS接口知识库"],
+                "used_hybrid_search": False,
+                "fallback_used": True,
+                "result_count": 0,
+                "error": "vector store unavailable",
+            },
+        }
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with fallback keyword references.",
+                    "cases": [
+                        {
+                            "name": "Create order - fallback retrieval",
+                            "description": "Uses fallback keyword references.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn('"fallback_used": true', prompt_text)
+        self.assertIn("订单接口排错手册", prompt_text)
+        self.assertIn("inventory not enough", prompt_text)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator._collect_knowledge_references_with_hybrid_search")
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_cache_key_changes_when_hybrid_knowledge_context_changes(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+        mock_hybrid_references,
+    ):
+        cache.clear()
+        mock_hybrid_references.side_effect = [
+            {
+                "references": [
+                    {
+                        "source": "knowledge_chunk",
+                        "title": "订单语义片段A",
+                        "container_title": "CMS接口知识库",
+                        "snippet": "first semantic retrieval context",
+                        "score": 88,
+                        "matched_terms": ["orders"],
+                        "recency_rank": 3,
+                        "similarity_score": 0.88,
+                        "retrieval_method": "hybrid",
+                    }
+                ],
+                "summary": {
+                    "query": "POST /api/orders",
+                    "knowledge_base_count": 1,
+                    "searched_knowledge_bases": ["CMS接口知识库"],
+                    "used_hybrid_search": True,
+                    "fallback_used": False,
+                    "result_count": 1,
+                },
+            },
+            {
+                "references": [
+                    {
+                        "source": "knowledge_chunk",
+                        "title": "订单语义片段B",
+                        "container_title": "CMS接口知识库",
+                        "snippet": "second semantic retrieval context",
+                        "score": 90,
+                        "matched_terms": ["orders"],
+                        "recency_rank": 3,
+                        "similarity_score": 0.9,
+                        "retrieval_method": "hybrid",
+                    }
+                ],
+                "summary": {
+                    "query": "POST /api/orders",
+                    "knowledge_base_count": 1,
+                    "searched_knowledge_bases": ["CMS接口知识库"],
+                    "used_hybrid_search": True,
+                    "fallback_used": False,
+                    "result_count": 1,
+                },
+            },
+        ]
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with hybrid retrieval cache-awareness.",
+                    "cases": [
+                        {
+                            "name": "Create order - hybrid cache refresh",
+                            "description": "Ensures hybrid retrieval digest participates in cache key.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        first_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+        second_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self.assertTrue(first_result.used_ai)
+        self.assertFalse(first_result.cache_hit)
+        self.assertTrue(second_result.used_ai)
+        self.assertFalse(second_result.cache_hit)
+        self.assertNotEqual(first_result.cache_key, second_result.cache_key)
+        self.assertEqual(mock_safe_invoke.call_count, 2)
+        cache.clear()
+
 
 class ApiAutomationImporterParsingTests(SimpleTestCase):
     def test_postman_collection_preserves_query_auth_and_multipart_files(self):
@@ -2098,6 +2335,152 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["skipped_requests"], 1)
         self.assertEqual(payload["created_testcase_count"], 0)
         mock_generate.assert_not_called()
+
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_regenerate_mode_returns_preview_without_deleting_existing_cases(self, mock_generate):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            created_by=self.user,
+        )
+        existing_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="Create order - existing",
+            status="ready",
+            script={"request": {"method": "POST", "url": "/api/orders"}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI generated preview candidate",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            case_summaries=[
+                {
+                    "name": "Create order - regenerated",
+                    "status": "ready",
+                    "tags": ["ai-generated"],
+                    "assertion_count": 1,
+                    "extractor_count": 0,
+                    "assertion_types": ["status_code"],
+                    "extractor_variables": [],
+                    "override_sections": [],
+                    "body_mode": "none",
+                }
+            ],
+            cases=[
+                GeneratedCaseDraft(
+                    name="Create order - regenerated",
+                    description="Preview replacement",
+                    status="ready",
+                    tags=["ai-generated"],
+                    assertions=[{"assertion_type": "status_code", "expected_number": 200}],
+                    extractors=[],
+                    request_overrides={},
+                )
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/generate-test-cases/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "regenerate",
+                "count_per_request": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertTrue(payload["preview_only"])
+        self.assertTrue(payload["requires_confirmation"])
+        self.assertEqual(payload["preview_request_count"], 1)
+        self.assertEqual(payload["created_testcase_count"], 0)
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 1)
+        item = payload["items"][0]
+        self.assertTrue(item["preview_only"])
+        self.assertEqual(item["replacement_summary"]["existing_count"], 1)
+        self.assertEqual(item["replacement_summary"]["proposed_count"], 1)
+        self.assertEqual(item["replacement_summary"]["removed_case_names"], ["Create order - existing"])
+        self.assertEqual(item["replacement_summary"]["added_case_names"], ["Create order - regenerated"])
+        self.assertTrue(ApiTestCase.objects.filter(id=existing_case.id).exists())
+
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_regenerate_mode_applies_replacement_after_confirmation(self, mock_generate):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            created_by=self.user,
+        )
+        existing_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="Create order - existing",
+            status="ready",
+            script={"request": {"method": "POST", "url": "/api/orders"}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI applied replacement candidate",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            case_summaries=[
+                {
+                    "name": "Create order - regenerated",
+                    "status": "ready",
+                    "tags": ["ai-generated"],
+                    "assertion_count": 1,
+                    "extractor_count": 0,
+                    "assertion_types": ["status_code"],
+                    "extractor_variables": [],
+                    "override_sections": [],
+                    "body_mode": "none",
+                }
+            ],
+            cases=[
+                GeneratedCaseDraft(
+                    name="Create order - regenerated",
+                    description="Confirmed replacement",
+                    status="ready",
+                    tags=["ai-generated"],
+                    assertions=[{"assertion_type": "status_code", "expected_number": 200}],
+                    extractors=[],
+                    request_overrides={},
+                )
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/generate-test-cases/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "regenerate",
+                "count_per_request": 1,
+                "apply_changes": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertFalse(payload["preview_only"])
+        self.assertEqual(payload["created_testcase_count"], 1)
+        self.assertFalse(ApiTestCase.objects.filter(id=existing_case.id).exists())
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 1)
+        self.assertEqual(ApiTestCase.objects.get(request=api_request).name, "Create order - regenerated")
 
 
 class ApiAutomationExecutionTests(TestCase):

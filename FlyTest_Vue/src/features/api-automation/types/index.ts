@@ -581,6 +581,8 @@ export interface ApiTestCaseGenerationItem {
   mode: 'generate' | 'append' | 'regenerate'
   skipped?: boolean
   skipped_reason?: string
+  preview_only?: boolean
+  requires_confirmation?: boolean
   created_count: number
   ai_used: boolean
   ai_cache_hit?: boolean
@@ -602,6 +604,37 @@ export interface ApiTestCaseGenerationItem {
     override_sections: string[]
     body_mode: string
   }>
+  existing_case_summaries?: Array<{
+    name: string
+    status: string
+    tags: string[]
+    assertion_count: number
+    extractor_count: number
+    assertion_types: string[]
+    extractor_variables: string[]
+    override_sections: string[]
+    body_mode: string
+  }>
+  proposed_case_summaries?: Array<{
+    name: string
+    status: string
+    tags: string[]
+    assertion_count: number
+    extractor_count: number
+    assertion_types: string[]
+    extractor_variables: string[]
+    override_sections: string[]
+    body_mode: string
+  }>
+  replacement_summary?: {
+    existing_count: number
+    proposed_count: number
+    will_remove_count: number
+    will_create_count: number
+    removed_case_names: string[]
+    added_case_names: string[]
+    unchanged_case_names: string[]
+  } | null
   items: ApiTestCase[]
 }
 
@@ -614,6 +647,9 @@ export interface ApiTestCaseGenerationResult {
   created_testcase_count: number
   ai_used_count: number
   ai_cache_hit_count?: number
+  preview_only?: boolean
+  requires_confirmation?: boolean
+  preview_request_count?: number
   note?: string
   items: ApiTestCaseGenerationItem[]
 }
