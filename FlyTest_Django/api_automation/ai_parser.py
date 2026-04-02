@@ -5,9 +5,8 @@ import json
 import logging
 import os
 import re
-import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
 from typing import Any
@@ -19,6 +18,7 @@ from langgraph_integration.models import LLMConfig
 from prompts.models import PromptType, UserPrompt
 from prompts.services import get_default_prompts
 
+from .ai_runtime import build_ai_cache_key, run_ai_operation, stable_digest
 from .document_import import HTTP_METHODS, ParsedRequestData, load_document_content_for_ai
 
 logger = logging.getLogger(__name__)
@@ -32,9 +32,8 @@ DEFAULT_AI_DOCUMENT_MAX_CHARS = 8000
 DEFAULT_AI_PREPARSED_REQUESTS_MAX_CHARS = 3000
 DEFAULT_AI_TIMEOUT_SPLIT_MIN_CHARS = 2000
 DEFAULT_AI_TIMEOUT_SPLIT_MAX_DEPTH = 2
+DEFAULT_AI_ENHANCEMENT_CACHE_TTL_SECONDS = 1800
 DEFAULT_AI_NOTE = "AI 增强解析未生效，已回退到规则解析结果。"
-_AI_USER_PARSE_LOCKS: dict[str, threading.Lock] = {}
-_AI_USER_PARSE_LOCKS_GUARD = threading.Lock()
 
 
 def _ensure_not_cancelled(cancel_callback):
@@ -51,6 +50,10 @@ class AIEnhancementResult:
     prompt_name: str | None = None
     model_name: str | None = None
     requests: list[ParsedRequestData] | None = None
+    cache_hit: bool = False
+    cache_key: str | None = None
+    duration_ms: float | None = None
+    lock_wait_ms: float | None = None
 
 
 def create_llm_instance(active_config: LLMConfig, temperature: float = 0.1):
@@ -271,27 +274,70 @@ def _get_timeout_split_max_depth() -> int:
     )
 
 
-def _get_user_parse_lock(user) -> threading.Lock:
-    user_key = str(getattr(user, "pk", None) or "anonymous")
-    with _AI_USER_PARSE_LOCKS_GUARD:
-        lock = _AI_USER_PARSE_LOCKS.get(user_key)
-        if lock is None:
-            lock = threading.Lock()
-            _AI_USER_PARSE_LOCKS[user_key] = lock
-        return lock
-
-
-def _acquire_user_parse_lock(user) -> threading.Lock:
-    timeout_seconds = _read_int_env(
-        "API_AUTOMATION_AI_USER_LOCK_TIMEOUT_SECONDS",
-        DEFAULT_AI_USER_LOCK_TIMEOUT_SECONDS,
-        minimum=1,
-        maximum=300,
+def _get_ai_enhancement_cache_ttl() -> int:
+    return _read_int_env(
+        "API_AUTOMATION_AI_ENHANCEMENT_CACHE_TTL_SECONDS",
+        DEFAULT_AI_ENHANCEMENT_CACHE_TTL_SECONDS,
+        minimum=0,
+        maximum=24 * 60 * 60,
     )
-    lock = _get_user_parse_lock(user)
-    if lock.acquire(timeout=timeout_seconds):
-        return lock
-    raise RuntimeError("当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。")
+
+
+def _serialize_parsed_request_for_cache(item: ParsedRequestData) -> dict[str, Any]:
+    request_spec = item.request_spec if isinstance(item.request_spec, dict) else {}
+    return {
+        "name": item.name,
+        "method": item.method,
+        "url": item.url,
+        "description": item.description,
+        "headers": item.headers or {},
+        "params": item.params or {},
+        "body_type": item.body_type,
+        "body": item.body,
+        "assertions": item.assertions or [],
+        "request_spec": request_spec,
+        "assertion_specs": item.assertion_specs or [],
+        "extractor_specs": item.extractor_specs or [],
+        "collection_name": item.collection_name,
+    }
+
+
+def _build_ai_enhancement_cache_key(
+    *,
+    document_content: str,
+    source_type: str,
+    content_source_type: str,
+    marker_used: bool,
+    prompt_template: str,
+    model_name: str,
+    base_requests: list[ParsedRequestData],
+) -> str:
+    return build_ai_cache_key(
+        "document_import_enhancement",
+        {
+            "document_digest": stable_digest(document_content),
+            "source_type": source_type,
+            "content_source_type": content_source_type,
+            "marker_used": marker_used,
+            "prompt_digest": stable_digest(prompt_template),
+            "model_name": model_name,
+            "base_requests": [_serialize_parsed_request_for_cache(item) for item in base_requests],
+        },
+    )
+
+
+def _attach_runtime_meta(result: AIEnhancementResult, *, cache_hit: bool, cache_key: str | None, duration_ms: float, lock_wait_ms: float) -> AIEnhancementResult:
+    note = str(result.note or "").strip()
+    meta_note = "本次命中 AI 解析缓存，未再次调用模型。" if cache_hit else f"AI 解析耗时约 {duration_ms:.0f} ms。"
+    combined_note = f"{note} {meta_note}".strip() if note else meta_note
+    return replace(
+        result,
+        note=combined_note,
+        cache_hit=cache_hit,
+        cache_key=cache_key,
+        duration_ms=duration_ms,
+        lock_wait_ms=lock_wait_ms,
+    )
 
 
 def _build_ai_failure_note(exc: Exception) -> str:
@@ -671,10 +717,25 @@ def enhance_import_result_with_ai(
             requests=base_requests,
         )
 
-    user_lock = _acquire_user_parse_lock(user)
-    try:
-        _ensure_not_cancelled(cancel_callback)
-        document_content, content_source_type, marker_used = load_document_content_for_ai(file_path)
+    _ensure_not_cancelled(cancel_callback)
+    document_content, content_source_type, marker_used = load_document_content_for_ai(file_path)
+    cache_key = _build_ai_enhancement_cache_key(
+        document_content=document_content,
+        source_type=source_type,
+        content_source_type=content_source_type or source_type,
+        marker_used=marker_used,
+        prompt_template=prompt_template,
+        model_name=active_config.name,
+        base_requests=base_requests,
+    )
+    lock_timeout_seconds = _read_int_env(
+        "API_AUTOMATION_AI_USER_LOCK_TIMEOUT_SECONDS",
+        DEFAULT_AI_USER_LOCK_TIMEOUT_SECONDS,
+        minimum=1,
+        maximum=300,
+    )
+
+    def _compute_enhancement_result() -> AIEnhancementResult:
         chunks = _split_document_for_ai(document_content, max_chars=12000)
 
         payloads: list[dict[str, Any] | list[Any]] = []
@@ -835,6 +896,25 @@ def enhance_import_result_with_ai(
             model_name=active_config.name,
             requests=merged_requests,
         )
+
+    try:
+        result, runtime_meta = run_ai_operation(
+            user=user,
+            feature="document_import_enhancement",
+            cache_key=cache_key,
+            cache_ttl_seconds=_get_ai_enhancement_cache_ttl(),
+            lock_timeout_seconds=lock_timeout_seconds,
+            lock_error_message="当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。",
+            compute=_compute_enhancement_result,
+            should_cache=lambda item: bool(item.used and item.requests),
+        )
+        return _attach_runtime_meta(
+            result,
+            cache_hit=runtime_meta.cache_hit,
+            cache_key=runtime_meta.cache_key,
+            duration_ms=runtime_meta.duration_ms,
+            lock_wait_ms=runtime_meta.lock_wait_ms,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("API automation AI enhancement failed: %s", exc, exc_info=True)
         return AIEnhancementResult(
@@ -846,5 +926,3 @@ def enhance_import_result_with_ai(
             model_name=active_config.name,
             requests=base_requests,
         )
-    finally:
-        user_lock.release()

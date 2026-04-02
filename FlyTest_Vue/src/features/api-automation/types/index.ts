@@ -92,6 +92,8 @@ export interface ApiTransportSpec {
   retry_interval_ms: number | null
 }
 
+export type ApiAssertionExpectedValueKind = 'text' | 'number' | 'json'
+
 export interface ApiAssertionSpec {
   id?: number
   enabled?: boolean
@@ -114,6 +116,7 @@ export interface ApiAssertionSpec {
   target?: string
   selector?: string
   operator?: string
+  expected_value_kind?: ApiAssertionExpectedValueKind
   expected_text?: string
   expected_number?: number | null
   expected_json?: Record<string, any> | any[]
@@ -136,6 +139,7 @@ export interface ApiExtractorSpec {
 
 export interface ApiRequestSpecPayload {
   id?: number
+  replace_fields?: string[]
   method: string
   url: string
   body_mode: ApiBodyMode
@@ -181,6 +185,61 @@ export interface ApiHttpEditorModel {
   graphql_query: string
   graphql_operation_name: string
   graphql_variables_text: string
+}
+
+export type ApiTestCaseWorkflowStage = 'prepare' | 'request' | 'teardown'
+
+export interface ApiTestCaseWorkflowStep {
+  name: string
+  stage: ApiTestCaseWorkflowStage
+  enabled?: boolean
+  request_id?: number | null
+  request_name?: string
+  continue_on_failure?: boolean
+  request_overrides?: ApiTestCaseOverrideSpecPayload
+  assertion_specs?: ApiAssertionSpec[]
+  extractor_specs?: ApiExtractorSpec[]
+}
+
+export interface ApiTestCaseWorkflowEditorStep {
+  key: string
+  name: string
+  stage: ApiTestCaseWorkflowStage
+  enabled: boolean
+  request_id: number | null
+  request_name: string
+  continue_on_failure: boolean
+  editor: ApiHttpEditorModel
+}
+
+export interface ApiExecutionWorkflowStepResult {
+  kind?: 'workflow_step' | 'main_request'
+  index?: number
+  name?: string
+  stage?: ApiTestCaseWorkflowStage | 'request'
+  continue_on_failure?: boolean
+  request_id?: number | null
+  request_name?: string
+  status?: 'success' | 'failed' | 'error'
+  passed?: boolean | null
+  status_code?: number | null
+  response_time?: number | null
+  error_message?: string
+  record_id?: number | null
+  record_request_name?: string
+  request_snapshot?: Record<string, any>
+  response_snapshot?: Record<string, any>
+  assertions_results?: Array<Record<string, any>>
+}
+
+export interface ApiExecutionWorkflowSummary {
+  enabled: boolean
+  configured_step_count: number
+  executed_step_count: number
+  failure_count: number
+  has_failure: boolean
+  main_request_executed: boolean
+  main_record_id?: number | null
 }
 
 export interface ApiRequest {
@@ -289,7 +348,54 @@ export interface ApiExecutionRecord {
   collection_id?: number | null
   collection_name?: string | null
   request_collection_name?: string
+  workflow_summary?: ApiExecutionWorkflowSummary | null
+  workflow_steps?: ApiExecutionWorkflowStepResult[]
+  main_request_blocked?: boolean
   created_at: string
+}
+
+export interface ApiExecutionFailureAnalysisCause {
+  title: string
+  detail: string
+  confidence?: number | null
+}
+
+export interface ApiExecutionFailureAnalysisAction {
+  title: string
+  detail: string
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface ApiExecutionFailureAnalysisEvidence {
+  label: string
+  detail: string
+}
+
+export interface ApiExecutionFailureAnalysisRelatedRecord {
+  id: number
+  status: 'success' | 'failed' | 'error' | string
+  status_code: number | null
+  response_time: number | null
+  error_message?: string | null
+  created_at: string | null
+}
+
+export interface ApiExecutionFailureAnalysis {
+  used_ai: boolean
+  note: string
+  summary: string
+  failure_mode: string
+  likely_root_causes: ApiExecutionFailureAnalysisCause[]
+  recommended_actions: ApiExecutionFailureAnalysisAction[]
+  evidence: ApiExecutionFailureAnalysisEvidence[]
+  recent_failures: ApiExecutionFailureAnalysisRelatedRecord[]
+  prompt_name?: string | null
+  prompt_source?: string | null
+  model_name?: string | null
+  cache_hit?: boolean
+  cache_key?: string | null
+  duration_ms?: number | null
+  lock_wait_ms?: number | null
 }
 
 export interface ApiExecutionReportSummary {
@@ -445,6 +551,7 @@ export interface ApiTestCase {
   request_override_spec?: ApiTestCaseOverrideSpecPayload
   assertion_specs?: ApiAssertionSpec[]
   extractor_specs?: ApiExtractorSpec[]
+  workflow_steps?: ApiTestCaseWorkflowStep[]
   creator: number | null
   creator_name?: string
   created_at: string
@@ -463,6 +570,7 @@ export interface ApiTestCaseForm {
   request_override_spec?: ApiTestCaseOverrideSpecPayload
   assertion_specs?: ApiAssertionSpec[]
   extractor_specs?: ApiExtractorSpec[]
+  workflow_steps?: ApiTestCaseWorkflowStep[]
 }
 
 export interface ApiTestCaseGenerationItem {
@@ -475,10 +583,25 @@ export interface ApiTestCaseGenerationItem {
   skipped_reason?: string
   created_count: number
   ai_used: boolean
+  ai_cache_hit?: boolean
+  ai_cache_key?: string | null
+  ai_duration_ms?: number | null
+  ai_lock_wait_ms?: number | null
   note?: string
   prompt_name?: string | null
   prompt_source?: string | null
   model_name?: string | null
+  case_summaries?: Array<{
+    name: string
+    status: string
+    tags: string[]
+    assertion_count: number
+    extractor_count: number
+    assertion_types: string[]
+    extractor_variables: string[]
+    override_sections: string[]
+    body_mode: string
+  }>
   items: ApiTestCase[]
 }
 
@@ -490,6 +613,7 @@ export interface ApiTestCaseGenerationResult {
   skipped_requests: number
   created_testcase_count: number
   ai_used_count: number
+  ai_cache_hit_count?: number
   note?: string
   items: ApiTestCaseGenerationItem[]
 }
@@ -507,6 +631,10 @@ export interface ApiImportResult {
   ai_prompt_source?: string | null
   ai_prompt_name?: string | null
   ai_model_name?: string | null
+  ai_cache_hit?: boolean
+  ai_cache_key?: string | null
+  ai_duration_ms?: number | null
+  ai_lock_wait_ms?: number | null
   environment_draft?: Partial<ApiEnvironmentForm> | null
   environment_items?: Partial<ApiEnvironmentForm>[]
   environment_auto_saved?: boolean

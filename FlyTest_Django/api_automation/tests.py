@@ -5,8 +5,12 @@ from unittest.mock import Mock, patch
 
 import httpx
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
+from knowledge.models import Document as KnowledgeDocument
+from knowledge.models import DocumentChunk, KnowledgeBase
+from requirements.models import RequirementDocument, RequirementModule
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -18,12 +22,21 @@ from .ai_parser import (
     _get_chunk_max_workers,
     _invoke_ai_for_chunk_with_timeout_fallback,
     create_llm_instance,
+    enhance_import_result_with_ai,
     safe_llm_invoke,
 )
-from .ai_case_generator import AITestCaseGenerationResult, GeneratedCaseDraft
+from .ai_case_generator import (
+    AITestCaseGenerationResult,
+    GeneratedCaseDraft,
+    create_test_cases_from_drafts,
+    generate_test_case_drafts_with_ai,
+)
+from .ai_failure_analyzer import analyze_execution_failure
 from .document_import import ParsedRequestData, extract_requests_from_curl, parse_openapi_document, parse_postman_collection
+from .execution import build_effective_request_spec, evaluate_structured_assertions
 from .models import ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
 from .services import build_request_url
+from .specs import apply_request_spec_payload, serialize_assertion_specs, serialize_extractor_specs, serialize_test_case_override
 
 
 class ApiAutomationAIParserTests(SimpleTestCase):
@@ -109,6 +122,879 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertIn("请求超时", note)
         self.assertIn("缩小文档分片", note)
         self.assertIn("回退", note)
+
+
+    @patch("api_automation.ai_parser._invoke_ai_for_chunk_with_timeout_fallback")
+    @patch("api_automation.ai_parser.load_document_content_for_ai")
+    @patch("api_automation.ai_parser.get_api_automation_prompt")
+    @patch("api_automation.ai_parser.LLMConfig.objects.filter")
+    def test_enhance_import_result_with_ai_reuses_cached_result(
+        self,
+        mock_filter,
+        mock_get_prompt,
+        mock_load_document,
+        mock_invoke_chunk,
+    ):
+        cache.clear()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_get_prompt.return_value = ("prompt-template", "builtin_default", "API自动化解析")
+        mock_load_document.return_value = ("# Demo API\nGET /users", "text_document", False)
+        mock_invoke_chunk.return_value = (
+            [
+                {
+                    "requests": [
+                        {
+                            "name": "List users",
+                            "method": "GET",
+                            "url": "/users",
+                        }
+                    ],
+                    "summary": "识别到 1 个接口",
+                }
+            ],
+            False,
+            False,
+            False,
+        )
+
+        result_first = enhance_import_result_with_ai(
+            file_path="demo.md",
+            user=SimpleNamespace(pk=1001),
+            source_type="text_document",
+            base_requests=[],
+        )
+        result_second = enhance_import_result_with_ai(
+            file_path="demo.md",
+            user=SimpleNamespace(pk=1001),
+            source_type="text_document",
+            base_requests=[],
+        )
+
+        self.assertTrue(result_first.used)
+        self.assertFalse(result_first.cache_hit)
+        self.assertTrue(result_second.used)
+        self.assertTrue(result_second.cache_hit)
+        self.assertEqual(mock_invoke_chunk.call_count, 1)
+        self.assertEqual(result_second.requests[0].name, "List users")
+        cache.clear()
+
+
+class ApiAutomationAICaseGeneratorTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="casegen_admin",
+            email="casegen_admin@example.com",
+            password="testpass123",
+        )
+        self.project = Project.objects.create(
+            name="AI Case Project",
+            description="project for ai case generation tests",
+            creator=self.user,
+        )
+        self.collection = ApiCollection.objects.create(
+            project=self.project,
+            name="Order APIs",
+            creator=self.user,
+        )
+        self.api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            headers={"X-Env": "test"},
+            params={},
+            body_type="json",
+            body={"sku": "A100", "qty": 1},
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+
+    def _create_execution_record(
+        self,
+        *,
+        suffix: str,
+        status: str,
+        passed: bool,
+        status_code: int | None,
+        test_case_name: str,
+        error_message: str = "",
+        assertions_results: list[dict] | None = None,
+        response_snapshot: dict | None = None,
+        request_snapshot: dict | None = None,
+    ) -> ApiExecutionRecord:
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=self.api_request,
+            name=test_case_name,
+            status="ready",
+            script={},
+            assertions=[],
+            creator=self.user,
+        )
+        return ApiExecutionRecord.objects.create(
+            project=self.project,
+            request=self.api_request,
+            test_case=test_case,
+            environment=None,
+            run_id=f"run-{suffix}",
+            run_name=f"Run {suffix}",
+            request_name=test_case_name,
+            method=self.api_request.method,
+            url=self.api_request.url,
+            status=status,
+            passed=passed,
+            status_code=status_code,
+            response_time=128.5,
+            request_snapshot=request_snapshot or {},
+            response_snapshot=response_snapshot or {},
+            assertions_results=assertions_results or [],
+            error_message=error_message,
+            executor=self.user,
+        )
+
+    def _seed_reference_context(self):
+        requirement_document = RequirementDocument.objects.create(
+            project=self.project,
+            title="CMS订单接口需求说明",
+            description="覆盖订单创建、鉴权、幂等与库存校验。",
+            document_type="md",
+            content="创建订单接口需要校验登录态、库存余量、SKU合法性，并返回订单号。",
+            status="review_completed",
+            uploader=self.user,
+        )
+        RequirementModule.objects.create(
+            document=requirement_document,
+            title="创建订单接口规则",
+            content=(
+                "接口 /api/orders 必须校验 token 是否有效；成功后返回 data.orderNo；"
+                "库存不足时返回 409，并给出明确错误信息。"
+            ),
+            order=1,
+            is_auto_generated=False,
+        )
+        RequirementModule.objects.create(
+            document=requirement_document,
+            title="用户资料模块",
+            content="这个模块主要描述用户资料查询，与订单创建无关。",
+            order=2,
+            is_auto_generated=False,
+        )
+
+        knowledge_base = KnowledgeBase.objects.create(
+            name="CMS接口知识库",
+            description="API automation knowledge",
+            project=self.project,
+            creator=self.user,
+            is_active=True,
+        )
+        knowledge_document = KnowledgeDocument.objects.create(
+            knowledge_base=knowledge_base,
+            title="订单接口排错手册",
+            document_type="txt",
+            content=(
+                "Create order API troubleshooting: when Authorization token is missing, the service returns 401. "
+                "When inventory is insufficient, return 409 and message inventory not enough."
+            ),
+            status="completed",
+            uploader=self.user,
+        )
+        DocumentChunk.objects.create(
+            document=knowledge_document,
+            chunk_index=0,
+            content="POST /api/orders should assert response code 200 and data.orderNo exists on success.",
+        )
+        DocumentChunk.objects.create(
+            document=knowledge_document,
+            chunk_index=1,
+            content="Notification webhook troubleshooting for /api/webhooks/notify with event callback retries.",
+        )
+        return requirement_document, knowledge_document
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_append_generation_deduplicates_by_effective_request_and_assertion_semantics(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        existing_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=self.api_request,
+            name="Create order - Existing baseline",
+            status="ready",
+            script={"request_overrides": {}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated 3 candidate cases, including semantic duplicates.",
+                    "cases": [
+                        {
+                            "name": "Create order - Explicit baseline copy",
+                            "description": "Same as the existing baseline, but repeats default request fields explicitly.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "positive"],
+                            "assertions": [
+                                {"assertion_type": "status_code", "expected_number": 200},
+                            ],
+                            "request_overrides": {
+                                "method": "POST",
+                                "url": "/api/orders",
+                                "headers": [{"name": "X-Env", "value": "test", "enabled": True, "order": 0}],
+                                "body_mode": "json",
+                                "body_json": {"qty": 1, "sku": "A100"},
+                                "timeout_ms": 30000,
+                            },
+                        },
+                        {
+                            "name": "Create order - Order number exists",
+                            "description": "Checks whether the response contains an order number.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "regression"],
+                            "assertions": [
+                                {"assertion_type": "exists", "selector": "data.orderNo"},
+                                {"assertion_type": "status_code", "expected_number": 200},
+                            ],
+                            "request_overrides": {
+                                "headers": [
+                                    {"name": "X-Trace", "value": "scene-1", "enabled": True, "order": 1},
+                                    {"name": "X-Env", "value": "test", "enabled": True, "order": 0},
+                                ],
+                                "body_mode": "json",
+                                "body_json": {"sku": "A100", "qty": 1},
+                            },
+                        },
+                        {
+                            "name": "Create order - Order number exists copy",
+                            "description": "Semantically the same as the previous case, but with reordered fields and assertions.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "smoke"],
+                            "assertions": [
+                                {"assertion_type": "status_code", "expected_number": 200},
+                                {"assertion_type": "exists", "selector": "data.orderNo"},
+                            ],
+                            "request_overrides": {
+                                "headers": [
+                                    {"name": "X-Env", "value": "test", "enabled": True, "order": 0},
+                                    {"name": "X-Trace", "value": "scene-1", "enabled": True, "order": 1},
+                                ],
+                                "body_mode": "json",
+                                "body_json": {"qty": 1, "sku": "A100"},
+                                "timeout_ms": 30000,
+                            },
+                        },
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[existing_case],
+            mode="append",
+            count=3,
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(len(result.cases), 1)
+        self.assertEqual(result.cases[0].name, "Create order - Order number exists")
+        self.assertEqual(result.cases[0].assertions[0]["assertion_type"], "exists")
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_reuses_cached_ai_result(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated 1 cached case.",
+                    "cases": [
+                        {
+                            "name": "Create order - Cached smoke",
+                            "description": "Ensures cache reuse works.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "smoke"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "extractors": [{"source": "json_path", "selector": "data.id", "variable_name": "order_id"}],
+                            "request_overrides": {
+                                "headers": [{"name": "X-Scene", "value": "cache", "enabled": True, "order": 0}],
+                            },
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        first_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+        second_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self.assertTrue(first_result.used_ai)
+        self.assertFalse(first_result.cache_hit)
+        self.assertTrue(second_result.used_ai)
+        self.assertTrue(second_result.cache_hit)
+        self.assertEqual(mock_safe_invoke.call_count, 1)
+        self.assertEqual(second_result.case_summaries[0]["override_sections"], ["headers"])
+        self.assertEqual(second_result.case_summaries[0]["extractor_variables"], ["order_id"])
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_ai_generation_normalizes_rich_http_overrides_and_persists_specs(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generate richer HTTP coverage.",
+                    "cases": [
+                        {
+                            "name": "Create order - Cookie auth multipart upload",
+                            "description": "Uses multipart payload, cookie auth, transport overrides and richer assertions.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "multipart"],
+                            "assertions": [
+                                {"type": "status_range", "min_value": "200", "max_value": "299"},
+                                {"type": "header", "path": "Content-Type", "operator": "contains", "expected": "json"},
+                                {"type": "response_time", "operator": "lte", "expected_number": "1500"},
+                                {
+                                    "type": "json_schema",
+                                    "schema_text": {
+                                        "type": "object",
+                                        "properties": {"code": {"type": "integer"}},
+                                    },
+                                },
+                            ],
+                            "extractors": [
+                                {"type": "header", "path": "X-Trace-Id", "name": "trace_id", "required": "true"},
+                            ],
+                            "request_overrides": {
+                                "body_type": "multipart",
+                                "body": {"scene": "avatar"},
+                                "cookies": {"locale": "zh-CN"},
+                                "files": [
+                                    {
+                                        "name": "file",
+                                        "path": "{{avatar_path}}",
+                                        "filename": "avatar.png",
+                                        "contentType": "image/png",
+                                    }
+                                ],
+                                "auth": {
+                                    "type": "apikey",
+                                    "in": "cookie",
+                                    "key": "sessionid",
+                                    "value": "{{session_cookie}}",
+                                    "variable": "session_cookie",
+                                },
+                                "transport": {
+                                    "verify": "false",
+                                    "follow_redirect": "false",
+                                    "retries": "2",
+                                    "retry_interval": "800",
+                                    "proxy": "http://127.0.0.1:7890",
+                                },
+                                "timeout_ms": "45000",
+                            },
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(len(result.cases), 1)
+        draft = result.cases[0]
+        self.assertIn("supported_auth_types", mock_safe_invoke.call_args.args[1][1].content)
+        self.assertEqual(draft.request_overrides["body_mode"], "multipart")
+        self.assertEqual(draft.request_overrides["multipart_parts"][0]["name"], "scene")
+        self.assertEqual(draft.request_overrides["files"][0]["field_name"], "file")
+        self.assertEqual(draft.request_overrides["files"][0]["content_type"], "image/png")
+        self.assertEqual(draft.request_overrides["auth"]["auth_type"], "api_key")
+        self.assertEqual(draft.request_overrides["auth"]["api_key_in"], "cookie")
+        self.assertFalse(draft.request_overrides["transport"]["verify_ssl"])
+        self.assertFalse(draft.request_overrides["transport"]["follow_redirects"])
+        self.assertEqual(draft.request_overrides["transport"]["retry_count"], 2)
+        self.assertEqual(draft.request_overrides["transport"]["retry_interval_ms"], 800)
+        self.assertEqual(draft.request_overrides["timeout_ms"], 45000)
+        self.assertEqual(draft.assertions[0]["min_value"], 200)
+        self.assertEqual(draft.assertions[3]["schema_text"], '{"type": "object", "properties": {"code": {"type": "integer"}}}')
+        self.assertTrue(draft.extractors[0]["required"])
+
+        created_cases = create_test_cases_from_drafts(
+            api_request=self.api_request,
+            drafts=result.cases,
+            creator=self.user,
+        )
+
+        self.assertEqual(len(created_cases), 1)
+        stored_override = serialize_test_case_override(created_cases[0])
+        stored_assertions = serialize_assertion_specs(created_cases[0])
+        stored_extractors = serialize_extractor_specs(created_cases[0])
+        self.assertEqual(stored_override["body_mode"], "multipart")
+        self.assertEqual(stored_override["cookies"][0]["name"], "locale")
+        self.assertEqual(stored_override["files"][0]["field_name"], "file")
+        self.assertEqual(stored_override["files"][0]["content_type"], "image/png")
+        self.assertEqual(stored_override["auth"]["auth_type"], "api_key")
+        self.assertEqual(stored_override["auth"]["api_key_in"], "cookie")
+        self.assertEqual(stored_override["transport"]["verify_ssl"], False)
+        self.assertEqual(stored_override["transport"]["follow_redirects"], False)
+        self.assertEqual(stored_override["transport"]["retry_count"], 2)
+        self.assertEqual(stored_assertions[0]["assertion_type"], "status_range")
+        self.assertEqual(stored_assertions[0]["min_value"], 200.0)
+        self.assertEqual(stored_extractors[0]["source"], "header")
+        self.assertEqual(stored_extractors[0]["variable_name"], "trace_id")
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_prompt_includes_recent_execution_history_context(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        self._create_execution_record(
+            suffix="history-failed",
+            status="failed",
+            passed=False,
+            status_code=401,
+            test_case_name="Create order - expired token",
+            error_message="token invalid",
+            assertions_results=[
+                {"index": 1, "type": "status_code", "expected": 200, "actual": 401, "passed": False},
+            ],
+            response_snapshot={"body": {"message": "token invalid"}},
+            request_snapshot={
+                "main_request_blocked": True,
+                "workflow_summary": {
+                    "enabled": True,
+                    "configured_step_count": 1,
+                    "executed_step_count": 1,
+                    "main_request_executed": False,
+                },
+                "workflow_steps": [
+                    {
+                        "index": 0,
+                        "name": "Refresh login token",
+                        "stage": "prepare",
+                        "status": "failed",
+                        "status_code": 401,
+                        "error_message": "refresh token expired",
+                    }
+                ],
+            },
+        )
+        self._create_execution_record(
+            suffix="history-success",
+            status="success",
+            passed=True,
+            status_code=200,
+            test_case_name="Create order - stable baseline",
+            assertions_results=[
+                {"index": 1, "type": "status_code", "expected": 200, "actual": 200, "passed": True},
+                {"index": 2, "type": "exists", "path": "data.orderNo", "passed": True},
+            ],
+            response_snapshot={"body": {"message": "ok"}},
+        )
+
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with history context.",
+                    "cases": [
+                        {
+                            "name": "Create order - auth retry",
+                            "description": "Covers auth retry.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn("recent_failed_examples", prompt_text)
+        self.assertIn("token invalid", prompt_text)
+        self.assertIn("auth_or_permission", prompt_text)
+        self.assertIn("Create order - stable baseline", prompt_text)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_cache_key_changes_when_execution_history_changes(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with cache-awareness.",
+                    "cases": [
+                        {
+                            "name": "Create order - cache refresh",
+                            "description": "Ensures history digest participates in cache key.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        first_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self._create_execution_record(
+            suffix="cache-new-failure",
+            status="failed",
+            passed=False,
+            status_code=500,
+            test_case_name="Create order - new failure signal",
+            error_message="inventory service unavailable",
+            assertions_results=[
+                {"index": 1, "type": "status_code", "expected": 200, "actual": 500, "passed": False},
+            ],
+            response_snapshot={"body": {"message": "inventory service unavailable"}},
+        )
+
+        second_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self.assertTrue(first_result.used_ai)
+        self.assertFalse(first_result.cache_hit)
+        self.assertTrue(second_result.used_ai)
+        self.assertFalse(second_result.cache_hit)
+        self.assertNotEqual(first_result.cache_key, second_result.cache_key)
+        self.assertEqual(mock_safe_invoke.call_count, 2)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_history_context_uses_recent_bounded_examples(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        for index in range(1, 6):
+            self._create_execution_record(
+                suffix=f"failed-{index}",
+                status="failed",
+                passed=False,
+                status_code=400 + index,
+                test_case_name=f"History failed case {index}",
+                error_message=f"failed marker {index}",
+                assertions_results=[
+                    {"index": 1, "type": "status_code", "expected": 200, "actual": 400 + index, "passed": False},
+                ],
+                response_snapshot={"body": {"message": f"failed marker {index}"}},
+            )
+        for index in range(1, 4):
+            self._create_execution_record(
+                suffix=f"success-{index}",
+                status="success",
+                passed=True,
+                status_code=200,
+                test_case_name=f"History success case {index}",
+                assertions_results=[
+                    {"index": 1, "type": "status_code", "expected": 200, "actual": 200, "passed": True},
+                ],
+                response_snapshot={"body": {"message": f"success marker {index}"}},
+            )
+
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with bounded history.",
+                    "cases": [
+                        {
+                            "name": "Create order - bounded history",
+                            "description": "Ensures only recent examples are injected.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn("History failed case 5", prompt_text)
+        self.assertIn("History failed case 4", prompt_text)
+        self.assertIn("History failed case 3", prompt_text)
+        self.assertNotIn("History failed case 1", prompt_text)
+        self.assertIn("History success case 3", prompt_text)
+        self.assertIn("History success case 2", prompt_text)
+        self.assertNotIn("History success case 1", prompt_text)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_prompt_includes_project_requirement_and_knowledge_context(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        self._seed_reference_context()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with project references.",
+                    "cases": [
+                        {
+                            "name": "Create order - project context",
+                            "description": "Uses requirement and knowledge references.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn('"reference_available": true', prompt_text)
+        self.assertIn("创建订单接口规则", prompt_text)
+        self.assertIn("订单接口排错手册", prompt_text)
+        self.assertIn("inventory not enough", prompt_text)
+        self.assertNotIn("/api/webhooks/notify", prompt_text)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_cache_key_changes_when_reference_context_changes(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        requirement_document, _knowledge_document = self._seed_reference_context()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with project reference cache-awareness.",
+                    "cases": [
+                        {
+                            "name": "Create order - doc cache refresh",
+                            "description": "Ensures document digest participates in cache key.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        first_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        module = requirement_document.modules.get(title="创建订单接口规则")
+        module.content = f"{module.content} 新增规则：重复请求时应返回 409 并提示幂等冲突。"
+        module.save(update_fields=["content", "updated_at"])
+
+        second_result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        self.assertTrue(first_result.used_ai)
+        self.assertFalse(first_result.cache_hit)
+        self.assertTrue(second_result.used_ai)
+        self.assertFalse(second_result.cache_hit)
+        self.assertNotEqual(first_result.cache_key, second_result.cache_key)
+        self.assertEqual(mock_safe_invoke.call_count, 2)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_reference_context_is_bounded_per_source(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        requirement_document, knowledge_document = self._seed_reference_context()
+        for index in range(2, 6):
+            RequirementModule.objects.create(
+                document=requirement_document,
+                title=f"创建订单补充规则 {index}",
+                content=f"/api/orders additional rule {index}: verify sku and qty boundary {index}.",
+                order=index,
+                is_auto_generated=False,
+            )
+        for index in range(2, 5):
+            DocumentChunk.objects.create(
+                document=knowledge_document,
+                chunk_index=index,
+                content=f"/api/orders chunk {index}: response should include orderNo and verify auth token.",
+            )
+
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with bounded project references.",
+                    "cases": [
+                        {
+                            "name": "Create order - bounded project references",
+                            "description": "Ensures per-source bounds stay stable.",
+                            "status": "ready",
+                            "tags": ["ai-generated"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="append",
+            count=1,
+        )
+
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertEqual(prompt_text.count('"source": "requirement_module"'), 2)
+        self.assertEqual(prompt_text.count('"source": "knowledge_chunk"'), 2)
+        self.assertLessEqual(prompt_text.count('"source": "requirement_document"'), 1)
+        self.assertLessEqual(prompt_text.count('"source": "knowledge_document"'), 1)
+        cache.clear()
 
 
 class ApiAutomationImporterParsingTests(SimpleTestCase):
@@ -290,6 +1176,343 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
         self.assertEqual(upload_request.request_spec["files"][0]["field_name"], "file")
         self.assertEqual(upload_request.request_spec["multipart_parts"][0]["name"], "scene")
 
+    def test_openapi_document_supports_graphql_json_cookie_vendor_xml_and_encoded_multipart(self):
+        spec = {
+            "openapi": "3.1.0",
+            "paths": {
+                "/graphql-json": {
+                    "post": {
+                        "summary": "GraphQL JSON",
+                        "parameters": [
+                            {
+                                "name": "sessionid",
+                                "in": "cookie",
+                                "schema": {"default": "cookie-1"},
+                            }
+                        ],
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "query": "query GetUser { user { id } }",
+                                        "operationName": "GetUser",
+                                        "variables": {"tenant": "cms"},
+                                    }
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/vendor-xml": {
+                    "post": {
+                        "summary": "Vendor XML",
+                        "requestBody": {
+                            "content": {
+                                "application/vnd.cms+xml": {
+                                    "example": "<Request><scene>cms</scene></Request>"
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/upload-media": {
+                    "post": {
+                        "summary": "Upload media",
+                        "requestBody": {
+                            "content": {
+                                "multipart/form-data": {
+                                    "encoding": {
+                                        "file": {"contentType": "image/png"},
+                                        "attachments": {"contentType": "application/pdf"},
+                                    },
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "scene": {"type": "string", "default": "avatar"},
+                                            "file": {"type": "string", "format": "binary"},
+                                            "attachments": {
+                                                "type": "array",
+                                                "items": {"type": "string", "format": "binary"},
+                                            },
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+            },
+        }
+
+        requests = parse_openapi_document(spec)
+
+        graphql_request = next(item for item in requests if item.name == "GraphQL JSON")
+        vendor_xml_request = next(item for item in requests if item.name == "Vendor XML")
+        upload_request = next(item for item in requests if item.name == "Upload media")
+
+        self.assertEqual(graphql_request.request_spec["body_mode"], "graphql")
+        self.assertEqual(graphql_request.request_spec["graphql_operation_name"], "GetUser")
+        self.assertEqual(graphql_request.request_spec["cookies"][0]["name"], "sessionid")
+        self.assertEqual(vendor_xml_request.request_spec["body_mode"], "xml")
+        self.assertIn("<Request>", vendor_xml_request.request_spec["xml_text"])
+        self.assertEqual(upload_request.request_spec["body_mode"], "multipart")
+        self.assertEqual(upload_request.request_spec["files"][0]["content_type"], "image/png")
+        self.assertEqual(upload_request.request_spec["files"][1]["field_name"], "attachments")
+        self.assertEqual(upload_request.request_spec["files"][1]["content_type"], "application/pdf")
+        self.assertEqual(upload_request.request_spec["multipart_parts"][0]["name"], "scene")
+
+    def test_openapi_document_maps_security_schemes_to_structured_auth(self):
+        spec = {
+            "openapi": "3.0.3",
+            "components": {
+                "securitySchemes": {
+                    "BearerAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                    },
+                    "BasicAuth": {
+                        "type": "http",
+                        "scheme": "basic",
+                    },
+                    "QueryKey": {
+                        "type": "apiKey",
+                        "in": "query",
+                        "name": "api_key",
+                    },
+                    "CookieSession": {
+                        "type": "apiKey",
+                        "in": "cookie",
+                        "name": "sessionid",
+                    },
+                    "OAuthAuth": {
+                        "type": "oauth2",
+                        "flows": {
+                            "clientCredentials": {
+                                "tokenUrl": "https://example.com/oauth/token",
+                                "scopes": {},
+                            }
+                        },
+                    },
+                }
+            },
+            "security": [{"BearerAuth": []}],
+            "paths": {
+                "/profile": {
+                    "get": {
+                        "summary": "Profile",
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/admin": {
+                    "get": {
+                        "summary": "Admin",
+                        "security": [{"BasicAuth": []}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/search": {
+                    "get": {
+                        "summary": "Search",
+                        "security": [{"QueryKey": []}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/session": {
+                    "get": {
+                        "summary": "Session",
+                        "security": [{"CookieSession": []}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/oauth": {
+                    "get": {
+                        "summary": "OAuth Profile",
+                        "security": [{"OAuthAuth": []}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/public": {
+                    "get": {
+                        "summary": "Public",
+                        "security": [],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+            },
+        }
+
+        requests = parse_openapi_document(spec)
+
+        profile_request = next(item for item in requests if item.name == "Profile")
+        admin_request = next(item for item in requests if item.name == "Admin")
+        search_request = next(item for item in requests if item.name == "Search")
+        session_request = next(item for item in requests if item.name == "Session")
+        oauth_request = next(item for item in requests if item.name == "OAuth Profile")
+        public_request = next(item for item in requests if item.name == "Public")
+
+        self.assertEqual(profile_request.request_spec["auth"]["auth_type"], "bearer")
+        self.assertEqual(profile_request.request_spec["auth"]["header_name"], "Authorization")
+        self.assertEqual(admin_request.request_spec["auth"]["auth_type"], "basic")
+        self.assertEqual(search_request.request_spec["auth"]["auth_type"], "api_key")
+        self.assertEqual(search_request.request_spec["auth"]["api_key_in"], "query")
+        self.assertEqual(search_request.request_spec["auth"]["api_key_name"], "api_key")
+        self.assertEqual(session_request.request_spec["auth"]["auth_type"], "cookie")
+        self.assertEqual(session_request.request_spec["auth"]["cookie_name"], "sessionid")
+        self.assertEqual(oauth_request.request_spec["auth"]["auth_type"], "bearer")
+        self.assertEqual(public_request.request_spec["auth"]["auth_type"], "none")
+
+    def test_swagger_document_maps_security_definitions_and_refs(self):
+        spec = {
+            "swagger": "2.0",
+            "host": "example.com",
+            "basePath": "/api",
+            "schemes": ["https"],
+            "securityDefinitions": {
+                "BasicRef": {"$ref": "#/definitions/SecurityBasic"},
+                "HeaderKey": {
+                    "type": "apiKey",
+                    "name": "X-API-Key",
+                    "in": "header",
+                },
+            },
+            "security": [{"HeaderKey": []}],
+            "definitions": {
+                "SecurityBasic": {
+                    "type": "basic",
+                }
+            },
+            "parameters": {
+                "TraceId": {
+                    "name": "X-Trace-Id",
+                    "in": "header",
+                    "type": "string",
+                    "default": "trace-1",
+                }
+            },
+            "paths": {
+                "/reports": {
+                    "get": {
+                        "summary": "Report list",
+                        "parameters": [{"$ref": "#/parameters/TraceId"}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/admin/login": {
+                    "get": {
+                        "summary": "Swagger Basic",
+                        "security": [{"BasicRef": []}],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+            },
+        }
+
+        requests = parse_openapi_document(spec)
+
+        report_request = next(item for item in requests if item.name == "Report list")
+        login_request = next(item for item in requests if item.name == "Swagger Basic")
+
+        self.assertEqual(report_request.url, "https://example.com/api/reports")
+        self.assertEqual(report_request.request_spec["auth"]["auth_type"], "api_key")
+        self.assertEqual(report_request.request_spec["auth"]["api_key_name"], "X-API-Key")
+        self.assertEqual(report_request.request_spec["headers"][0]["name"], "X-Trace-Id")
+        self.assertEqual(login_request.request_spec["auth"]["auth_type"], "basic")
+
+    def test_swagger_document_supports_body_and_formdata_parameters(self):
+        spec = {
+            "swagger": "2.0",
+            "host": "example.com",
+            "basePath": "/api",
+            "schemes": ["https"],
+            "paths": {
+                "/users": {
+                    "post": {
+                        "summary": "Create user",
+                        "consumes": ["application/json"],
+                        "parameters": [
+                            {
+                                "name": "payload",
+                                "in": "body",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "username": {"type": "string", "default": "demo"},
+                                        "enabled": {"type": "boolean", "default": True},
+                                    },
+                                },
+                            }
+                        ],
+                        "responses": {"201": {"description": "created"}},
+                    }
+                },
+                "/login": {
+                    "post": {
+                        "summary": "Login form",
+                        "consumes": ["application/x-www-form-urlencoded"],
+                        "parameters": [
+                            {"name": "username", "in": "formData", "type": "string", "default": "admin"},
+                            {"name": "password", "in": "formData", "type": "string", "default": "admin"},
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/upload": {
+                    "post": {
+                        "summary": "Upload legacy file",
+                        "consumes": ["multipart/form-data"],
+                        "parameters": [
+                            {"name": "scene", "in": "formData", "type": "string", "default": "avatar"},
+                            {"name": "file", "in": "formData", "type": "file"},
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+                "/xml": {
+                    "post": {
+                        "summary": "Legacy XML",
+                        "consumes": ["application/xml"],
+                        "parameters": [
+                            {
+                                "name": "xmlBody",
+                                "in": "body",
+                                "x-example": "<Request><tenant>cms</tenant></Request>",
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    }
+                },
+            },
+        }
+
+        requests = parse_openapi_document(spec)
+
+        create_user_request = next(item for item in requests if item.name == "Create user")
+        login_form_request = next(item for item in requests if item.name == "Login form")
+        upload_request = next(item for item in requests if item.name == "Upload legacy file")
+        xml_request = next(item for item in requests if item.name == "Legacy XML")
+
+        self.assertEqual(create_user_request.url, "https://example.com/api/users")
+        self.assertEqual(create_user_request.request_spec["body_mode"], "json")
+        self.assertEqual(create_user_request.request_spec["body_json"]["username"], "demo")
+        self.assertTrue(create_user_request.request_spec["body_json"]["enabled"])
+        self.assertEqual(create_user_request.assertion_specs[0]["expected_number"], 201)
+
+        self.assertEqual(login_form_request.request_spec["body_mode"], "urlencoded")
+        self.assertEqual(login_form_request.request_spec["form_fields"][0]["name"], "username")
+        self.assertEqual(login_form_request.request_spec["form_fields"][1]["value"], "admin")
+
+        self.assertEqual(upload_request.request_spec["body_mode"], "multipart")
+        self.assertEqual(upload_request.request_spec["multipart_parts"][0]["name"], "scene")
+        self.assertEqual(upload_request.request_spec["files"][0]["field_name"], "file")
+        self.assertEqual(upload_request.request_spec["files"][0]["source_type"], "placeholder")
+
+        self.assertEqual(xml_request.request_spec["body_mode"], "xml")
+        self.assertIn("<Request>", xml_request.request_spec["xml_text"])
+
     def test_curl_import_supports_cookie_basic_auth_and_transport_flags(self):
         markdown = """
         ## Download report
@@ -314,6 +1537,53 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
         self.assertEqual(parsed.request_spec["cookies"][0]["name"], "sessionid")
         self.assertEqual(parsed.request_spec["body_mode"], "multipart")
         self.assertEqual(parsed.request_spec["files"][0]["field_name"], "file")
+
+    def test_curl_import_supports_get_head_timeout_user_agent_and_file_content_type(self):
+        markdown = """
+        ## Search users
+        ```bash
+        curl --get 'https://example.com/api/users?tenant=cms' \\
+          -A 'FlyTestBot/1.0' \\
+          --max-time 12.5 \\
+          -d page=2 \\
+          -d keyword=admin
+        ```
+
+        ## Check health
+        ```bash
+        curl -I https://example.com/health
+        ```
+
+        ## Upload avatar
+        ```bash
+        curl https://example.com/api/upload \\
+          -F 'scene=avatar' \\
+          -F 'file=@/tmp/avatar.png;type=image/png;filename=custom-avatar.png'
+        ```
+        """
+
+        requests = extract_requests_from_curl(markdown)
+
+        search_request = next(item for item in requests if item.url == "https://example.com/api/users")
+        health_request = next(item for item in requests if item.url == "https://example.com/health")
+        upload_request = next(item for item in requests if item.url == "https://example.com/api/upload")
+
+        self.assertEqual(search_request.method, "GET")
+        self.assertEqual(search_request.params["tenant"], "cms")
+        self.assertEqual(search_request.params["page"], "2")
+        self.assertEqual(search_request.params["keyword"], "admin")
+        self.assertEqual(search_request.request_spec["headers"][0]["name"], "User-Agent")
+        self.assertEqual(search_request.request_spec["headers"][0]["value"], "FlyTestBot/1.0")
+        self.assertEqual(search_request.request_spec["timeout_ms"], 12500)
+        self.assertEqual(search_request.request_spec["body_mode"], "none")
+
+        self.assertEqual(health_request.method, "HEAD")
+        self.assertEqual(health_request.request_spec["body_mode"], "none")
+
+        self.assertEqual(upload_request.method, "POST")
+        self.assertEqual(upload_request.request_spec["body_mode"], "multipart")
+        self.assertEqual(upload_request.request_spec["files"][0]["content_type"], "image/png")
+        self.assertEqual(upload_request.request_spec["files"][0]["file_name"], "custom-avatar.png")
 
 
 class ApiAutomationImportDocumentTests(TestCase):
@@ -870,6 +2140,88 @@ class ApiAutomationExecutionTests(TestCase):
             "https://cms-test.9635.com.cn/api/live/getLiveToken",
         )
 
+    def test_build_effective_request_spec_respects_explicit_empty_override_values(self):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            headers={"X-Env": "test"},
+            body_type="json",
+            body={"sku": "A100"},
+            created_by=self.user,
+        )
+        apply_request_spec_payload(
+            api_request,
+            {
+                "method": "POST",
+                "url": "/api/orders",
+                "body_mode": "json",
+                "body_json": {"sku": "A100"},
+                "raw_text": "legacy-body",
+                "xml_text": "",
+                "binary_base64": "",
+                "graphql_query": "",
+                "graphql_operation_name": "",
+                "graphql_variables": {"tenant": "cms"},
+                "timeout_ms": 30000,
+                "headers": [{"name": "X-Env", "value": "test", "enabled": True, "order": 0}],
+                "query": [],
+                "cookies": [],
+                "form_fields": [],
+                "multipart_parts": [],
+                "files": [],
+                "auth": {"auth_type": "none"},
+                "transport": {},
+            },
+        )
+
+        effective_spec = build_effective_request_spec(
+            api_request,
+            request_override={
+                "replace_fields": ["headers", "body_json", "raw_text", "graphql_variables"],
+                "headers": [],
+                "body_json": {},
+                "raw_text": "",
+                "graphql_variables": {},
+            },
+        )
+
+        self.assertEqual(effective_spec.headers, [])
+        self.assertEqual(effective_spec.body_json, {})
+        self.assertEqual(effective_spec.raw_text, "")
+        self.assertEqual(effective_spec.graphql_variables, {})
+
+    def test_evaluate_structured_assertions_supports_richer_operator_variants(self):
+        response = SimpleNamespace(
+            status_code=201,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            cookies={"sessionid": "cookie-123"},
+            text='{"data":{"roles":["editor"],"profile":{}},"trace":"trace-123"}',
+            is_success=True,
+        )
+        response_payload = {"data": {"roles": ["editor"], "profile": {}}, "trace": "trace-123"}
+
+        results, passed = evaluate_structured_assertions(
+            [
+                {"assertion_type": "status_code", "operator": "gte", "expected_number": 200},
+                {"assertion_type": "json_path", "selector": "data.roles", "operator": "contains", "expected_text": "editor"},
+                {"assertion_type": "json_path", "selector": "data.profile", "operator": "equals", "expected_json": {}},
+                {"assertion_type": "header", "selector": "Content-Type", "operator": "starts_with", "expected_text": "application/json"},
+                {"assertion_type": "cookie", "selector": "sessionid", "operator": "ends_with", "expected_text": "123"},
+                {"assertion_type": "regex", "selector": "trace-(\\d+)", "operator": "equals", "expected_text": "123"},
+                {"assertion_type": "array_length", "selector": "data.roles", "operator": "gt", "expected_number": 0},
+                {"assertion_type": "response_time", "operator": "lt", "expected_number": 200},
+            ],
+            response,
+            response_payload,
+            128.4,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(len(results), 8)
+        self.assertTrue(all(item["passed"] for item in results))
+
     def test_execute_request_reports_missing_environment_variables(self):
         environment = self.project.api_environments.create(
             name="Execution Env",
@@ -1113,6 +2465,94 @@ class ApiAutomationExecutionTests(TestCase):
         self.assertEqual(payload["error_count"], 0)
         self.assertEqual(payload["items"][1]["status"], "success")
 
+    @patch("api_automation.execution.httpx.AsyncClient")
+    def test_execute_batch_async_mode_reuses_run_level_cookie_jar(self, mock_async_client_cls):
+        login_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Async 鐧诲綍鎺ュ彛",
+            method="POST",
+            url="/api/login",
+            assertions=[{"type": "status_code", "expected": 200}],
+            order=1,
+            created_by=self.user,
+        )
+        profile_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Async 鑾峰彇璧勬枡",
+            method="GET",
+            url="/api/profile",
+            assertions=[{"type": "status_code", "expected": 200}],
+            order=2,
+            created_by=self.user,
+        )
+        environment = self.project.api_environments.create(
+            name="Async Cookie Env",
+            base_url="https://example.com",
+            creator=self.user,
+            is_default=True,
+        )
+
+        class MockResponse:
+            def __init__(self, status_code, payload, cookies=None):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.cookies = httpx.Cookies()
+                for key, value in (cookies or {}).items():
+                    self.cookies.set(key, value)
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        class FakeAsyncClient:
+            def __init__(self, **kwargs):
+                seed_cookies = kwargs.get("cookies") or httpx.Cookies()
+                self.cookies = httpx.Cookies()
+                self.session_cookies: dict[str, str] = {}
+                for cookie in seed_cookies.jar:
+                    self.cookies.set(cookie.name, cookie.value, domain=cookie.domain, path=cookie.path)
+                    self.session_cookies[cookie.name] = cookie.value
+
+            async def request(self, **kwargs):
+                visible_cookies = dict(self.session_cookies)
+                visible_cookies.update(kwargs.get("cookies") or {})
+                if kwargs["url"].endswith("/api/login"):
+                    self.cookies.set("sessionid", "async-cookie-123")
+                    self.session_cookies["sessionid"] = "async-cookie-123"
+                    return MockResponse(200, {"code": 200, "message": "ok"}, {"sessionid": "async-cookie-123"})
+                if kwargs["url"].endswith("/api/profile"):
+                    if visible_cookies.get("sessionid") != "async-cookie-123":
+                        return MockResponse(401, {"message": "missing session"})
+                    return MockResponse(200, {"code": 200, "data": {"user": "demo"}})
+                raise AssertionError(f"Unexpected url: {kwargs['url']}")
+
+            async def aclose(self):
+                return None
+
+        mock_async_client_cls.side_effect = lambda **kwargs: FakeAsyncClient(**kwargs)
+
+        response = self.client.post(
+            "/api/api-automation/requests/execute-batch/",
+            {
+                "scope": "selected",
+                "ids": [login_request.id, profile_request.id],
+                "environment_id": environment.id,
+                "execution_mode": "async",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["execution_mode"], "async")
+        self.assertEqual(payload["total_count"], 2)
+        self.assertEqual(mock_async_client_cls.call_count, 1, payload)
+        self.assertEqual(payload["success_count"], 2, payload)
+        self.assertEqual(payload["error_count"], 0)
+        self.assertEqual(payload["items"][1]["status"], "success")
+
     def test_execution_report_endpoint_returns_summary(self):
         request = ApiRequest.objects.create(
             collection=self.collection,
@@ -1153,6 +2593,172 @@ class ApiAutomationExecutionTests(TestCase):
         self.assertEqual(len(payload["recent_records"]), 1)
         self.assertEqual(len(payload["run_groups"]), 1)
         self.assertEqual(payload["run_groups"][0]["interface_count"], 1)
+
+    @patch("api_automation.ai_failure_analyzer.create_llm_instance")
+    @patch("api_automation.ai_failure_analyzer.LLMConfig.objects.filter")
+    @patch("api_automation.ai_failure_analyzer.safe_llm_invoke")
+    def test_execution_failure_analysis_endpoint_reuses_cached_ai_result(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="会员登录",
+            method="POST",
+            url="/api/login",
+            created_by=self.user,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="会员登录-错误密码",
+            status="ready",
+            script={"request_overrides": {"body_type": "json", "body": {"username": "demo", "password": "wrong"}}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+        record = ApiExecutionRecord.objects.create(
+            project=self.project,
+            request=api_request,
+            test_case=test_case,
+            environment=None,
+            run_id="run-ai-analysis-1",
+            run_name="登录失败复盘",
+            request_name=test_case.name,
+            method="POST",
+            url="/api/login",
+            status="failed",
+            passed=False,
+            status_code=401,
+            response_time=166.2,
+            request_snapshot={
+                "interface_name": api_request.name,
+                "workflow_summary": {"enabled": False, "configured_step_count": 0, "executed_step_count": 0},
+            },
+            response_snapshot={"body": {"message": "token invalid"}},
+            assertions_results=[
+                {"index": 0, "type": "status_code", "expected": 200, "actual": 401, "passed": False},
+            ],
+            error_message="token invalid",
+            executor=self.user,
+        )
+
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "认证信息失效，优先检查 token 和登录前置步骤。",
+                    "failure_mode": "auth_or_permission",
+                    "likely_root_causes": [
+                        {"title": "登录态失效", "detail": "当前返回 401，更像 token 失效或未正确传递。", "confidence": 0.93}
+                    ],
+                    "recommended_actions": [
+                        {"title": "检查认证变量", "detail": "确认 token、cookie 和环境变量是否仍有效。", "priority": "high"}
+                    ],
+                    "evidence": [
+                        {"label": "状态码", "detail": "当前响应状态码为 401。"}
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        response_first = self.client.post(
+            f"/api/api-automation/execution-records/{record.id}/analyze-failure/",
+            format="json",
+        )
+        response_second = self.client.post(
+            f"/api/api-automation/execution-records/{record.id}/analyze-failure/",
+            format="json",
+        )
+
+        self.assertEqual(response_first.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_second.status_code, status.HTTP_200_OK)
+        payload_first = self._payload(response_first)
+        payload_second = self._payload(response_second)
+        self.assertTrue(payload_first["used_ai"])
+        self.assertFalse(payload_first["cache_hit"])
+        self.assertTrue(payload_second["cache_hit"])
+        self.assertEqual(payload_second["failure_mode"], "auth_or_permission")
+        self.assertEqual(payload_second["likely_root_causes"][0]["title"], "登录态失效")
+        self.assertEqual(mock_safe_invoke.call_count, 1)
+        cache.clear()
+
+    def test_rule_based_failure_analysis_marks_workflow_blocked_record(self):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="读取用户信息",
+            method="GET",
+            url="/api/profile",
+            created_by=self.user,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="用户信息-前置失败阻断",
+            status="ready",
+            script={
+                "workflow_steps": [
+                    {"name": "登录获取 token", "stage": "prepare", "request_id": 9999},
+                ]
+            },
+            assertions=[],
+            creator=self.user,
+        )
+        record = ApiExecutionRecord.objects.create(
+            project=self.project,
+            request=api_request,
+            test_case=test_case,
+            environment=None,
+            run_id="run-rule-analysis-1",
+            run_name="规则复盘",
+            request_name=test_case.name,
+            method="GET",
+            url="/api/profile",
+            status="failed",
+            passed=False,
+            status_code=None,
+            response_time=None,
+            request_snapshot={
+                "main_request_blocked": True,
+                "workflow_summary": {
+                    "enabled": True,
+                    "configured_step_count": 1,
+                    "executed_step_count": 1,
+                    "failure_count": 1,
+                    "has_failure": True,
+                    "main_request_executed": False,
+                },
+                "workflow_steps": [
+                    {
+                        "index": 0,
+                        "name": "登录获取 token",
+                        "stage": "prepare",
+                        "status": "failed",
+                        "status_code": 401,
+                        "error_message": "token missing",
+                    }
+                ],
+            },
+            response_snapshot={},
+            assertions_results=[
+                {"type": "workflow_step", "passed": False, "message": "Workflow step failed: 登录获取 token"}
+            ],
+            error_message="Workflow step failed: 登录获取 token",
+            executor=self.user,
+        )
+
+        result = analyze_execution_failure(record=record, user=self.user)
+
+        self.assertFalse(result.used_ai)
+        self.assertEqual(result.failure_mode, "workflow_blocked")
+        self.assertIn("主请求", result.summary)
+        self.assertTrue(any("前置步骤" in item["title"] or "prepare" in item["detail"] for item in result.likely_root_causes))
+        self.assertTrue(any("变量" in item["detail"] or "步骤" in item["detail"] for item in result.recommended_actions))
 
     @patch("api_automation.execution.httpx.Client.request")
     def test_execute_test_case_persists_test_case_and_run_metadata(self, mock_request):
@@ -1202,6 +2808,382 @@ class ApiAutomationExecutionTests(TestCase):
         record = ApiExecutionRecord.objects.get(pk=payload["id"])
         self.assertEqual(record.test_case_id, test_case.id)
         self.assertTrue(record.run_id)
+
+    @patch("api_automation.execution.httpx.Client")
+    def test_execute_test_case_workflow_prepare_step_shares_variables_with_main_request(self, mock_client_cls):
+        login_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="登录取 Token",
+            method="POST",
+            url="/api/login",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        profile_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="读取用户信息",
+            method="GET",
+            url="/api/profile",
+            headers={"Authorization": "Bearer {{auth_token}}"},
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        environment = self.project.api_environments.create(
+            name="Workflow Env",
+            base_url="https://example.com",
+            creator=self.user,
+            is_default=True,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=profile_request,
+            name="用户信息-工作流取 token",
+            status="ready",
+            script={
+                "workflow_steps": [
+                    {
+                        "name": "Fetch token",
+                        "stage": "prepare",
+                        "request_id": login_request.id,
+                        "extractor_specs": [
+                            {
+                                "source": "json_path",
+                                "selector": "data.token",
+                                "variable_name": "auth_token",
+                                "required": True,
+                            }
+                        ],
+                    }
+                ]
+            },
+            assertions=[],
+            creator=self.user,
+        )
+
+        profile_headers = []
+
+        class MockResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.cookies = httpx.Cookies()
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.cookies = kwargs.get("cookies") or httpx.Cookies()
+
+            def request(self, **kwargs):
+                if kwargs["url"].endswith("/api/login"):
+                    return MockResponse(200, {"data": {"token": "token-xyz"}})
+                if kwargs["url"].endswith("/api/profile"):
+                    profile_headers.append((kwargs.get("headers") or {}).get("Authorization"))
+                    return MockResponse(200, {"code": 200, "message": "ok"})
+                raise AssertionError(f"Unexpected url: {kwargs['url']}")
+
+            def close(self):
+                return None
+
+        mock_client_cls.side_effect = lambda **kwargs: FakeClient(**kwargs)
+
+        response = self.client.post(
+            f"/api/api-automation/test-cases/{test_case.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(mock_client_cls.call_count, 1)
+        self.assertEqual(profile_headers, ["Bearer token-xyz"])
+        self.assertTrue(payload["workflow_summary"]["enabled"])
+        self.assertEqual(payload["workflow_summary"]["failure_count"], 0)
+        self.assertEqual(payload["workflow_steps"][0]["stage"], "prepare")
+        self.assertFalse(payload["main_request_blocked"])
+
+        record = ApiExecutionRecord.objects.get(pk=payload["id"])
+        self.assertEqual(record.request_snapshot["headers"]["Authorization"], "Bearer token-xyz")
+        self.assertTrue(record.request_snapshot["workflow_summary"]["enabled"])
+        self.assertEqual(record.request_snapshot["workflow_summary"]["failure_count"], 0)
+        self.assertEqual(record.request_snapshot["workflow_steps"][0]["stage"], "prepare")
+        self.assertEqual(record.request_snapshot["workflow_steps"][0]["status"], "success")
+        self.assertEqual(record.request_snapshot["workflow_steps"][1]["kind"], "main_request")
+
+    @patch("api_automation.execution.httpx.Client")
+    def test_execute_test_case_workflow_teardown_failure_marks_case_failed(self, mock_client_cls):
+        profile_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="读取用户信息",
+            method="GET",
+            url="/api/profile",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        logout_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="退出登录",
+            method="POST",
+            url="/api/logout",
+            created_by=self.user,
+        )
+        environment = self.project.api_environments.create(
+            name="Teardown Env",
+            base_url="https://example.com",
+            creator=self.user,
+            is_default=True,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=profile_request,
+            name="用户信息-含清理步骤",
+            status="ready",
+            script={
+                "workflow_steps": [
+                    {
+                        "name": "Cleanup session",
+                        "stage": "teardown",
+                        "request_id": logout_request.id,
+                    }
+                ]
+            },
+            assertions=[],
+            creator=self.user,
+        )
+
+        class MockResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.cookies = httpx.Cookies()
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.cookies = kwargs.get("cookies") or httpx.Cookies()
+
+            def request(self, **kwargs):
+                if kwargs["url"].endswith("/api/profile"):
+                    return MockResponse(200, {"code": 200})
+                if kwargs["url"].endswith("/api/logout"):
+                    return MockResponse(500, {"message": "logout failed"})
+                raise AssertionError(f"Unexpected url: {kwargs['url']}")
+
+            def close(self):
+                return None
+
+        mock_client_cls.side_effect = lambda **kwargs: FakeClient(**kwargs)
+
+        response = self.client.post(
+            f"/api/api-automation/test-cases/{test_case.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "failed")
+
+        record = ApiExecutionRecord.objects.get(pk=payload["id"])
+        self.assertFalse(record.passed)
+        self.assertIn("Workflow step failed", record.error_message)
+        self.assertEqual(record.request_snapshot["workflow_steps"][-1]["stage"], "teardown")
+        self.assertEqual(record.request_snapshot["workflow_steps"][-1]["status"], "failed")
+        self.assertTrue(any(item.get("type") == "workflow_step" for item in record.assertions_results))
+
+    @patch("api_automation.execution.httpx.Client")
+    def test_execute_test_case_workflow_prepare_failure_blocks_main_request_by_default(self, mock_client_cls):
+        prepare_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="准备登录态",
+            method="POST",
+            url="/api/setup",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        profile_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="读取用户信息",
+            method="GET",
+            url="/api/profile",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        environment = self.project.api_environments.create(
+            name="Block Env",
+            base_url="https://example.com",
+            creator=self.user,
+            is_default=True,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=profile_request,
+            name="用户信息-前置失败阻断",
+            status="ready",
+            script={
+                "workflow_steps": [
+                    {
+                        "name": "Prepare context",
+                        "stage": "prepare",
+                        "request_id": prepare_request.id,
+                    }
+                ]
+            },
+            assertions=[],
+            creator=self.user,
+        )
+
+        profile_call_count = 0
+
+        class MockResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.cookies = httpx.Cookies()
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.cookies = kwargs.get("cookies") or httpx.Cookies()
+
+            def request(self, **kwargs):
+                nonlocal profile_call_count
+                if kwargs["url"].endswith("/api/setup"):
+                    return MockResponse(500, {"message": "setup failed"})
+                if kwargs["url"].endswith("/api/profile"):
+                    profile_call_count += 1
+                    return MockResponse(200, {"code": 200})
+                raise AssertionError(f"Unexpected url: {kwargs['url']}")
+
+            def close(self):
+                return None
+
+        mock_client_cls.side_effect = lambda **kwargs: FakeClient(**kwargs)
+
+        response = self.client.post(
+            f"/api/api-automation/test-cases/{test_case.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(profile_call_count, 0)
+        self.assertTrue(payload["main_request_blocked"])
+        self.assertFalse(payload["workflow_summary"]["main_request_executed"])
+        self.assertEqual(payload["workflow_steps"][0]["status"], "failed")
+
+        record = ApiExecutionRecord.objects.get(pk=payload["id"])
+        self.assertTrue(record.request_snapshot["main_request_blocked"])
+        self.assertFalse(record.request_snapshot["workflow_summary"]["main_request_executed"])
+        self.assertIn("Workflow step failed", record.error_message)
+
+    @patch("api_automation.execution.httpx.Client")
+    def test_execute_test_case_workflow_continue_on_failure_still_runs_main_request(self, mock_client_cls):
+        prepare_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="准备登录态",
+            method="POST",
+            url="/api/setup",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        profile_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="读取用户信息",
+            method="GET",
+            url="/api/profile",
+            assertions=[{"type": "status_code", "expected": 200}],
+            created_by=self.user,
+        )
+        environment = self.project.api_environments.create(
+            name="Continue Env",
+            base_url="https://example.com",
+            creator=self.user,
+            is_default=True,
+        )
+        test_case = ApiTestCase.objects.create(
+            project=self.project,
+            request=profile_request,
+            name="用户信息-前置失败继续执行",
+            status="ready",
+            script={
+                "workflow_steps": [
+                    {
+                        "name": "Prepare context",
+                        "stage": "prepare",
+                        "request_id": prepare_request.id,
+                        "continue_on_failure": True,
+                    }
+                ]
+            },
+            assertions=[],
+            creator=self.user,
+        )
+
+        profile_call_count = 0
+
+        class MockResponse:
+            def __init__(self, status_code, payload):
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = {}
+                self.cookies = httpx.Cookies()
+                self.text = json.dumps(payload, ensure_ascii=False)
+                self.is_success = 200 <= status_code < 300
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                self.cookies = kwargs.get("cookies") or httpx.Cookies()
+
+            def request(self, **kwargs):
+                nonlocal profile_call_count
+                if kwargs["url"].endswith("/api/setup"):
+                    return MockResponse(500, {"message": "setup failed"})
+                if kwargs["url"].endswith("/api/profile"):
+                    profile_call_count += 1
+                    return MockResponse(200, {"code": 200})
+                raise AssertionError(f"Unexpected url: {kwargs['url']}")
+
+            def close(self):
+                return None
+
+        mock_client_cls.side_effect = lambda **kwargs: FakeClient(**kwargs)
+
+        response = self.client.post(
+            f"/api/api-automation/test-cases/{test_case.id}/execute/",
+            {"environment_id": environment.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(profile_call_count, 1)
+
+        record = ApiExecutionRecord.objects.get(pk=payload["id"])
+        self.assertTrue(record.request_snapshot["workflow_summary"]["main_request_executed"])
+        self.assertEqual(record.request_snapshot["workflow_steps"][0]["status"], "failed")
+        self.assertEqual(record.request_snapshot["workflow_steps"][1]["kind"], "main_request")
 
     def test_execution_report_includes_run_interface_and_failed_case_hierarchy(self):
         api_request = ApiRequest.objects.create(

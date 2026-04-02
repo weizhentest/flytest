@@ -315,27 +315,31 @@
           </div>
           <a-button size="small" @click="addAssertion">新增断言</a-button>
         </div>
+        <div v-if="!localModel.assertions.length" class="editor-empty">暂无断言配置</div>
         <div v-for="(item, index) in localModel.assertions" :key="`assertion-${index}`" class="assertion-card">
           <div class="assertion-card__top">
             <a-space wrap>
               <a-select v-model="item.assertion_type" style="width: 180px" @change="handleAssertionTypeChange(item)">
-                <a-option value="status_code" label="status_code" />
-                <a-option value="status_range" label="status_range" />
-                <a-option value="body_contains" label="body_contains" />
-                <a-option value="body_not_contains" label="body_not_contains" />
-                <a-option value="json_path" label="json_path" />
-                <a-option value="header" label="header" />
-                <a-option value="cookie" label="cookie" />
-                <a-option value="regex" label="regex" />
-                <a-option value="exists" label="exists" />
-                <a-option value="not_exists" label="not_exists" />
-                <a-option value="array_length" label="array_length" />
-                <a-option value="response_time" label="response_time" />
-                <a-option value="json_schema" label="json_schema" />
-                <a-option value="openapi_contract" label="openapi_contract" />
+                <a-option v-for="option in assertionTypeOptions" :key="option.value" :value="option.value" :label="option.label" />
               </a-select>
-              <a-input v-model="item.selector" style="width: 260px" placeholder="路径 / Header / Cookie / Regex" />
-              <a-input v-model="item.operator" style="width: 160px" placeholder="运算符" />
+              <a-select
+                v-if="showOperatorSelector(item.assertion_type)"
+                v-model="item.operator"
+                style="width: 160px"
+              >
+                <a-option
+                  v-for="option in getAssertionOperatorOptions(item.assertion_type)"
+                  :key="option.value"
+                  :value="option.value"
+                  :label="option.label"
+                />
+              </a-select>
+              <a-input
+                v-if="usesSelector(item.assertion_type)"
+                v-model="item.selector"
+                style="width: 280px"
+                :placeholder="getSelectorPlaceholder(item.assertion_type)"
+              />
             </a-space>
             <div class="kv-row__toggle">
               <span>启用</span>
@@ -361,12 +365,42 @@
             <a-textarea v-model="item.schema_text" :auto-size="{ minRows: 6, maxRows: 12 }" />
           </a-form-item>
 
+          <template v-else-if="usesFlexibleExpectedValue(item.assertion_type)">
+            <a-row :gutter="12">
+              <a-col :span="8">
+                <a-form-item label="期望值类型">
+                  <a-select v-model="item.expected_value_kind">
+                    <a-option value="text" label="文本" />
+                    <a-option value="number" label="数值" />
+                    <a-option value="json" label="JSON" />
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="16">
+                <a-form-item :label="getExpectedLabel(item.assertion_type)">
+                  <a-input-number
+                    v-if="item.expected_value_kind === 'number'"
+                    v-model="item.expected_number"
+                    style="width: 100%"
+                  />
+                  <a-textarea
+                    v-else-if="item.expected_value_kind === 'json'"
+                    v-model="item.expected_json_text"
+                    :auto-size="{ minRows: 4, maxRows: 10 }"
+                    placeholder='{"ok": true}'
+                  />
+                  <a-input v-else v-model="item.expected_text" :placeholder="getExpectedPlaceholder(item.assertion_type)" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </template>
+
           <a-form-item v-else-if="usesExpectedNumber(item.assertion_type)" label="期望数值">
             <a-input-number v-model="item.expected_number" style="width: 100%" />
           </a-form-item>
 
           <a-form-item v-else-if="usesExpectedText(item.assertion_type)" label="期望文本">
-            <a-input v-model="item.expected_text" placeholder="请输入期望值" />
+            <a-input v-model="item.expected_text" :placeholder="getExpectedPlaceholder(item.assertion_type)" />
           </a-form-item>
         </div>
       </a-tab-pane>
@@ -497,6 +531,22 @@ const emit = defineEmits<{
 }>()
 
 const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const assertionTypeOptions = [
+  { value: 'status_code', label: 'Status code' },
+  { value: 'status_range', label: 'Status range' },
+  { value: 'body_contains', label: 'Body contains' },
+  { value: 'body_not_contains', label: 'Body not contains' },
+  { value: 'json_path', label: 'JSONPath' },
+  { value: 'header', label: 'Header' },
+  { value: 'cookie', label: 'Cookie' },
+  { value: 'regex', label: 'Regex' },
+  { value: 'exists', label: 'Exists' },
+  { value: 'not_exists', label: 'Not exists' },
+  { value: 'array_length', label: 'Array length' },
+  { value: 'response_time', label: 'Response time' },
+  { value: 'json_schema', label: 'JSON Schema' },
+  { value: 'openapi_contract', label: 'OpenAPI Contract' },
+] as const
 const activeTab = ref('headers')
 const localModel = ref<ApiHttpEditorModel>(createEmptyHttpEditorModel())
 let syncingFromProps = false
@@ -562,12 +612,105 @@ const removeAt = (items: any[], index: number) => {
   items.splice(index, 1)
 }
 
+const getAssertionOperatorOptions = (type: ApiAssertionSpec['assertion_type']) => {
+  switch (type) {
+    case 'status_code':
+    case 'array_length':
+    case 'response_time':
+      return [
+        { value: 'equals', label: 'equals' },
+        { value: 'not_equals', label: 'not equals' },
+        { value: 'gt', label: '>' },
+        { value: 'gte', label: '>=' },
+        { value: 'lt', label: '<' },
+        { value: 'lte', label: '<=' },
+      ]
+    case 'json_path':
+      return [
+        { value: 'equals', label: 'equals' },
+        { value: 'not_equals', label: 'not equals' },
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'not contains' },
+        { value: 'gt', label: '>' },
+        { value: 'gte', label: '>=' },
+        { value: 'lt', label: '<' },
+        { value: 'lte', label: '<=' },
+      ]
+    case 'header':
+    case 'cookie':
+      return [
+        { value: 'equals', label: 'equals' },
+        { value: 'not_equals', label: 'not equals' },
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'not contains' },
+        { value: 'starts_with', label: 'starts with' },
+        { value: 'ends_with', label: 'ends with' },
+      ]
+    case 'regex':
+      return [
+        { value: 'exists', label: 'matches' },
+        { value: 'equals', label: 'equals' },
+        { value: 'contains', label: 'contains' },
+        { value: 'not_contains', label: 'not contains' },
+      ]
+    default:
+      return []
+  }
+}
+
+const usesSelector = (type: ApiAssertionSpec['assertion_type']) => {
+  return ['json_path', 'header', 'cookie', 'regex', 'exists', 'not_exists', 'array_length'].includes(type)
+}
+
+const showOperatorSelector = (type: ApiAssertionSpec['assertion_type']) => getAssertionOperatorOptions(type).length > 0
+
+const getSelectorPlaceholder = (type: ApiAssertionSpec['assertion_type']) => {
+  switch (type) {
+    case 'json_path':
+    case 'exists':
+    case 'not_exists':
+    case 'array_length':
+      return 'JSONPath, e.g. data.list'
+    case 'header':
+      return 'Header name, e.g. Content-Type'
+    case 'cookie':
+      return 'Cookie name, e.g. sessionid'
+    case 'regex':
+      return 'Regex pattern'
+    default:
+      return 'Selector'
+  }
+}
+
+const getExpectedLabel = (type: ApiAssertionSpec['assertion_type']) => {
+  if (type === 'response_time') return '阈值 (ms)'
+  return '期望值'
+}
+
+const getExpectedPlaceholder = (type: ApiAssertionSpec['assertion_type']) => {
+  switch (type) {
+    case 'body_contains':
+      return '输入必须出现的文本'
+    case 'body_not_contains':
+      return '输入不应出现的文本'
+    case 'header':
+    case 'cookie':
+      return '输入期望值'
+    case 'regex':
+      return '留空表示只校验正则命中'
+    case 'json_path':
+      return '输入期望值'
+    default:
+      return '请输入期望值'
+  }
+}
+
 const usesExpectedNumber = (type: ApiAssertionSpec['assertion_type']) => {
   return ['status_code', 'array_length', 'response_time'].includes(type)
 }
 
 const usesExpectedText = (type: ApiAssertionSpec['assertion_type']) => {
-  return ['body_contains', 'body_not_contains', 'json_path', 'header', 'cookie', 'regex'].includes(type)
+  return ['body_contains', 'body_not_contains', 'header', 'cookie', 'regex'].includes(type)
 }
 
 const usesRange = (type: ApiAssertionSpec['assertion_type']) => type === 'status_range'
@@ -576,21 +719,73 @@ const usesSchema = (type: ApiAssertionSpec['assertion_type']) => {
   return ['json_schema', 'openapi_contract'].includes(type)
 }
 
+const usesFlexibleExpectedValue = (type: ApiAssertionSpec['assertion_type']) => type === 'json_path'
+
 const handleAssertionTypeChange = (item: ApiAssertionSpec) => {
   if (item.assertion_type === 'status_code') {
     item.operator = 'equals'
+    item.expected_value_kind = 'number'
     item.expected_number = item.expected_number ?? 200
     item.target = 'body'
   } else if (item.assertion_type === 'status_range') {
     item.operator = 'between'
+    item.expected_value_kind = 'number'
+    item.target = 'body'
+  } else if (item.assertion_type === 'body_contains') {
+    item.operator = 'contains'
+    item.expected_value_kind = 'text'
+    item.target = 'body'
+  } else if (item.assertion_type === 'body_not_contains') {
+    item.operator = 'not_contains'
+    item.expected_value_kind = 'text'
     item.target = 'body'
   } else if (item.assertion_type === 'json_path') {
     item.target = 'json'
-    item.operator = item.operator || 'equals'
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'equals'
+    item.expected_value_kind = item.expected_value_kind || 'text'
   } else if (item.assertion_type === 'header') {
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'equals'
+    item.expected_value_kind = 'text'
     item.target = 'header'
   } else if (item.assertion_type === 'cookie') {
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'equals'
+    item.expected_value_kind = 'text'
     item.target = 'cookie'
+  } else if (item.assertion_type === 'regex') {
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'exists'
+    item.expected_value_kind = 'text'
+    item.target = 'body'
+  } else if (item.assertion_type === 'exists') {
+    item.operator = 'exists'
+    item.target = 'json'
+  } else if (item.assertion_type === 'not_exists') {
+    item.operator = 'not_exists'
+    item.target = 'json'
+  } else if (item.assertion_type === 'array_length') {
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'equals'
+    item.expected_value_kind = 'number'
+    item.expected_number = item.expected_number ?? 0
+    item.target = 'json'
+  } else if (item.assertion_type === 'response_time') {
+    item.operator = getAssertionOperatorOptions(item.assertion_type).some(option => option.value === item.operator)
+      ? item.operator
+      : 'lte'
+    item.expected_value_kind = 'number'
+    item.expected_number = item.expected_number ?? 1000
+    item.target = 'meta'
+  } else if (item.assertion_type === 'json_schema' || item.assertion_type === 'openapi_contract') {
+    item.operator = 'validates'
+    item.target = 'body'
   } else {
     item.target = item.target || 'body'
     item.operator = item.operator || 'equals'

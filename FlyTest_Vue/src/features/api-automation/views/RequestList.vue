@@ -452,6 +452,14 @@
           <a-descriptions-item label="生成接口">{{ importResult.created_count || 0 }}</a-descriptions-item>
           <a-descriptions-item label="生成脚本">{{ importResult.generated_script_count || 0 }}</a-descriptions-item>
           <a-descriptions-item label="生成测试用例">{{ importResult.created_testcase_count || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="AI缓存">
+            <a-tag :color="importResult.ai_cache_hit ? 'green' : 'gray'">
+              {{ importResult.ai_cache_hit ? '命中缓存' : '未命中' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="AI耗时">
+            {{ importResult.ai_duration_ms ? `${Math.round(importResult.ai_duration_ms)} ms` : '-' }}
+          </a-descriptions-item>
           <a-descriptions-item label="提示词来源">
             {{ importResult.ai_prompt_name || importResult.ai_prompt_source || '-' }}
           </a-descriptions-item>
@@ -495,8 +503,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { computed, h, onUnmounted, ref, watch } from 'vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
 import StructuredHttpEditor from '../components/StructuredHttpEditor.vue'
 import { apiRequestApi, environmentApi, testCaseApi } from '../api'
@@ -1180,12 +1188,53 @@ const showCaseGenerationMessage = (summary: ApiTestCaseGenerationResult, mode: C
     append: '追加生成',
     regenerate: '重新生成',
   }
-  const text = `${modeLabelMap[mode]}完成：处理 ${summary.processed_requests}/${summary.total_requests} 个接口，新增 ${summary.created_testcase_count} 条测试用例。`
+  const cacheText = summary.ai_cache_hit_count ? ` 命中缓存 ${summary.ai_cache_hit_count} 个接口。` : ''
+  const text = `${modeLabelMap[mode]}完成：处理 ${summary.processed_requests}/${summary.total_requests} 个接口，新增 ${summary.created_testcase_count} 条测试用例。${cacheText}`
   if (summary.skipped_requests) {
     Message.warning(`${text} 跳过 ${summary.skipped_requests} 个已有用例的接口。`)
     return
   }
   Message.success(text)
+}
+
+const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
+  const lines: string[] = []
+  summary.items.forEach(item => {
+    if (item.skipped || !item.case_summaries?.length) return
+    const header = `${item.request_name} (${item.request_method} ${item.request_url})`
+    const metaParts = [
+      item.ai_used ? 'AI生成' : '模板回退',
+      item.ai_cache_hit ? '命中缓存' : null,
+      item.ai_duration_ms ? `耗时 ${Math.round(item.ai_duration_ms)} ms` : null,
+    ].filter(Boolean)
+    lines.push(header)
+    if (metaParts.length) lines.push(`  ${metaParts.join(' / ')}`)
+    item.case_summaries.forEach(caseItem => {
+      const detailParts = [
+        caseItem.assertion_types.length ? `断言: ${caseItem.assertion_types.join(', ')}` : '断言: -',
+        caseItem.extractor_variables.length ? `提取变量: ${caseItem.extractor_variables.join(', ')}` : '提取变量: -',
+        caseItem.override_sections.length ? `覆盖字段: ${caseItem.override_sections.join(', ')}` : '覆盖字段: 无额外覆盖',
+      ]
+      lines.push(`  - ${caseItem.name}`)
+      lines.push(`    ${detailParts.join(' | ')}`)
+    })
+  })
+  return lines
+}
+
+const showCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
+  const lines = buildCaseSummaryLines(summary)
+  if (!lines.length) return
+  const titleMap: Record<CaseGenerationMode, string> = {
+    generate: 'AI生成结果',
+    append: 'AI追加结果',
+    regenerate: 'AI重生成结果',
+  }
+  Modal.info({
+    title: titleMap[mode],
+    okText: '知道了',
+    content: () => h('div', { style: 'white-space: pre-wrap; line-height: 1.75; font-size: 13px;' }, lines.join('\n')),
+  })
 }
 
 const generateCasesByScope = async (
@@ -1203,6 +1252,7 @@ const generateCasesByScope = async (
     const res = await apiRequestApi.generateTestCases(payload)
     const summary = res.data.data
     showCaseGenerationMessage(summary, payload.mode)
+    showCaseGenerationInsight(summary, payload.mode)
     await loadRequests()
     const requestIdsToRefresh = targetRequestIds.length
       ? targetRequestIds

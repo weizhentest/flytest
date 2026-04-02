@@ -953,6 +953,7 @@ def sync_legacy_request_from_specs(api_request: ApiRequest):
 def sync_legacy_test_case_from_specs(test_case: ApiTestCase):
     from .generation import build_parameterized_test_case_script
 
+    legacy_script = test_case.script if isinstance(test_case.script, dict) else {}
     override_payload = serialize_test_case_override(test_case)
     request_payload = serialize_request_spec(test_case.request)
     effective_method = str(override_payload.get("method") or request_payload.get("method") or test_case.request.method).upper()
@@ -1000,6 +1001,8 @@ def sync_legacy_test_case_from_specs(test_case: ApiTestCase):
     )
     script["extractors"] = serialize_extractor_specs(test_case)
     script["request_override_spec"] = override_payload
+    if isinstance(legacy_script.get("workflow_steps"), list):
+        script["workflow_steps"] = legacy_script["workflow_steps"]
     test_case.script = script
     test_case.assertions = assertions
     test_case.save(update_fields=["script", "assertions", "updated_at"])

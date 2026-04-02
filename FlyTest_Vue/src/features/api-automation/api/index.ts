@@ -6,6 +6,7 @@ import type {
   ApiEnvironment,
   ApiEnvironmentForm,
   ApiExecutionBatchResult,
+  ApiExecutionFailureAnalysis,
   ApiExecutionRecord,
   ApiExecutionReport,
   ApiImportResult,
@@ -123,6 +124,9 @@ export const executionRecordApi = {
     request.get<ApiResponse<ApiExecutionRecord[]>>(`${BASE_URL}/execution-records/`, { params }),
 
   get: (id: number) => request.get<ApiResponse<ApiExecutionRecord>>(`${BASE_URL}/execution-records/${id}/`),
+
+  analyzeFailure: (id: number) =>
+    request.post<ApiResponse<ApiExecutionFailureAnalysis>>(`${BASE_URL}/execution-records/${id}/analyze-failure/`),
 
   report: (params?: { project?: number; collection?: number; days?: number }) =>
     request.get<ApiResponse<ApiExecutionReport>>(`${BASE_URL}/execution-records/report/`, { params }),

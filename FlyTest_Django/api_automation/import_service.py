@@ -776,6 +776,10 @@ def process_document_import(
         "ai_prompt_source": ai_result.prompt_source if ai_result else None,
         "ai_prompt_name": ai_result.prompt_name if ai_result else None,
         "ai_model_name": ai_result.model_name if ai_result else None,
+        "ai_cache_hit": ai_result.cache_hit if ai_result else False,
+        "ai_cache_key": ai_result.cache_key if ai_result else None,
+        "ai_duration_ms": ai_result.duration_ms if ai_result else None,
+        "ai_lock_wait_ms": ai_result.lock_wait_ms if ai_result else None,
         "environment_draft": primary_environment_draft,
         "environment_items": [
             {

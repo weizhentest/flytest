@@ -84,7 +84,10 @@
                     <div class="case-cell">
                       <div class="case-cell__title">{{ record.caseName }}</div>
                       <div class="case-cell__desc">
-                        {{ record.isDirectRequest ? '接口直接执行' : '接口用例执行' }}
+                        <span>{{ record.isDirectRequest ? '接口直接执行' : '接口用例执行' }}</span>
+                        <span v-if="getWorkflowSummaryText(pickCaseRecord(record))">
+                          / {{ getWorkflowSummaryText(pickCaseRecord(record)) }}
+                        </span>
                       </div>
                     </div>
                   </template>
@@ -135,45 +138,7 @@
       :mask-closable="true"
       :body-style="{ maxHeight: '78vh', overflowY: 'auto' }"
     >
-      <div v-if="currentRecord" class="detail-drawer">
-        <a-descriptions :column="2" bordered size="small">
-          <a-descriptions-item label="执行批次">{{ currentRecord.run_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="接口名称">{{ currentRecord.interface_name || currentRecord.request_name }}</a-descriptions-item>
-          <a-descriptions-item label="测试用例">{{ currentRecord.test_case_name || '接口直接执行' }}</a-descriptions-item>
-          <a-descriptions-item label="执行状态">
-            <a-tag :color="getRecordStatusTag(currentRecord).color">
-              {{ getRecordStatusTag(currentRecord).label }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="状态码">{{ currentRecord.status_code ?? '-' }}</a-descriptions-item>
-          <a-descriptions-item label="响应时间">{{ formatDuration(currentRecord.response_time) }}</a-descriptions-item>
-          <a-descriptions-item label="执行环境">{{ currentRecord.environment_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="执行人">{{ currentRecord.executor_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="最终地址" :span="2">{{ currentRecord.url }}</a-descriptions-item>
-          <a-descriptions-item label="错误信息" :span="2">{{ currentRecord.error_message || '-' }}</a-descriptions-item>
-        </a-descriptions>
-
-        <a-divider>断言结果</a-divider>
-        <a-table :data="currentRecord.assertions_results || []" :pagination="false" row-key="index" size="small">
-          <template #columns>
-            <a-table-column title="#" data-index="index" :width="60" />
-            <a-table-column title="类型" data-index="type" :width="120" />
-            <a-table-column title="期望值" data-index="expected" ellipsis tooltip />
-            <a-table-column title="实际值" data-index="actual" ellipsis tooltip />
-            <a-table-column title="结果" :width="90">
-              <template #cell="{ record }">
-                <a-tag :color="record.passed ? 'green' : 'red'">{{ record.passed ? '通过' : '失败' }}</a-tag>
-              </template>
-            </a-table-column>
-          </template>
-        </a-table>
-
-        <a-divider>请求快照</a-divider>
-        <pre class="json-block">{{ stringifyBlock(currentRecord.request_snapshot) }}</pre>
-
-        <a-divider>响应快照</a-divider>
-        <pre class="json-block">{{ stringifyBlock(currentRecord.response_snapshot) }}</pre>
-      </div>
+      <ExecutionRecordDetailPanel :record="currentRecord" />
     </a-modal>
   </div>
 </template>
@@ -183,6 +148,7 @@ import { computed, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
 import { executionRecordApi } from '../api'
+import ExecutionRecordDetailPanel from '../components/ExecutionRecordDetailPanel.vue'
 import type { ApiExecutionRecord } from '../types'
 
 interface RecordCaseGroup {
@@ -424,17 +390,6 @@ const formatDate = (value?: string | null) => {
   return new Date(value).toLocaleString('zh-CN')
 }
 
-const formatDuration = (value?: number | null) => {
-  if (value === null || value === undefined) return '-'
-  return `${value.toFixed(2)} ms`
-}
-
-const stringifyBlock = (value: any) => {
-  if (value === null || value === undefined) return '-'
-  if (typeof value === 'string') return value
-  return JSON.stringify(value, null, 2)
-}
-
 const getRecordStatusTag = (record: ApiExecutionRecord) => {
   if (record.passed) return { color: 'green', label: '通过' }
   if (record.status === 'error') return { color: 'red', label: '异常' }
@@ -442,6 +397,16 @@ const getRecordStatusTag = (record: ApiExecutionRecord) => {
 }
 
 const pickCaseRecord = (caseGroup: RecordCaseGroup) => caseGroup.failedRecord || caseGroup.latestRecord
+
+const getWorkflowSummaryText = (record?: ApiExecutionRecord | null) => {
+  if (!record) return ''
+  const workflowSummary = record.workflow_summary
+  const stepCount = workflowSummary?.executed_step_count || workflowSummary?.configured_step_count || record.workflow_steps?.length || 0
+  if (!workflowSummary?.enabled && !stepCount) return ''
+  if (record.main_request_blocked) return `工作流 ${stepCount} 步，主请求被阻断`
+  if (workflowSummary?.has_failure) return `工作流 ${stepCount} 步，存在失败步骤`
+  return `工作流 ${stepCount} 步`
+}
 
 const loadRecords = async () => {
   if (!projectId.value) {

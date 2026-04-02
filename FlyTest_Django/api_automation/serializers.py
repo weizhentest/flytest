@@ -143,6 +143,9 @@ class ApiExecutionRecordSerializer(serializers.ModelSerializer):
     collection_id = serializers.SerializerMethodField()
     collection_name = serializers.SerializerMethodField()
     request_collection_name = serializers.SerializerMethodField()
+    workflow_summary = serializers.SerializerMethodField()
+    workflow_steps = serializers.SerializerMethodField()
+    main_request_blocked = serializers.SerializerMethodField()
 
     class Meta:
         model = ApiExecutionRecord
@@ -175,6 +178,20 @@ class ApiExecutionRecordSerializer(serializers.ModelSerializer):
 
     def get_request_collection_name(self, obj):
         return self.get_collection_name(obj)
+
+    def get_workflow_summary(self, obj):
+        snapshot = obj.request_snapshot or {}
+        summary = snapshot.get("workflow_summary")
+        return dict(summary) if isinstance(summary, dict) else None
+
+    def get_workflow_steps(self, obj):
+        snapshot = obj.request_snapshot or {}
+        steps = snapshot.get("workflow_steps")
+        return list(steps) if isinstance(steps, list) else []
+
+    def get_main_request_blocked(self, obj):
+        snapshot = obj.request_snapshot or {}
+        return bool(snapshot.get("main_request_blocked", False))
 
 
 class ApiImportJobSerializer(serializers.ModelSerializer):

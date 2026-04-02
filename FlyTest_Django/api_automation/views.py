@@ -23,7 +23,14 @@ from rest_framework.response import Response
 from projects.models import Project
 from flytest_django.viewsets import BaseModelViewSet
 
-from .ai_case_generator import create_test_cases_from_drafts, generate_test_case_drafts_with_ai
+from .ai_failure_analyzer import analyze_execution_failure
+from .ai_case_generator import (
+    _coerce_bool,
+    _normalize_extractors,
+    _normalize_request_overrides,
+    create_test_cases_from_drafts,
+    generate_test_case_drafts_with_ai,
+)
 from .execution import ExecutionRunContext, execute_api_request
 from .import_service import process_document_import
 from .models import ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
@@ -36,11 +43,19 @@ from .serializers import (
     ApiTestCaseSerializer,
 )
 from .services import (
+    build_request_url,
     find_missing_variables,
     collect_placeholders,
     extract_json_path,
 )
-from .specs import backfill_request_specs_from_legacy, backfill_test_case_specs_from_legacy
+from .specs import (
+    backfill_request_specs_from_legacy,
+    backfill_test_case_specs_from_legacy,
+    serialize_assertion_specs,
+    serialize_extractor_specs,
+    serialize_request_spec,
+    serialize_test_case_override,
+)
 
 
 TOKEN_VARIABLE_NAMES = {"token", "access_token", "refresh_token", "refreshToken", "authorization"}
@@ -64,6 +79,13 @@ BOOTSTRAP_OPTIONAL_EMPTY_VARIABLES = {
     "deviceType",
     "nickname",
     "name",
+}
+
+WORKFLOW_FAILURE_STATUSES = {"failed", "error"}
+WORKFLOW_STAGE_LABELS = {
+    "prepare": "Prepare",
+    "request": "Request",
+    "teardown": "Teardown",
 }
 
 
@@ -339,10 +361,14 @@ def _missing_variables_for_bootstrap(variables: dict, auth_request: ApiRequest) 
 def _serialize_execution_batch(records):
     serializer = ApiExecutionRecordSerializer(records, many=True)
     run_types = {"test_case" if record.test_case_id else "request" for record in records}
+    execution_mode = "sync"
+    if records:
+        execution_mode = str((records[0].request_snapshot or {}).get("execution_mode") or "sync")
     return {
         "run_id": records[0].run_id if records else None,
         "run_name": records[0].run_name if records else None,
         "run_type": next(iter(run_types)) if len(run_types) == 1 else "mixed",
+        "execution_mode": execution_mode,
         "total_count": len(records),
         "success_count": sum(1 for record in records if record.status == "success"),
         "failed_count": sum(1 for record in records if record.status == "failed"),
@@ -366,6 +392,18 @@ def _build_run_name(execution_kind: str, scope: str = "single", target_name: str
     if target_name and scope == "single":
         return f"{label} - {target_name}"
     return label
+
+
+def _resolve_execution_mode(payload) -> str:
+    explicit_mode = str(payload.get("execution_mode") or "").strip().lower()
+    if explicit_mode in {"sync", "async"}:
+        return explicit_mode
+
+    for key in ("use_async", "async_mode"):
+        if key not in payload:
+            continue
+        return "async" if str(payload.get(key) or "").lower() in {"1", "true", "yes", "on"} else "sync"
+    return "sync"
 
 
 def _increment_execution_counts(target: dict, record: ApiExecutionRecord):
@@ -655,8 +693,10 @@ def _execute_api_request(
     override_payload: dict | None = None,
     snapshot_extra: dict | None = None,
     assertions_override=None,
+    extractors_override=None,
     runtime_context: dict | None = None,
     allow_auth_bootstrap: bool = True,
+    execution_mode: str = "sync",
 ):
     shared_runtime_context = runtime_context is not None
     runtime_context = runtime_context if runtime_context is not None else {}
@@ -673,6 +713,7 @@ def _execute_api_request(
             run_id=run_id or uuid4().hex,
             run_name=run_name or "",
             environment=environment,
+            execution_mode=execution_mode,
         )
         run_execution_context.variables.update(runtime_context.get("variables", {}))
         runtime_context["_execution_run_context"] = run_execution_context
@@ -684,6 +725,7 @@ def _execute_api_request(
             run_execution_context.run_name = run_name
         if environment and run_execution_context.environment is None:
             run_execution_context.environment = environment
+        run_execution_context.execution_mode = execution_mode or run_execution_context.execution_mode
         run_execution_context.variables.update(runtime_context.get("variables", {}))
 
     try:
@@ -695,6 +737,9 @@ def _execute_api_request(
             run_context=run_execution_context,
             request_name=request_name,
             allow_bootstrap=allow_auth_bootstrap,
+            request_override=override_payload,
+            assertion_specs_override=assertions_override,
+            extractor_specs_override=extractors_override,
         )
         if snapshot_extra:
             request_snapshot = dict(record.request_snapshot or {})
@@ -709,13 +754,346 @@ def _execute_api_request(
             runtime_context.pop("_execution_run_context", None)
 
 
-def _build_test_case_execution_payload(test_case: ApiTestCase):
-    script = test_case.script or {}
-    overrides = script.get("request_overrides") if isinstance(script, dict) else {}
-    if not isinstance(overrides, dict):
-        overrides = {}
+def _coerce_workflow_number(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return int(value) if isinstance(value, float) and value.is_integer() else value
+    try:
+        numeric = float(str(value).strip())
+    except (TypeError, ValueError):
+        return value
+    return int(numeric) if numeric.is_integer() else numeric
 
-    assertions = test_case.assertions or test_case.request.assertions or []
+
+def _normalize_workflow_schema_text(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return ""
+
+
+def _normalize_workflow_assertions(assertions):
+    if assertions is None:
+        return None
+    if not isinstance(assertions, list):
+        return []
+
+    normalized = []
+    for index, item in enumerate(assertions):
+        if not isinstance(item, dict):
+            continue
+        assertion_type = str(item.get("assertion_type") or item.get("type") or "").strip()
+        if not assertion_type:
+            continue
+
+        normalized_item = {
+            "assertion_type": assertion_type,
+            "target": item.get("target") or ("json" if assertion_type == "json_path" else "body"),
+            "selector": item.get("selector") or item.get("path") or "",
+            "operator": item.get("operator") or "equals",
+            "expected_text": str(item.get("expected_text") or ""),
+            "expected_number": _coerce_workflow_number(item.get("expected_number")),
+            "expected_json": item.get("expected_json") if isinstance(item.get("expected_json"), (dict, list, bool)) else {},
+            "min_value": _coerce_workflow_number(item.get("min_value", item.get("min"))),
+            "max_value": _coerce_workflow_number(item.get("max_value", item.get("max"))),
+            "schema_text": _normalize_workflow_schema_text(item.get("schema_text")),
+            "enabled": bool(item.get("enabled", True)),
+            "order": int(item.get("order", index)),
+        }
+        expected_value = item.get("expected")
+        if expected_value not in (None, "") and normalized_item["expected_number"] is None:
+            if isinstance(expected_value, (int, float)) and not isinstance(expected_value, bool):
+                normalized_item["expected_number"] = _coerce_workflow_number(expected_value)
+            elif isinstance(expected_value, (dict, list, bool)):
+                normalized_item["expected_json"] = expected_value
+            else:
+                normalized_item["expected_text"] = str(expected_value)
+        normalized.append(normalized_item)
+    return normalized
+
+
+def _resolve_workflow_request(test_case: ApiTestCase, raw_step: dict):
+    request_queryset = ApiRequest.objects.select_related("collection").filter(collection__project=test_case.project)
+    request_id = raw_step.get("request_id")
+    request_name = str(raw_step.get("request_name") or "").strip()
+
+    if request_id not in (None, ""):
+        request_obj = request_queryset.filter(pk=request_id).first()
+        if request_obj:
+            return request_obj, ""
+        return None, f"Workflow step request not found: request_id={request_id}"
+
+    if request_name:
+        request_obj = request_queryset.filter(name__iexact=request_name).order_by("collection_id", "order", "created_at").first()
+        if request_obj:
+            return request_obj, ""
+        request_obj = request_queryset.filter(name__icontains=request_name).order_by("collection_id", "order", "created_at").first()
+        if request_obj:
+            return request_obj, ""
+        return None, f"Workflow step request not found: request_name={request_name}"
+
+    return test_case.request, ""
+
+
+def _parse_test_case_workflow_steps(test_case: ApiTestCase):
+    script = test_case.script if isinstance(test_case.script, dict) else {}
+    raw_steps = script.get("workflow_steps")
+    if not isinstance(raw_steps, list):
+        return []
+
+    steps = []
+    for index, raw_step in enumerate(raw_steps):
+        if not isinstance(raw_step, dict):
+            continue
+        if not bool(raw_step.get("enabled", True)):
+            continue
+
+        stage = str(raw_step.get("stage") or "prepare").strip().lower()
+        if stage not in {"prepare", "request", "teardown"}:
+            stage = "prepare"
+
+        request_obj, lookup_error = _resolve_workflow_request(test_case, raw_step)
+        raw_assertions = raw_step.get("assertion_specs")
+        if raw_assertions is None:
+            raw_assertions = raw_step.get("assertions")
+        raw_extractors = raw_step.get("extractor_specs")
+        if raw_extractors is None:
+            raw_extractors = raw_step.get("extractors")
+        raw_request_overrides = raw_step.get("request_overrides")
+        steps.append(
+            {
+                "index": len(steps) + 1,
+                "stage": stage,
+                "name": str(raw_step.get("name") or (request_obj.name if request_obj else f"workflow_step_{index + 1}")).strip()[:160],
+                "continue_on_failure": bool(_coerce_bool(raw_step.get("continue_on_failure"), False)),
+                "request": request_obj,
+                "request_id": request_obj.id if request_obj else raw_step.get("request_id"),
+                "request_name": request_obj.name if request_obj else str(raw_step.get("request_name") or ""),
+                "lookup_error": lookup_error,
+                "request_overrides": (
+                    _normalize_request_overrides(request_obj or test_case.request, raw_request_overrides)
+                    if isinstance(raw_request_overrides, dict)
+                    else None
+                ),
+                "assertions_override": _normalize_workflow_assertions(raw_assertions),
+                "extractors_override": _normalize_extractors(raw_extractors, []) if raw_extractors is not None else None,
+            }
+        )
+    return steps
+
+
+def _serialize_workflow_step_result(step: dict, record: ApiExecutionRecord | None = None, *, status=None, error_message=""):
+    result_status = status or (record.status if record else "error")
+    if record:
+        passed = record.passed
+    elif result_status == "success":
+        passed = True
+    elif result_status in WORKFLOW_FAILURE_STATUSES:
+        passed = False
+    else:
+        passed = None
+    payload = {
+        "kind": step.get("kind") or "workflow_step",
+        "index": step.get("index"),
+        "name": step.get("name"),
+        "stage": step.get("stage"),
+        "continue_on_failure": bool(step.get("continue_on_failure", False)),
+        "request_id": step.get("request_id"),
+        "request_name": step.get("request_name"),
+        "status": result_status,
+        "passed": passed,
+        "status_code": record.status_code if record else None,
+        "response_time": record.response_time if record else None,
+        "error_message": error_message or (record.error_message if record else ""),
+        "record_id": record.id if record else None,
+        "record_request_name": record.request_name if record else "",
+        "response_snapshot": dict(record.response_snapshot or {}) if record else {},
+        "assertions_results": list(record.assertions_results or []) if record else [],
+    }
+    if record and step.get("kind") != "main_request":
+        payload["request_snapshot"] = dict(record.request_snapshot or {})
+    else:
+        payload["request_snapshot"] = {}
+    return payload
+
+
+def _is_workflow_failure(step_result: dict) -> bool:
+    return str(step_result.get("status") or "") in WORKFLOW_FAILURE_STATUSES
+
+
+def _build_workflow_step_failure_assertions(step_results: list[dict], start_index: int) -> list[dict]:
+    assertions = []
+    next_index = start_index
+    for item in step_results:
+        if item.get("kind") == "main_request" or not _is_workflow_failure(item):
+            continue
+        assertions.append(
+            {
+                "index": next_index,
+                "type": "workflow_step",
+                "stage": item.get("stage"),
+                "name": item.get("name"),
+                "expected": "success",
+                "actual": item.get("status"),
+                "passed": False,
+                "message": item.get("error_message") or f"{item.get('name')} failed",
+            }
+        )
+        next_index += 1
+    return assertions
+
+
+def _format_workflow_failure_message(step_result: dict) -> str:
+    step_name = step_result.get("name") or "unnamed_step"
+    step_stage = str(step_result.get("stage") or "prepare")
+    detail = step_result.get("error_message") or f"status={step_result.get('status')}"
+    return f"Workflow step failed: {step_name} [{step_stage}], {detail}"
+
+
+def _build_test_case_blocked_record(
+    *,
+    test_case: ApiTestCase,
+    executor,
+    environment: ApiEnvironment | None,
+    run_id: str,
+    run_name: str,
+    request_name: str,
+    execution_mode: str,
+    override_payload: dict,
+    assertions_override: list[dict],
+    snapshot_extra: dict,
+    status_value: str,
+    error_message: str,
+):
+    request_spec = serialize_request_spec(test_case.request)
+    body_mode = str(override_payload.get("body_mode") or request_spec.get("body_mode") or "none")
+    body_value = override_payload.get("body_json") or request_spec.get("body_json")
+    if body_mode == "raw":
+        body_value = override_payload.get("raw_text") or request_spec.get("raw_text")
+    elif body_mode == "xml":
+        body_value = override_payload.get("xml_text") or request_spec.get("xml_text")
+    elif body_mode == "graphql":
+        body_value = {
+            "query": override_payload.get("graphql_query") or request_spec.get("graphql_query") or "",
+            "operationName": override_payload.get("graphql_operation_name") or request_spec.get("graphql_operation_name") or "",
+            "variables": override_payload.get("graphql_variables") or request_spec.get("graphql_variables") or {},
+        }
+    elif body_mode == "binary":
+        body_value = override_payload.get("binary_base64") or request_spec.get("binary_base64") or ""
+
+    request_snapshot = {
+        "request_id": test_case.request_id,
+        "interface_name": test_case.request.name,
+        "collection_id": test_case.request.collection_id,
+        "collection_name": test_case.request.collection.name,
+        "test_case_id": test_case.id,
+        "test_case_name": test_case.name,
+        "test_case_status": test_case.status,
+        "test_case_tags": test_case.tags or [],
+        "test_case_script": test_case.script if isinstance(test_case.script, dict) else {},
+        "method": str(override_payload.get("method") or request_spec.get("method") or test_case.request.method).upper(),
+        "url": build_request_url(
+            environment.base_url if environment else "",
+            str(override_payload.get("url") or request_spec.get("url") or test_case.request.url),
+        ),
+        "headers": {},
+        "params": {},
+        "cookies": {},
+        "body_mode": body_mode,
+        "body": body_value,
+        "request_spec": request_spec,
+        "request_override_spec": override_payload,
+        "assertion_specs": assertions_override,
+        "extractor_specs": list(serialize_extractor_specs(test_case.request)) + list(serialize_extractor_specs(test_case)),
+        "execution_mode": execution_mode,
+        "missing_variables": [],
+        "main_request_blocked": True,
+        "stage_results": [],
+    }
+    request_snapshot.update(snapshot_extra)
+    return ApiExecutionRecord.objects.create(
+        project=test_case.project,
+        request=test_case.request,
+        test_case=test_case,
+        environment=environment,
+        run_id=run_id,
+        run_name=run_name,
+        request_name=request_name,
+        method=request_snapshot["method"],
+        url=request_snapshot["url"],
+        status=status_value,
+        passed=False,
+        status_code=None,
+        response_time=None,
+        request_snapshot=request_snapshot,
+        response_snapshot={},
+        assertions_results=[],
+        error_message=error_message,
+        executor=executor,
+    )
+
+
+def _execute_workflow_step(
+    *,
+    step: dict,
+    test_case: ApiTestCase,
+    executor,
+    environment: ApiEnvironment | None,
+    run_id: str,
+    run_name: str,
+    runtime_context: dict,
+    execution_mode: str,
+):
+    if step.get("lookup_error"):
+        return _serialize_workflow_step_result(
+            step,
+            status="error",
+            error_message=str(step.get("lookup_error") or ""),
+        )
+
+    request_obj = step.get("request")
+    if not request_obj:
+        return _serialize_workflow_step_result(step, status="error", error_message="Workflow step has no valid request binding")
+
+    record = _execute_api_request(
+        api_request=request_obj,
+        executor=executor,
+        environment=environment,
+        run_id=run_id,
+        run_name=run_name,
+        request_name=f"[Workflow][{WORKFLOW_STAGE_LABELS.get(step['stage'], 'Prepare')}] {step['name']}",
+        override_payload=step.get("request_overrides"),
+        snapshot_extra={
+            "workflow_step": {
+                "index": step["index"],
+                "name": step["name"],
+                "stage": step["stage"],
+                "continue_on_failure": step["continue_on_failure"],
+                "source_test_case_id": test_case.id,
+                "source_test_case_name": test_case.name,
+            },
+            "workflow_source_test_case_id": test_case.id,
+            "workflow_source_test_case_name": test_case.name,
+        },
+        assertions_override=step.get("assertions_override"),
+        extractors_override=step.get("extractors_override"),
+        runtime_context=runtime_context,
+        execution_mode=execution_mode,
+    )
+    return _serialize_workflow_step_result(step, record)
+
+
+def _build_test_case_execution_payload(test_case: ApiTestCase):
+    if not getattr(test_case, "override_spec", None):
+        backfill_test_case_specs_from_legacy(test_case)
+
+    script = test_case.script if isinstance(test_case.script, dict) else {}
+    overrides = serialize_test_case_override(test_case)
+    assertions = serialize_assertion_specs(test_case) or serialize_assertion_specs(test_case.request)
     snapshot_extra = {
         "request_id": test_case.request_id,
         "interface_name": test_case.request.name,
@@ -727,7 +1105,190 @@ def _build_test_case_execution_payload(test_case: ApiTestCase):
         "test_case_tags": test_case.tags or [],
         "test_case_script": script,
     }
-    return overrides, assertions, snapshot_extra
+    return overrides, assertions, snapshot_extra, _parse_test_case_workflow_steps(test_case)
+
+
+def _execute_test_case(
+    *,
+    test_case: ApiTestCase,
+    executor,
+    environment: ApiEnvironment | None = None,
+    run_id: str | None = None,
+    run_name: str | None = None,
+    request_name: str | None = None,
+    runtime_context: dict | None = None,
+    execution_mode: str = "sync",
+):
+    shared_runtime_context = runtime_context is not None
+    runtime_context = runtime_context if runtime_context is not None else {}
+    overrides, assertions, snapshot_extra, workflow_steps = _build_test_case_execution_payload(test_case)
+
+    if not workflow_steps:
+        return _execute_api_request(
+            api_request=test_case.request,
+            executor=executor,
+            environment=environment,
+            test_case=test_case,
+            run_id=run_id,
+            run_name=run_name,
+            request_name=request_name or test_case.name,
+            override_payload=overrides,
+            snapshot_extra=snapshot_extra,
+            assertions_override=assertions,
+            runtime_context=runtime_context,
+            execution_mode=execution_mode,
+        )
+
+    created_local_context = False
+    if "_execution_run_context" not in runtime_context:
+        runtime_context["_execution_run_context"] = ExecutionRunContext(
+            run_id=run_id or uuid4().hex,
+            run_name=run_name or "",
+            environment=environment,
+            execution_mode=execution_mode,
+        )
+        runtime_context["_execution_run_context"].variables.update(runtime_context.get("variables", {}))
+        created_local_context = True
+
+    run_execution_context = runtime_context["_execution_run_context"]
+    if run_id:
+        run_execution_context.run_id = run_id
+    if run_name:
+        run_execution_context.run_name = run_name
+    if environment and run_execution_context.environment is None:
+        run_execution_context.environment = environment
+    run_execution_context.execution_mode = execution_mode or run_execution_context.execution_mode
+    runtime_context["variables"] = dict(run_execution_context.variables)
+
+    main_record = None
+    workflow_results = []
+    blocking_failure = None
+    pre_main_steps = [item for item in workflow_steps if item["stage"] in {"prepare", "request"}]
+    teardown_steps = [item for item in workflow_steps if item["stage"] == "teardown"]
+
+    try:
+        for step in pre_main_steps:
+            step_result = _execute_workflow_step(
+                step=step,
+                test_case=test_case,
+                executor=executor,
+                environment=environment,
+                run_id=run_execution_context.run_id or run_id or "",
+                run_name=run_execution_context.run_name or run_name or "",
+                runtime_context=runtime_context,
+                execution_mode=execution_mode,
+            )
+            workflow_results.append(step_result)
+            if _is_workflow_failure(step_result) and not step["continue_on_failure"]:
+                blocking_failure = step_result
+                break
+
+        if blocking_failure is None:
+            main_record = _execute_api_request(
+                api_request=test_case.request,
+                executor=executor,
+                environment=environment,
+                test_case=test_case,
+                run_id=run_execution_context.run_id or run_id,
+                run_name=run_execution_context.run_name or run_name,
+                request_name=request_name or test_case.name,
+                override_payload=overrides,
+                snapshot_extra=snapshot_extra,
+                assertions_override=assertions,
+                runtime_context=runtime_context,
+                execution_mode=execution_mode,
+            )
+        else:
+            blocked_status = "error" if blocking_failure["status"] == "error" else "failed"
+            blocked_message = _format_workflow_failure_message(blocking_failure)
+            main_record = _build_test_case_blocked_record(
+                test_case=test_case,
+                executor=executor,
+                environment=environment,
+                run_id=run_execution_context.run_id or run_id or "",
+                run_name=run_execution_context.run_name or run_name or "",
+                request_name=request_name or test_case.name,
+                execution_mode=execution_mode,
+                override_payload=overrides,
+                assertions_override=assertions,
+                snapshot_extra=snapshot_extra,
+                status_value=blocked_status,
+                error_message=blocked_message,
+            )
+
+        workflow_results.append(
+            _serialize_workflow_step_result(
+                {
+                    "kind": "main_request",
+                    "index": len(workflow_results) + 1,
+                    "name": test_case.name,
+                    "stage": "request",
+                    "request_id": test_case.request_id,
+                    "request_name": test_case.request.name,
+                    "continue_on_failure": False,
+                },
+                main_record,
+            )
+        )
+
+        for step in teardown_steps:
+            step_result = _execute_workflow_step(
+                step=step,
+                test_case=test_case,
+                executor=executor,
+                environment=environment,
+                run_id=run_execution_context.run_id or run_id or "",
+                run_name=run_execution_context.run_name or run_name or "",
+                runtime_context=runtime_context,
+                execution_mode=execution_mode,
+            )
+            workflow_results.append(step_result)
+            if _is_workflow_failure(step_result) and not step["continue_on_failure"]:
+                break
+
+        all_failures = [item for item in workflow_results if _is_workflow_failure(item)]
+        auxiliary_failures = [item for item in all_failures if item.get("kind") != "main_request"]
+        final_status = main_record.status
+        if any(item["status"] == "error" for item in all_failures):
+            final_status = "error"
+        elif any(item["status"] == "failed" for item in all_failures):
+            final_status = "failed"
+        final_passed = final_status == "success" and bool(main_record.passed)
+
+        final_error_message = main_record.error_message or ""
+        if auxiliary_failures and (main_record.status == "success" or not final_error_message or final_status == "error"):
+            final_error_message = _format_workflow_failure_message(auxiliary_failures[0])
+
+        request_snapshot = dict(main_record.request_snapshot or {})
+        request_snapshot["workflow_steps"] = workflow_results
+        request_snapshot["workflow_summary"] = {
+            "enabled": True,
+            "configured_step_count": len(workflow_steps),
+            "executed_step_count": len(workflow_results),
+            "failure_count": len(all_failures),
+            "has_failure": bool(all_failures),
+            "main_request_executed": not bool(request_snapshot.get("main_request_blocked")),
+            "main_record_id": main_record.id,
+        }
+
+        updated_assertions_results = list(main_record.assertions_results or [])
+        updated_assertions_results.extend(
+            _build_workflow_step_failure_assertions(workflow_results, len(updated_assertions_results) + 1)
+        )
+
+        update_fields = ["request_snapshot", "assertions_results", "status", "passed", "error_message"]
+        main_record.request_snapshot = request_snapshot
+        main_record.assertions_results = updated_assertions_results
+        main_record.status = final_status
+        main_record.passed = final_passed
+        main_record.error_message = final_error_message
+        main_record.save(update_fields=update_fields)
+        runtime_context["variables"] = dict(run_execution_context.variables)
+        return main_record
+    finally:
+        if created_local_context and not shared_runtime_context:
+            run_execution_context.close()
+            runtime_context.pop("_execution_run_context", None)
 
 
 def _serialize_generation_case_items(test_cases: list[ApiTestCase]):
@@ -754,7 +1315,12 @@ def _generate_request_test_cases(
             "skipped_reason": "当前接口已存在测试用例，请使用重新生成或追加生成。",
             "created_count": 0,
             "ai_used": False,
+            "ai_cache_hit": False,
+            "ai_cache_key": None,
+            "ai_duration_ms": None,
+            "ai_lock_wait_ms": None,
             "note": "已跳过已有测试用例的接口。",
+            "case_summaries": [],
             "items": [],
         }
 
@@ -784,10 +1350,15 @@ def _generate_request_test_cases(
         "skipped": False,
         "created_count": len(created_cases),
         "ai_used": generation_result.used_ai,
+        "ai_cache_hit": generation_result.cache_hit,
+        "ai_cache_key": generation_result.cache_key,
+        "ai_duration_ms": generation_result.duration_ms,
+        "ai_lock_wait_ms": generation_result.lock_wait_ms,
         "note": generation_result.note,
         "prompt_name": generation_result.prompt_name,
         "prompt_source": generation_result.prompt_source,
         "model_name": generation_result.model_name,
+        "case_summaries": generation_result.case_summaries,
         "items": _serialize_generation_case_items(created_cases),
     }
 
@@ -988,12 +1559,14 @@ class ApiRequestViewSet(BaseModelViewSet):
         environment = _resolve_execution_environment(api_request.collection.project, request.data.get("environment_id"))
         run_id = uuid4().hex
         run_name = _build_run_name("request", "single", api_request.name)
+        execution_mode = _resolve_execution_mode(request.data)
         record = _execute_api_request(
             api_request=api_request,
             executor=request.user,
             environment=environment,
             run_id=run_id,
             run_name=run_name,
+            execution_mode=execution_mode,
         )
         serializer = ApiExecutionRecordSerializer(record)
         return Response(serializer.data)
@@ -1005,6 +1578,7 @@ class ApiRequestViewSet(BaseModelViewSet):
         project_id = request.data.get("project_id")
         collection_id = request.data.get("collection_id")
         environment_id = request.data.get("environment_id")
+        execution_mode = _resolve_execution_mode(request.data)
 
         api_requests = _collect_request_scope(
             request.user,
@@ -1031,6 +1605,7 @@ class ApiRequestViewSet(BaseModelViewSet):
                         run_id=run_id,
                         run_name=run_name,
                         runtime_context=runtime_context,
+                        execution_mode=execution_mode,
                     )
                 )
         finally:
@@ -1066,6 +1641,7 @@ class ApiRequestViewSet(BaseModelViewSet):
         created_total = 0
         skipped_count = 0
         ai_used_count = 0
+        ai_cache_hit_count = 0
         notes: list[str] = []
 
         for api_request in api_requests:
@@ -1079,6 +1655,7 @@ class ApiRequestViewSet(BaseModelViewSet):
             created_total += item["created_count"]
             skipped_count += 1 if item.get("skipped") else 0
             ai_used_count += 1 if item.get("ai_used") else 0
+            ai_cache_hit_count += 1 if item.get("ai_cache_hit") else 0
             if item.get("note"):
                 notes.append(str(item["note"]))
 
@@ -1091,6 +1668,7 @@ class ApiRequestViewSet(BaseModelViewSet):
                 "skipped_requests": skipped_count,
                 "created_testcase_count": created_total,
                 "ai_used_count": ai_used_count,
+                "ai_cache_hit_count": ai_cache_hit_count,
                 "note": " ".join(notes[:5]),
                 "items": items,
             }
@@ -1257,6 +1835,30 @@ class ApiExecutionRecordViewSet(BaseModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["post"], url_path="analyze-failure")
+    def analyze_failure(self, request, pk=None):
+        record = self.get_object()
+        result = analyze_execution_failure(record=record, user=request.user)
+        return Response(
+            {
+                "used_ai": result.used_ai,
+                "note": result.note,
+                "summary": result.summary,
+                "failure_mode": result.failure_mode,
+                "likely_root_causes": result.likely_root_causes,
+                "recommended_actions": result.recommended_actions,
+                "evidence": result.evidence,
+                "recent_failures": result.recent_failures,
+                "prompt_name": result.prompt_name,
+                "prompt_source": result.prompt_source,
+                "model_name": result.model_name,
+                "cache_hit": result.cache_hit,
+                "cache_key": result.cache_key,
+                "duration_ms": result.duration_ms,
+                "lock_wait_ms": result.lock_wait_ms,
+            }
+        )
+
 
 class ApiTestCaseViewSet(BaseModelViewSet):
     queryset = ApiTestCase.objects.select_related("project", "request", "request__collection", "creator")
@@ -1293,20 +1895,17 @@ class ApiTestCaseViewSet(BaseModelViewSet):
     def execute(self, request, pk=None):
         test_case = self.get_object()
         environment = _resolve_execution_environment(test_case.project, request.data.get("environment_id"))
-        overrides, assertions, snapshot_extra = _build_test_case_execution_payload(test_case)
         run_id = uuid4().hex
         run_name = _build_run_name("test_case", "single", test_case.name)
-        record = _execute_api_request(
-            api_request=test_case.request,
+        execution_mode = _resolve_execution_mode(request.data)
+        record = _execute_test_case(
+            test_case=test_case,
             executor=request.user,
             environment=environment,
-            test_case=test_case,
             run_id=run_id,
             run_name=run_name,
             request_name=test_case.name,
-            override_payload=overrides,
-            snapshot_extra=snapshot_extra,
-            assertions_override=assertions,
+            execution_mode=execution_mode,
         )
         serializer = ApiExecutionRecordSerializer(record)
         return Response(serializer.data)
@@ -1318,6 +1917,7 @@ class ApiTestCaseViewSet(BaseModelViewSet):
         project_id = request.data.get("project_id")
         collection_id = request.data.get("collection_id")
         environment_id = request.data.get("environment_id")
+        execution_mode = _resolve_execution_mode(request.data)
 
         test_cases = _collect_test_case_scope(
             request.user,
@@ -1336,20 +1936,16 @@ class ApiTestCaseViewSet(BaseModelViewSet):
         try:
             for test_case in test_cases:
                 environment = _resolve_execution_environment(test_case.project, environment_id)
-                overrides, assertions, snapshot_extra = _build_test_case_execution_payload(test_case)
                 records.append(
-                    _execute_api_request(
-                        api_request=test_case.request,
+                    _execute_test_case(
+                        test_case=test_case,
                         executor=request.user,
                         environment=environment,
-                        test_case=test_case,
                         run_id=run_id,
                         run_name=run_name,
                         request_name=test_case.name,
-                        override_payload=overrides,
-                        snapshot_extra=snapshot_extra,
-                        assertions_override=assertions,
                         runtime_context=runtime_context,
+                        execution_mode=execution_mode,
                     )
                 )
         finally:
