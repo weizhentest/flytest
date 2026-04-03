@@ -43,13 +43,13 @@ def get_current_user(token: str = Depends(get_bearer_token), db: Session = Depen
 
 
 @router.get("/global-config/")
-def knowledge_global_config(user=Depends(get_current_user)) -> dict:
-    return success_response(get_global_config(user_id=user.id))
+def knowledge_global_config(user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(get_global_config(db=db, user=user))
 
 
 @router.put("/global-config/")
-def knowledge_update_global_config(payload: dict, user=Depends(get_current_user)) -> dict:
-    return success_response(update_global_config(user_id=user.id, payload=payload))
+def knowledge_update_global_config(payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(update_global_config(db=db, user=user, payload=payload))
 
 
 @router.get("/embedding-services/")
@@ -63,10 +63,12 @@ def knowledge_base_list(
     search: str | None = None,
     is_active: bool | None = None,
     user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     return success_response(
         list_knowledge_bases(
-            user_id=user.id,
+            db=db,
+            user=user,
             project=project,
             search=search,
             is_active=is_active,
@@ -75,8 +77,8 @@ def knowledge_base_list(
 
 
 @router.post("/knowledge-bases/", status_code=201)
-def knowledge_base_create(payload: dict, user=Depends(get_current_user)) -> dict:
-    return success_response(create_knowledge_base(user_id=user.id, payload=payload), code=201)
+def knowledge_base_create(payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(create_knowledge_base(db=db, user=user, payload=payload), code=201)
 
 
 @router.get("/knowledge-bases/system_status/")
@@ -85,23 +87,23 @@ def knowledge_system_status(user=Depends(get_current_user)) -> dict:
 
 
 @router.get("/knowledge-bases/{kb_id}/")
-def knowledge_base_detail(kb_id: str, user=Depends(get_current_user)) -> dict:
-    return success_response(get_knowledge_base(user_id=user.id, kb_id=kb_id))
+def knowledge_base_detail(kb_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(get_knowledge_base(db=db, user=user, kb_id=kb_id))
 
 
 @router.put("/knowledge-bases/{kb_id}/")
-def knowledge_base_put(kb_id: str, payload: dict, user=Depends(get_current_user)) -> dict:
-    return success_response(update_knowledge_base(user_id=user.id, kb_id=kb_id, payload=payload))
+def knowledge_base_put(kb_id: str, payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(update_knowledge_base(db=db, user=user, kb_id=kb_id, payload=payload))
 
 
 @router.patch("/knowledge-bases/{kb_id}/")
-def knowledge_base_patch(kb_id: str, payload: dict, user=Depends(get_current_user)) -> dict:
-    return success_response(update_knowledge_base(user_id=user.id, kb_id=kb_id, payload=payload))
+def knowledge_base_patch(kb_id: str, payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(update_knowledge_base(db=db, user=user, kb_id=kb_id, payload=payload))
 
 
 @router.delete("/knowledge-bases/{kb_id}/")
-def knowledge_base_delete(kb_id: str, user=Depends(get_current_user)) -> dict:
-    delete_knowledge_base(user_id=user.id, kb_id=kb_id)
+def knowledge_base_delete(kb_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    delete_knowledge_base(db=db, user=user, kb_id=kb_id)
     return success_response(None)
 
 
@@ -145,10 +147,12 @@ def knowledge_documents(
     status: str | None = None,
     search: str | None = None,
     user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     return success_response(
         list_documents(
-            user_id=user.id,
+            db=db,
+            user=user,
             knowledge_base=knowledge_base,
             document_type=document_type,
             status=status,
@@ -166,6 +170,7 @@ async def knowledge_upload_document(
     content: str | None = Form(default=None),
     url: str | None = Form(default=None),
     user=Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> dict:
     payload = {
         "knowledge_base": knowledge_base,
@@ -178,17 +183,17 @@ async def knowledge_upload_document(
         payload["file"] = file.file
         if not getattr(file.file, "name", None):
             file.file.name = file.filename or "upload.bin"
-    return success_response(await run_in_threadpool(upload_document, user_id=user.id, payload=payload), code=201)
+    return success_response(await run_in_threadpool(upload_document, db=db, user=user, payload=payload), code=201)
 
 
 @router.get("/documents/{document_id}/")
-def knowledge_document_detail(document_id: str, user=Depends(get_current_user)) -> dict:
-    return success_response(get_document(user_id=user.id, document_id=document_id))
+def knowledge_document_detail(document_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(get_document(db=db, user=user, document_id=document_id))
 
 
 @router.get("/documents/{document_id}/status/")
-def knowledge_document_status(document_id: str, user=Depends(get_current_user)) -> dict:
-    return success_response(get_document_status(user_id=user.id, document_id=document_id))
+def knowledge_document_status(document_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    return success_response(get_document_status(db=db, user=user, document_id=document_id))
 
 
 @router.get("/documents/{document_id}/content/")
@@ -216,8 +221,8 @@ def knowledge_document_reprocess(document_id: str, user=Depends(get_current_user
 
 
 @router.delete("/documents/{document_id}/")
-def knowledge_document_delete(document_id: str, user=Depends(get_current_user)) -> dict:
-    delete_document(user_id=user.id, document_id=document_id)
+def knowledge_document_delete(document_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    delete_document(db=db, user=user, document_id=document_id)
     return success_response(None)
 
 
