@@ -1,8 +1,17 @@
+from pathlib import Path
+from uuid import uuid4
+
 from django.contrib.auth.models import User
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from projects.models import Project
+
+
+def api_import_job_source_upload_path(instance, filename):
+    project_id = instance.project_id or "unknown"
+    sanitized_name = Path(filename).name or "document"
+    return f"api_import_jobs/{project_id}/{uuid4().hex}_{sanitized_name}"
 
 
 class ApiCollection(models.Model):
@@ -507,6 +516,12 @@ class ApiImportJob(models.Model):
         verbose_name=_("创建人"),
     )
     source_name = models.CharField(_("源文档名称"), max_length=255)
+    source_file = models.FileField(
+        _("源文档文件"),
+        upload_to=api_import_job_source_upload_path,
+        blank=True,
+        null=True,
+    )
     status = models.CharField(_("任务状态"), max_length=20, choices=STATUS_CHOICES, default="pending")
     progress_percent = models.PositiveIntegerField(_("进度百分比"), default=0)
     progress_stage = models.CharField(_("当前阶段"), max_length=50, blank=True, default="")

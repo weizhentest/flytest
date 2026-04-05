@@ -15,6 +15,8 @@ import type {
   UiTestCaseDetail,
   UiCaseStepsDetailed,
   UiExecutionRecord,
+  UiAICase,
+  UiAIExecutionRecord,
   UiBatchExecutionRecord,
   UiPublicData,
   UiEnvironmentConfig,
@@ -23,6 +25,8 @@ import type {
   UiElementForm,
   UiPageStepsForm,
   UiTestCaseForm,
+  UiAICaseForm,
+  UiAIAdhocRunForm,
   UiPublicDataForm,
   UiEnvironmentConfigForm,
   PaginatedResponse,
@@ -165,6 +169,41 @@ export const executionRecordApi = {
   /** 获取执行记录的 Trace 数据 */
   getTrace: (id: number, refresh?: boolean) =>
     request.get<TraceData>(`${BASE_URL}/execution-records/${id}/trace/`, { params: refresh ? { refresh: '1' } : {} }),
+}
+
+// ==================== AI 智能模式用例 ====================
+export const aiCaseApi = {
+  list: (params?: { project?: number; default_execution_mode?: string; search?: string; page?: number; page_size?: number }) =>
+    request.get<PaginatedResponse<UiAICase>>(`${BASE_URL}/ai-cases/`, { params }),
+
+  get: (id: number) => request.get<UiAICase>(`${BASE_URL}/ai-cases/${id}/`),
+
+  create: (data: UiAICaseForm) => request.post<UiAICase>(`${BASE_URL}/ai-cases/`, data),
+
+  update: (id: number, data: Partial<UiAICaseForm>) =>
+    request.patch<UiAICase>(`${BASE_URL}/ai-cases/${id}/`, data),
+
+  delete: (id: number) => request.delete(`${BASE_URL}/ai-cases/${id}/`),
+
+  run: (id: number, execution_mode?: string) =>
+    request.post<UiAIExecutionRecord>(`${BASE_URL}/ai-cases/${id}/run/`, execution_mode ? { execution_mode } : {}),
+}
+
+// ==================== AI 智能模式执行记录 ====================
+export const aiExecutionApi = {
+  list: (params?: { project?: number; ai_case?: number; status?: string; execution_mode?: string; execution_backend?: string; search?: string; page?: number; page_size?: number }) =>
+    request.get<PaginatedResponse<UiAIExecutionRecord>>(`${BASE_URL}/ai-execution-records/`, { params }),
+
+  get: (id: number) => request.get<UiAIExecutionRecord>(`${BASE_URL}/ai-execution-records/${id}/`),
+
+  delete: (id: number) => request.delete(`${BASE_URL}/ai-execution-records/${id}/`),
+
+  runAdhoc: (data: UiAIAdhocRunForm) =>
+    request.post<UiAIExecutionRecord>(`${BASE_URL}/ai-execution-records/run-adhoc/`, data),
+
+  stop: (id: number) => request.post(`${BASE_URL}/ai-execution-records/${id}/stop/`),
+
+  report: (id: number) => request.get(`${BASE_URL}/ai-execution-records/${id}/report/`),
 }
 
 // ==================== 批量执行记录管理 ====================

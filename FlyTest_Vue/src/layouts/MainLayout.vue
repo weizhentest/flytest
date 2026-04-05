@@ -4,13 +4,8 @@
     <a-layout-header class="header">
       <div class="left-section">
         <div class="logo" unselectable="on">
-          <div class="logo-mark">
-            <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
-          </div>
-          <div class="logo-copy">
-            <span class="logo-eyebrow">AI Test Command Center</span>
-            <span class="logo-text">FlyTest</span>
-          </div>
+          <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
+          <span class="logo-text">FlyTest</span>
         </div>
         <div class="project-selector" v-if="showProjectSelector">
           <a-select
@@ -162,6 +157,59 @@
             <a-menu-item key="api-automation-execution-report" v-if="hasApiAutomationPermission">
               <template #icon><icon-bar-chart /></template>
               <span class="menu-link">测试报告</span>
+            </a-menu-item>
+          </a-sub-menu>
+
+          <a-sub-menu key="app-automation" v-if="hasAppAutomationPermission">
+            <template #icon><icon-apps /></template>
+            <template #title>APP自动化</template>
+            <a-menu-item key="app-automation-overview">
+              <template #icon><icon-home /></template>
+              <span class="menu-link">概览</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-devices">
+              <template #icon><icon-storage /></template>
+              <span class="menu-link">设备管理</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-packages">
+              <template #icon><icon-folder /></template>
+              <span class="menu-link">应用包</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-elements">
+              <template #icon><icon-code-block /></template>
+              <span class="menu-link">元素管理</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-scene-builder">
+              <template #icon><icon-code-block /></template>
+              <span class="menu-link">场景编排</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-test-cases">
+              <template #icon><icon-experiment /></template>
+              <span class="menu-link">测试用例</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-suites">
+              <template #icon><icon-folder /></template>
+              <span class="menu-link">测试套件</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-executions">
+              <template #icon><icon-history /></template>
+              <span class="menu-link">执行记录</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-scheduled-tasks">
+              <template #icon><icon-tool /></template>
+              <span class="menu-link">定时任务</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-notifications">
+              <template #icon><icon-message /></template>
+              <span class="menu-link">通知日志</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-reports">
+              <template #icon><icon-bar-chart /></template>
+              <span class="menu-link">执行报告</span>
+            </a-menu-item>
+            <a-menu-item key="app-automation-settings">
+              <template #icon><icon-tool /></template>
+              <span class="menu-link">环境设置</span>
             </a-menu-item>
           </a-sub-menu>
 
@@ -409,6 +457,18 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   'api-automation-environments': { route: { path: '/api-automation', query: { tab: 'environments' } }, requiresProject: true },
   'api-automation-execution-records': { route: { path: '/api-automation', query: { tab: 'execution-records' } }, requiresProject: true },
   'api-automation-execution-report': { route: { path: '/api-automation', query: { tab: 'execution-report' } }, requiresProject: true },
+  'app-automation-overview': { route: { path: '/app-automation', query: { tab: 'overview' } }, requiresProject: true },
+  'app-automation-devices': { route: { path: '/app-automation', query: { tab: 'devices' } }, requiresProject: true },
+  'app-automation-packages': { route: { path: '/app-automation', query: { tab: 'packages' } }, requiresProject: true },
+  'app-automation-elements': { route: { path: '/app-automation', query: { tab: 'elements' } }, requiresProject: true },
+  'app-automation-scene-builder': { route: { path: '/app-automation', query: { tab: 'scene-builder' } }, requiresProject: true },
+  'app-automation-test-cases': { route: { path: '/app-automation', query: { tab: 'test-cases' } }, requiresProject: true },
+  'app-automation-suites': { route: { path: '/app-automation', query: { tab: 'suites' } }, requiresProject: true },
+  'app-automation-executions': { route: { path: '/app-automation', query: { tab: 'executions' } }, requiresProject: true },
+  'app-automation-scheduled-tasks': { route: { path: '/app-automation', query: { tab: 'scheduled-tasks' } }, requiresProject: true },
+  'app-automation-notifications': { route: { path: '/app-automation', query: { tab: 'notifications' } }, requiresProject: true },
+  'app-automation-reports': { route: { path: '/app-automation', query: { tab: 'reports' } }, requiresProject: true },
+  'app-automation-settings': { route: { path: '/app-automation', query: { tab: 'settings' } }, requiresProject: true },
   'ui-automation-pages': { route: { path: '/ui-automation', query: { tab: 'pages' } }, requiresProject: true },
   'ui-automation-page-steps': { route: { path: '/ui-automation', query: { tab: 'page-steps' } }, requiresProject: true },
   'ui-automation-testcases': { route: { path: '/ui-automation', query: { tab: 'testcases' } }, requiresProject: true },
@@ -457,6 +517,21 @@ const activeMenu = computed(() => {
     if (tab === 'execution-report') return 'api-automation-execution-report';
     return 'api-automation-requests';
   }
+  if (path.startsWith('/app-automation')) {
+    const tab = String(route.query.tab || 'overview');
+    if (tab === 'devices') return 'app-automation-devices';
+    if (tab === 'packages') return 'app-automation-packages';
+    if (tab === 'elements') return 'app-automation-elements';
+    if (tab === 'scene-builder') return 'app-automation-scene-builder';
+    if (tab === 'test-cases') return 'app-automation-test-cases';
+    if (tab === 'suites') return 'app-automation-suites';
+    if (tab === 'executions') return 'app-automation-executions';
+    if (tab === 'scheduled-tasks') return 'app-automation-scheduled-tasks';
+    if (tab === 'notifications') return 'app-automation-notifications';
+    if (tab === 'reports') return 'app-automation-reports';
+    if (tab === 'settings') return 'app-automation-settings';
+    return 'app-automation-overview';
+  }
   if (path.startsWith('/ui-automation/trace')) return 'ui-automation-execution-records';
   if (path.startsWith('/ui-automation')) {
     const tab = String(route.query.tab || 'pages');
@@ -475,6 +550,7 @@ const activeMenu = computed(() => {
 
 const activeGroupKey = computed(() => {
   if (activeMenu.value.startsWith('api-automation-')) return 'api-automation';
+  if (activeMenu.value.startsWith('app-automation-')) return 'app-automation';
   if (activeMenu.value.startsWith('ui-automation-')) return 'ui-automation';
   if (['testcases', 'testsuites', 'test-executions'].includes(activeMenu.value)) return 'test-management';
   if (['users', 'organizations', 'permissions', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
@@ -521,6 +597,10 @@ const hasApiAutomationPermission = computed(() => {
 
 const hasApiAutomationMenuItems = computed(() => {
   return hasApiAutomationPermission.value;
+});
+
+const hasAppAutomationPermission = computed(() => {
+  return authStore.isAuthenticated;
 });
 
 const hasUiAutomationPermission = computed(() => {
@@ -707,7 +787,7 @@ onMounted(async () => {
 .logo {
   font-size: 1.2em;
   font-weight: bold;
-  color: #333333;
+  color: #ffffff;
   text-align: left;
   display: flex;
   justify-content: flex-start;
@@ -716,25 +796,31 @@ onMounted(async () => {
   white-space: nowrap;
   padding: 0;
   margin: 0;
-  margin-right: 20px;
+  margin-right: 12px;
   box-sizing: border-box;
-  width: 140px;
+  width: auto;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  flex-shrink: 0;
 }
 
 .logo-icon {
-  width: 24px;
-  height: 24px;
+  width: 56px;
+  height: 56px;
   object-fit: contain;
-  border-radius: 3px;
-  margin-right: 8px;
+  margin-right: 0;
 }
 
 .logo-text {
   flex-shrink: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #000000;
+  text-shadow: none;
 }
 
 .project-selector {
@@ -1101,19 +1187,21 @@ onMounted(async () => {
 }
 
 .main-layout {
+  --dashboard-header-height: 104px;
+  --dashboard-header-total-height: 136px;
   height: 100vh;
   background-color: var(--theme-page-bg);
   overflow: hidden;
 }
 
 .inner-layout {
-  height: calc(100vh - 76px); /* Header(56px) + margin(10px*2) = 76px */
+  height: calc(100vh - var(--dashboard-header-total-height));
 }
 
 .content {
   padding: 0;
   background-color: var(--theme-page-bg);
-  height: calc(100vh - 86px); /* 保持 86px 是因为底部还有 10px 的 margin */
+  height: calc(100vh - var(--dashboard-header-total-height) - 16px);
   margin: 0 10px 10px 10px;
   overflow: hidden; /* 让子组件自行控制滚动 */
   border-radius: 8px;
@@ -1156,10 +1244,10 @@ onMounted(async () => {
 }
 
 .header {
-  height: 72px;
-  margin: 16px 16px 12px;
-  padding: 0 24px;
-  border-radius: 24px;
+  height: var(--dashboard-header-height);
+  margin: 16px 16px;
+  padding: 0 28px;
+  border-radius: 28px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 253, 0.84));
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -1168,51 +1256,30 @@ onMounted(async () => {
 }
 
 .left-section {
-  gap: 18px;
+  gap: 22px;
 }
 
 .logo {
   width: auto;
-  gap: 14px;
-  margin-right: 10px;
-}
-
-.logo-mark {
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.14), rgba(15, 126, 168, 0.12));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  gap: 8px;
+  margin-right: 8px;
 }
 
 .logo-icon {
-  width: 26px;
-  height: 26px;
+  width: 60px;
+  height: 60px;
   margin-right: 0;
 }
 
-.logo-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  line-height: 1;
-}
-
-.logo-eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--theme-text-tertiary);
-}
-
 .logo-text {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--theme-text);
+  display: inline-flex;
+  align-items: center;
+  padding-top: 2px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #000000;
+  text-shadow: none;
 }
 
 .project-selector :deep(.arco-select-view) {
@@ -1366,19 +1433,6 @@ onMounted(async () => {
 .header > * {
   position: relative;
   z-index: 1;
-}
-
-.logo-mark {
-  position: relative;
-}
-
-.logo-mark::after {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border-radius: 20px;
-  background: radial-gradient(circle, rgba(var(--theme-accent-rgb), 0.12), transparent 72%);
-  z-index: -1;
 }
 
 .project-selector {

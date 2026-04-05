@@ -41,6 +41,14 @@ const removeTrackedJob = (jobId: number) => {
   persistTrackedImportJobs()
 }
 
+const removeRecentImportJob = (jobId: number) => {
+  recentImportJobs.value = recentImportJobs.value.filter(item => item.id !== jobId)
+}
+
+const upsertActiveImportJob = (job: ApiImportJob) => {
+  activeImportJobs.value = [job, ...activeImportJobs.value.filter(item => item.id !== job.id)]
+}
+
 const rememberRecentImportJob = (job: ApiImportJob) => {
   recentImportJobs.value = [job, ...recentImportJobs.value.filter(item => item.id !== job.id)].slice(0, 8)
 }
@@ -64,8 +72,8 @@ const notifyJobFailed = (job: ApiImportJob) => {
 
 const notifyJobCanceled = (job: ApiImportJob) => {
   Notification.info({
-    title: '接口文档解析已停止',
-    content: job.progress_message || '后台解析任务已手动停止。',
+    title: '接口文档解析已暂停',
+    content: job.progress_message || '后台解析任务已手动暂停。',
   })
 }
 
@@ -154,19 +162,35 @@ const trackImportJob = (job: ApiImportJob) => {
     trackedImportJobIds.value.push(job.id)
     persistTrackedImportJobs()
   }
-  activeImportJobs.value = [job, ...activeImportJobs.value.filter(item => item.id !== job.id)]
+  removeRecentImportJob(job.id)
+  upsertActiveImportJob(job)
   ensureImportJobPolling()
 }
 
 const cancelImportJob = async (jobId: number) => {
   const res = await importJobApi.cancel(jobId)
   const job = res.data.data
-  activeImportJobs.value = [job, ...activeImportJobs.value.filter(item => item.id !== job.id)]
+  upsertActiveImportJob(job)
   if (job.status === 'canceled') {
     removeTrackedJob(job.id)
     rememberRecentImportJob(job)
   }
   return job
+}
+
+const restartImportJob = async (jobId: number) => {
+  const res = await importJobApi.restart(jobId)
+  const job = res.data.data
+  removeRecentImportJob(job.id)
+  trackImportJob(job)
+  return job
+}
+
+const closeImportJob = async (jobId: number) => {
+  await importJobApi.close(jobId)
+  removeTrackedJob(jobId)
+  removeRecentImportJob(jobId)
+  activeImportJobs.value = activeImportJobs.value.filter(item => item.id !== jobId)
 }
 
 const registerFinishedHandler = (handler: FinishedHandler) => {
@@ -185,6 +209,8 @@ export const useApiImportJobs = () => {
     syncProject,
     trackImportJob,
     cancelImportJob,
+    restartImportJob,
+    closeImportJob,
     pollImportJobs,
     registerFinishedHandler,
     clearImportJobPolling,

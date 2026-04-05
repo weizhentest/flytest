@@ -219,6 +219,21 @@ def _is_timeout_error(exc: Exception) -> bool:
     )
 
 
+def _is_connection_error(exc: Exception) -> bool:
+    text = _exception_text(exc).lower()
+    return (
+        "connection error" in text
+        or "connect error" in text
+        or "connection reset" in text
+        or "connection aborted" in text
+        or "connection refused" in text
+        or "server disconnected" in text
+        or "remoteprotocolerror" in text
+        or "network error" in text
+        or "temporarily unavailable" in text
+    )
+
+
 def _build_retry_delay(attempt: int) -> float:
     raw_value = (os.environ.get("API_AUTOMATION_AI_RETRY_BASE_DELAY_SECONDS") or "").strip()
     try:
@@ -356,6 +371,11 @@ def _build_ai_failure_note(exc: Exception) -> str:
         )
     if _is_rate_limit_error(exc):
         return f"{DEFAULT_AI_NOTE} 失败原因: AI 网关返回限流（429），系统在退避重试后仍未成功，已自动回退到规则解析。"
+    if _is_connection_error(exc):
+        return (
+            f"{DEFAULT_AI_NOTE} 失败原因: AI 网关连接异常（{exc}）。"
+            "系统已自动重试并尝试缩小文档分片，但仍未成功，已回退到规则解析。"
+        )
     return f"{DEFAULT_AI_NOTE} 失败原因: {exc}"
 
 
@@ -377,10 +397,18 @@ def safe_llm_invoke(llm, messages, max_retries: int = 4):
         if attempt >= max_retries - 1:
             break
 
-        retry_delay = _build_retry_delay(attempt) if _is_rate_limit_error(last_error) else min(float(attempt + 1), 2.0)
+        use_backoff_retry = _is_rate_limit_error(last_error) or _is_connection_error(last_error)
+        retry_delay = _build_retry_delay(attempt) if use_backoff_retry else min(float(attempt + 1), 2.0)
         if _is_rate_limit_error(last_error):
             logger.warning(
                 "API automation AI invoke hit rate limit, retrying in %.1fs (%s/%s)",
+                retry_delay,
+                attempt + 1,
+                max_retries,
+            )
+        elif _is_connection_error(last_error):
+            logger.warning(
+                "API automation AI invoke hit connection error, retrying in %.1fs (%s/%s)",
                 retry_delay,
                 attempt + 1,
                 max_retries,
@@ -623,7 +651,7 @@ def _invoke_ai_for_chunk_with_timeout_fallback(
     base_requests: list[ParsedRequestData],
     split_depth: int = 0,
     chunk_label: str | None = None,
-) -> tuple[list[dict[str, Any] | list[Any]], bool, bool, bool]:
+) -> tuple[list[dict[str, Any] | list[Any]], bool, bool, bool, bool]:
     preparsed_limit = max(1000, _get_preparsed_requests_limit() // (2**split_depth))
     try:
         payload, truncated_chunk, truncated_preparsed = _invoke_ai_for_chunk(
@@ -639,9 +667,10 @@ def _invoke_ai_for_chunk_with_timeout_fallback(
             chunk_label=chunk_label,
             preparsed_limit=preparsed_limit,
         )
-        return ([payload] if payload is not None else []), truncated_chunk, truncated_preparsed, False
+        return ([payload] if payload is not None else []), truncated_chunk, truncated_preparsed, False, False
     except Exception as exc:
-        if not _is_timeout_error(exc):
+        split_due_to_connection_error = _is_connection_error(exc)
+        if not (_is_timeout_error(exc) or split_due_to_connection_error):
             raise
 
         max_split_depth = _get_timeout_split_max_depth()
@@ -655,18 +684,27 @@ def _invoke_ai_for_chunk_with_timeout_fallback(
             raise
 
         parent_label = chunk_label or f"chunk {chunk_index + 1}/{chunk_total}"
-        logger.warning(
-            "API automation AI chunk timed out, splitting %s into %s smaller chunks at depth %s",
-            parent_label,
-            len(subchunks),
-            split_depth + 1,
-        )
+        if split_due_to_connection_error:
+            logger.warning(
+                "API automation AI chunk hit connection error, splitting %s into %s smaller chunks at depth %s",
+                parent_label,
+                len(subchunks),
+                split_depth + 1,
+            )
+        else:
+            logger.warning(
+                "API automation AI chunk timed out, splitting %s into %s smaller chunks at depth %s",
+                parent_label,
+                len(subchunks),
+                split_depth + 1,
+            )
 
         payloads: list[dict[str, Any] | list[Any]] = []
         truncated_chunk = False
         truncated_preparsed = False
+        used_connection_split = split_due_to_connection_error
         for sub_index, subchunk in enumerate(subchunks):
-            sub_payloads, sub_truncated_chunk, sub_truncated_preparsed, _ = _invoke_ai_for_chunk_with_timeout_fallback(
+            sub_payloads, sub_truncated_chunk, sub_truncated_preparsed, _, sub_used_connection_split = _invoke_ai_for_chunk_with_timeout_fallback(
                 active_config=active_config,
                 prompt_template=prompt_template,
                 file_path=file_path,
@@ -683,8 +721,21 @@ def _invoke_ai_for_chunk_with_timeout_fallback(
             payloads.extend(sub_payloads)
             truncated_chunk = truncated_chunk or sub_truncated_chunk
             truncated_preparsed = truncated_preparsed or sub_truncated_preparsed
+            used_connection_split = used_connection_split or sub_used_connection_split
 
-        return payloads, truncated_chunk, truncated_preparsed, True
+        return payloads, truncated_chunk, truncated_preparsed, True, used_connection_split
+
+
+def _normalize_chunk_invoke_result(
+    result: tuple[Any, ...],
+) -> tuple[list[dict[str, Any] | list[Any]], bool, bool, bool, bool]:
+    if len(result) == 5:
+        payloads, truncated_chunk, truncated_preparsed, used_timeout_split, used_connection_split = result
+        return payloads, truncated_chunk, truncated_preparsed, used_timeout_split, used_connection_split
+    if len(result) == 4:
+        payloads, truncated_chunk, truncated_preparsed, used_timeout_split = result
+        return payloads, truncated_chunk, truncated_preparsed, used_timeout_split, False
+    raise ValueError(f"Unexpected AI chunk result shape: {len(result)}")
 
 
 def enhance_import_result_with_ai(
@@ -736,7 +787,7 @@ def enhance_import_result_with_ai(
     )
 
     def _compute_enhancement_result() -> AIEnhancementResult:
-        chunks = _split_document_for_ai(document_content, max_chars=12000)
+        chunks = _split_document_for_ai(document_content, max_chars=_get_document_chunk_size())
 
         payloads: list[dict[str, Any] | list[Any]] = []
         truncated_document = len(chunks) > 1
@@ -744,24 +795,28 @@ def enhance_import_result_with_ai(
         chunk_max_workers = 1
         used_sequential_fallback = False
         used_timeout_split_fallback = False
+        used_connection_split_fallback = False
 
         if len(chunks) == 1:
             _ensure_not_cancelled(cancel_callback)
-            chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split = _invoke_ai_for_chunk_with_timeout_fallback(
-                active_config=active_config,
-                prompt_template=prompt_template,
-                file_path=file_path,
-                content_source_type=content_source_type or source_type,
-                marker_used=marker_used,
-                chunk_content=chunks[0],
-                chunk_index=0,
-                chunk_total=1,
-                related_requests=_select_relevant_requests(chunks[0], base_requests),
-                base_requests=base_requests,
+            chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split, used_connection_split = _normalize_chunk_invoke_result(
+                _invoke_ai_for_chunk_with_timeout_fallback(
+                    active_config=active_config,
+                    prompt_template=prompt_template,
+                    file_path=file_path,
+                    content_source_type=content_source_type or source_type,
+                    marker_used=marker_used,
+                    chunk_content=chunks[0],
+                    chunk_index=0,
+                    chunk_total=1,
+                    related_requests=_select_relevant_requests(chunks[0], base_requests),
+                    base_requests=base_requests,
+                )
             )
             truncated_document = truncated_document or chunk_truncated
             truncated_preparsed = truncated_preparsed or preparsed_truncated
             used_timeout_split_fallback = used_timeout_split_fallback or used_timeout_split
+            used_connection_split_fallback = used_connection_split_fallback or used_connection_split
             if not chunk_payloads:
                 return AIEnhancementResult(
                     requested=True,
@@ -778,21 +833,24 @@ def enhance_import_result_with_ai(
             if chunk_max_workers == 1:
                 for index, chunk in enumerate(chunks):
                     _ensure_not_cancelled(cancel_callback)
-                    chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split = _invoke_ai_for_chunk_with_timeout_fallback(
-                        active_config=active_config,
-                        prompt_template=prompt_template,
-                        file_path=file_path,
-                        content_source_type=content_source_type or source_type,
-                        marker_used=marker_used,
-                        chunk_content=chunk,
-                        chunk_index=index,
-                        chunk_total=len(chunks),
-                        related_requests=_select_relevant_requests(chunk, base_requests),
-                        base_requests=base_requests,
+                    chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split, used_connection_split = _normalize_chunk_invoke_result(
+                        _invoke_ai_for_chunk_with_timeout_fallback(
+                            active_config=active_config,
+                            prompt_template=prompt_template,
+                            file_path=file_path,
+                            content_source_type=content_source_type or source_type,
+                            marker_used=marker_used,
+                            chunk_content=chunk,
+                            chunk_index=index,
+                            chunk_total=len(chunks),
+                            related_requests=_select_relevant_requests(chunk, base_requests),
+                            base_requests=base_requests,
+                        )
                     )
                     truncated_document = truncated_document or chunk_truncated
                     truncated_preparsed = truncated_preparsed or preparsed_truncated
                     used_timeout_split_fallback = used_timeout_split_fallback or used_timeout_split
+                    used_connection_split_fallback = used_connection_split_fallback or used_connection_split
                     payloads.extend(chunk_payloads)
             else:
                 futures = []
@@ -818,10 +876,13 @@ def enhance_import_result_with_ai(
 
                         for future in as_completed(futures):
                             _ensure_not_cancelled(cancel_callback)
-                            chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split = future.result()
+                            chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split, used_connection_split = _normalize_chunk_invoke_result(
+                                future.result()
+                            )
                             truncated_document = truncated_document or chunk_truncated
                             truncated_preparsed = truncated_preparsed or preparsed_truncated
                             used_timeout_split_fallback = used_timeout_split_fallback or used_timeout_split
+                            used_connection_split_fallback = used_connection_split_fallback or used_connection_split
                             payloads.extend(chunk_payloads)
                 except Exception as exc:
                     if not _is_concurrent_request_limit_error(exc):
@@ -837,21 +898,24 @@ def enhance_import_result_with_ai(
                     used_sequential_fallback = True
                     for index, chunk in enumerate(chunks):
                         _ensure_not_cancelled(cancel_callback)
-                        chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split = _invoke_ai_for_chunk_with_timeout_fallback(
-                            active_config=active_config,
-                            prompt_template=prompt_template,
-                            file_path=file_path,
-                            content_source_type=content_source_type or source_type,
-                            marker_used=marker_used,
-                            chunk_content=chunk,
-                            chunk_index=index,
-                            chunk_total=len(chunks),
-                            related_requests=_select_relevant_requests(chunk, base_requests),
-                            base_requests=base_requests,
+                        chunk_payloads, chunk_truncated, preparsed_truncated, used_timeout_split, used_connection_split = _normalize_chunk_invoke_result(
+                            _invoke_ai_for_chunk_with_timeout_fallback(
+                                active_config=active_config,
+                                prompt_template=prompt_template,
+                                file_path=file_path,
+                                content_source_type=content_source_type or source_type,
+                                marker_used=marker_used,
+                                chunk_content=chunk,
+                                chunk_index=index,
+                                chunk_total=len(chunks),
+                                related_requests=_select_relevant_requests(chunk, base_requests),
+                                base_requests=base_requests,
+                            )
                         )
                         truncated_document = truncated_document or chunk_truncated
                         truncated_preparsed = truncated_preparsed or preparsed_truncated
                         used_timeout_split_fallback = used_timeout_split_fallback or used_timeout_split
+                        used_connection_split_fallback = used_connection_split_fallback or used_connection_split
                         payloads.extend(chunk_payloads)
 
         if not payloads:
@@ -879,6 +943,8 @@ def enhance_import_result_with_ai(
             notes.append("检测到 AI 网关并发限流，已自动切换为顺序重试。")
         if used_timeout_split_fallback:
             notes.append("检测到 AI 请求超时，已自动缩小文档分片后继续解析。")
+        if used_connection_split_fallback:
+            notes.append("检测到 AI 网关连接异常，已自动缩小文档分片并再次尝试。")
         if truncated_document:
             notes.append("部分文档分片内容过长，已截断后送入模型。")
         if truncated_preparsed:

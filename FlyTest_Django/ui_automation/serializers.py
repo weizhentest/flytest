@@ -4,8 +4,8 @@
 from rest_framework import serializers
 from .models import (
     UiModule, UiPage, UiElement, UiPageSteps, UiPageStepsDetailed,
-    UiTestCase, UiCaseStepsDetailed, UiExecutionRecord, UiPublicData, UiEnvironmentConfig,
-    UiBatchExecutionRecord
+    UiTestCase, UiCaseStepsDetailed, UiExecutionRecord, UiAICase, UiAIExecutionRecord,
+    UiPublicData, UiEnvironmentConfig, UiBatchExecutionRecord
 )
 
 
@@ -240,6 +240,64 @@ class UiExecutionRecordSerializer(serializers.ModelSerializer):
         model = UiExecutionRecord
         fields = '__all__'
         read_only_fields = ['created_at']
+
+
+class UiAICaseSerializer(serializers.ModelSerializer):
+    """AI 用例序列化器"""
+
+    creator_name = serializers.CharField(source='creator.username', read_only=True)
+
+    class Meta:
+        model = UiAICase
+        fields = '__all__'
+        read_only_fields = ['creator', 'created_at', 'updated_at']
+
+
+class UiAIExecutionRecordListSerializer(serializers.ModelSerializer):
+    """AI 执行记录列表序列化器"""
+
+    ai_case_name = serializers.CharField(source='ai_case.name', read_only=True)
+    executed_by_name = serializers.CharField(source='executed_by.username', read_only=True)
+    planned_task_count = serializers.SerializerMethodField()
+    completed_task_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UiAIExecutionRecord
+        fields = [
+            'id', 'project', 'ai_case', 'ai_case_name', 'case_name', 'task_description',
+            'execution_mode', 'execution_backend', 'status', 'start_time', 'end_time',
+            'duration', 'model_config_name', 'executed_by', 'executed_by_name',
+            'planned_task_count', 'completed_task_count',
+        ]
+
+    def get_planned_task_count(self, obj):
+        return len(obj.planned_tasks or [])
+
+    def get_completed_task_count(self, obj):
+        return len([task for task in (obj.planned_tasks or []) if task.get('status') == 'completed'])
+
+
+class UiAIExecutionRecordSerializer(serializers.ModelSerializer):
+    """AI 执行记录序列化器"""
+
+    ai_case_name = serializers.CharField(source='ai_case.name', read_only=True)
+    executed_by_name = serializers.CharField(source='executed_by.username', read_only=True)
+    planned_task_count = serializers.SerializerMethodField()
+    completed_task_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UiAIExecutionRecord
+        fields = '__all__'
+        read_only_fields = [
+            'start_time', 'end_time', 'duration', 'logs', 'steps_completed', 'planned_tasks',
+            'execution_backend', 'status', 'error_message', 'model_config_name', 'executed_by',
+        ]
+
+    def get_planned_task_count(self, obj):
+        return len(obj.planned_tasks or [])
+
+    def get_completed_task_count(self, obj):
+        return len([task for task in (obj.planned_tasks or []) if task.get('status') == 'completed'])
 
 
 class UiPublicDataSerializer(serializers.ModelSerializer):

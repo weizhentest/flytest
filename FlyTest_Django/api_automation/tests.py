@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -7,7 +8,7 @@ import httpx
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from knowledge.models import Document as KnowledgeDocument
 from knowledge.models import DocumentChunk, KnowledgeBase
 from requirements.models import RequirementDocument, RequirementModule
@@ -63,6 +64,20 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertEqual(llm.invoke.call_count, 2)
         mock_sleep.assert_called_once()
 
+    def test_safe_llm_invoke_retries_after_connection_error(self):
+        llm = Mock()
+        llm.invoke.side_effect = [
+            Exception("Connection error."),
+            SimpleNamespace(content='{"requests": []}'),
+        ]
+
+        with patch("api_automation.ai_parser.time.sleep") as mock_sleep:
+            response = safe_llm_invoke(llm, [])
+
+        self.assertEqual(response.content, '{"requests": []}')
+        self.assertEqual(llm.invoke.call_count, 2)
+        mock_sleep.assert_called_once()
+
     def test_chunk_worker_limit_defaults_to_single_worker(self):
         with patch.dict(os.environ, {}, clear=False):
             self.assertEqual(_get_chunk_max_workers(5), 1)
@@ -97,7 +112,7 @@ class ApiAutomationAIParserTests(SimpleTestCase):
 
         mock_invoke_ai_for_chunk.side_effect = side_effect
 
-        payloads, truncated_chunk, truncated_preparsed, used_timeout_split = _invoke_ai_for_chunk_with_timeout_fallback(
+        payloads, truncated_chunk, truncated_preparsed, used_timeout_split, used_connection_split = _invoke_ai_for_chunk_with_timeout_fallback(
             active_config=SimpleNamespace(),
             prompt_template="demo",
             file_path="demo.md",
@@ -111,6 +126,37 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         )
 
         self.assertTrue(used_timeout_split)
+        self.assertEqual(len(payloads), 4)
+        self.assertFalse(truncated_chunk)
+        self.assertFalse(truncated_preparsed)
+        self.assertGreater(mock_invoke_ai_for_chunk.call_count, 1)
+        self.assertFalse(used_connection_split)
+
+    @patch("api_automation.ai_parser._invoke_ai_for_chunk")
+    def test_connection_error_fallback_splits_large_chunk_and_recovers(self, mock_invoke_ai_for_chunk):
+        def side_effect(*args, **kwargs):
+            chunk_content = kwargs["chunk_content"]
+            if len(chunk_content) > 3000:
+                raise Exception("Connection error.")
+            return {"requests": []}, False, False
+
+        mock_invoke_ai_for_chunk.side_effect = side_effect
+
+        payloads, truncated_chunk, truncated_preparsed, used_timeout_split, used_connection_split = _invoke_ai_for_chunk_with_timeout_fallback(
+            active_config=SimpleNamespace(),
+            prompt_template="demo",
+            file_path="demo.md",
+            content_source_type="native_document",
+            marker_used=False,
+            chunk_content=("\n\n".join(["a" * 2500, "b" * 2500, "c" * 2500, "d" * 2500])),
+            chunk_index=0,
+            chunk_total=1,
+            related_requests=[],
+            base_requests=[],
+        )
+
+        self.assertTrue(used_timeout_split)
+        self.assertTrue(used_connection_split)
         self.assertEqual(len(payloads), 4)
         self.assertFalse(truncated_chunk)
         self.assertFalse(truncated_preparsed)
@@ -132,6 +178,14 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertIn("缩小文档分片", note)
         self.assertIn("回退", note)
 
+
+    def test_build_ai_failure_note_for_connection_error_is_friendly(self):
+        note = _build_ai_failure_note(Exception("Connection error."))
+
+        self.assertIn("AI 网关连接异常", note)
+        self.assertIn("Connection error", note)
+        self.assertIn("缩小文档分片", note)
+        self.assertIn("回退", note)
 
     @patch("api_automation.ai_parser._invoke_ai_for_chunk_with_timeout_fallback")
     @patch("api_automation.ai_parser.load_document_content_for_ai")
@@ -161,6 +215,7 @@ class ApiAutomationAIParserTests(SimpleTestCase):
                     "summary": "识别到 1 个接口",
                 }
             ],
+            False,
             False,
             False,
             False,
@@ -2249,6 +2304,121 @@ class ApiAutomationImportDocumentTests(TestCase):
         payload = self._payload(response)
         self.assertEqual(payload["status"], "canceled")
         self.assertTrue(payload["cancel_requested"])
+
+    @patch("api_automation.views._start_import_job")
+    def test_async_import_job_persists_source_file_for_restart(self, mock_start_import_job):
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            upload = SimpleUploadedFile(
+                "async-api.md",
+                b"## Login\nPOST /api/login\n```json\n{\"username\": \"demo\"}\n```",
+                content_type="text/markdown",
+            )
+
+            response = self.client.post(
+                "/api/api-automation/requests/import-document/",
+                {
+                    "collection_id": str(self.collection.id),
+                    "generate_test_cases": "true",
+                    "async_mode": "true",
+                    "file": upload,
+                },
+                format="multipart",
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            payload = self._payload(response)
+            job = ApiImportJob.objects.get(pk=payload["id"])
+            self.assertTrue(bool(job.source_file))
+            self.assertTrue(os.path.exists(job.source_file.path))
+            mock_start_import_job.assert_called_once_with(job.id)
+
+    @patch("api_automation.views._start_import_job")
+    def test_import_job_can_restart_after_being_canceled(self, mock_start_import_job):
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            job = ApiImportJob.objects.create(
+                project=self.project,
+                collection=self.collection,
+                creator=self.user,
+                source_name="demo.md",
+                source_file=SimpleUploadedFile(
+                    "demo.md",
+                    b"## Login\nPOST /api/login",
+                    content_type="text/markdown",
+                ),
+                status="canceled",
+                progress_percent=76,
+                progress_stage="canceled",
+                progress_message="文档解析任务已暂停。",
+                cancel_requested=True,
+                generate_test_cases=True,
+                enable_ai_parse=True,
+            )
+
+            response = self.client.post(f"/api/api-automation/import-jobs/{job.id}/restart/")
+
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            payload = self._payload(response)
+            self.assertEqual(payload["status"], "pending")
+            self.assertFalse(payload["cancel_requested"])
+            self.assertEqual(payload["progress_stage"], "uploaded")
+            self.assertEqual(payload["progress_percent"], 4)
+            mock_start_import_job.assert_called_once_with(job.id)
+
+            job.refresh_from_db()
+            self.assertEqual(job.status, "pending")
+            self.assertFalse(job.cancel_requested)
+            self.assertEqual(job.error_message, "")
+
+    def test_import_job_restart_requires_persisted_source_file(self):
+        job = ApiImportJob.objects.create(
+            project=self.project,
+            collection=self.collection,
+            creator=self.user,
+            source_name="legacy.md",
+            status="canceled",
+            progress_percent=40,
+            progress_stage="canceled",
+            progress_message="文档解析任务已暂停。",
+            cancel_requested=True,
+            generate_test_cases=True,
+            enable_ai_parse=True,
+        )
+
+        response = self.client.post(f"/api/api-automation/import-jobs/{job.id}/restart/")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("源文档", self._payload(response)["error"])
+
+    def test_import_job_can_be_closed_and_removes_source_file(self):
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            job = ApiImportJob.objects.create(
+                project=self.project,
+                collection=self.collection,
+                creator=self.user,
+                source_name="demo.md",
+                source_file=SimpleUploadedFile(
+                    "demo.md",
+                    b"## Login\nPOST /api/login",
+                    content_type="text/markdown",
+                ),
+                status="canceled",
+                progress_percent=76,
+                progress_stage="canceled",
+                progress_message="文档解析任务已暂停。",
+                cancel_requested=False,
+                generate_test_cases=True,
+                enable_ai_parse=True,
+            )
+            source_path = job.source_file.path
+
+            response = self.client.post(f"/api/api-automation/import-jobs/{job.id}/close/")
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            payload = self._payload(response)
+            self.assertEqual(payload["id"], job.id)
+            self.assertTrue(payload["closed"])
+            self.assertFalse(ApiImportJob.objects.filter(pk=job.id).exists())
+            self.assertFalse(os.path.exists(source_path))
 
     @patch("api_automation.views.generate_test_case_drafts_with_ai")
     def test_generate_test_cases_endpoint_creates_cases_for_selected_requests(self, mock_generate):

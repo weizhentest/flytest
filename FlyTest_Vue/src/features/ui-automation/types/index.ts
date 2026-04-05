@@ -204,6 +204,98 @@ export interface UiExecutionRecord {
   created_at: string
 }
 
+/** AI 执行模式 */
+export type UiAIExecutionMode = 'text' | 'vision'
+
+/** AI 执行状态 */
+export type UiAIExecutionStatus = 'pending' | 'running' | 'passed' | 'failed' | 'stopped'
+
+/** AI 执行后端 */
+export type UiAIExecutionBackend = 'planning' | 'browser_use'
+
+export const AI_MODE_LABELS: Record<UiAIExecutionMode, string> = {
+  text: '文本模式',
+  vision: '视觉模式',
+}
+
+export const AI_STATUS_LABELS: Record<UiAIExecutionStatus, string> = {
+  pending: '等待中',
+  running: '执行中',
+  passed: '成功',
+  failed: '失败',
+  stopped: '已停止',
+}
+
+export const AI_BACKEND_LABELS: Record<UiAIExecutionBackend, string> = {
+  planning: 'AI 规划',
+  browser_use: 'Browser Use',
+}
+
+/** AI 用例 */
+export interface UiAICase extends TimeStampFields {
+  id: number
+  project: number
+  name: string
+  description?: string
+  task_description: string
+  default_execution_mode: UiAIExecutionMode
+  creator: number | null
+  creator_name?: string
+}
+
+/** AI 任务计划 */
+export interface UiAITaskPlan {
+  id: number
+  title: string
+  description: string
+  expected_result?: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  started_at?: string
+  completed_at?: string
+  result?: string
+}
+
+/** AI 已完成步骤 */
+export interface UiAIExecutionStep {
+  step: number
+  title: string
+  description: string
+  expected_result?: string
+  status: 'passed' | 'failed' | 'stopped'
+  message: string
+  execution_mode: UiAIExecutionMode
+  execution_backend: UiAIExecutionBackend
+  completed_at: string
+  duration?: number
+}
+
+/** AI 执行记录 */
+export interface UiAIExecutionRecord {
+  id: number
+  project: number
+  ai_case?: number | null
+  ai_case_name?: string
+  case_name: string
+  task_description: string
+  execution_mode: UiAIExecutionMode
+  execution_backend: UiAIExecutionBackend
+  status: UiAIExecutionStatus
+  start_time: string
+  end_time?: string
+  duration?: number
+  logs?: string
+  steps_completed?: UiAIExecutionStep[]
+  planned_tasks?: UiAITaskPlan[]
+  screenshots_sequence?: string[]
+  gif_path?: string
+  error_message?: string
+  model_config_name?: string
+  executed_by: number | null
+  executed_by_name?: string
+  planned_task_count?: number
+  completed_task_count?: number
+}
+
 /** 批量执行记录状态 */
 export type BatchExecutionStatus = 0 | 1 | 2 | 3 | 4  // 待执行 | 执行中 | 全部成功 | 部分失败 | 全部失败
 
@@ -420,5 +512,13 @@ export type UiPageForm = Omit<UiPage, 'id' | 'module_name' | 'element_count' | '
 export type UiElementForm = Omit<UiElement, 'id' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
 export type UiPageStepsForm = Omit<UiPageSteps, 'id' | 'page_name' | 'module_name' | 'status' | 'result_data' | 'step_count' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
 export type UiTestCaseForm = Omit<UiTestCase, 'id' | 'module_name' | 'status' | 'result_data' | 'error_message' | 'step_count' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
+export type UiAICaseForm = Omit<UiAICase, 'id' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
 export type UiPublicDataForm = Omit<UiPublicData, 'id' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
 export type UiEnvironmentConfigForm = Omit<UiEnvironmentConfig, 'id' | 'creator' | 'creator_name' | 'created_at' | 'updated_at'>
+
+export interface UiAIAdhocRunForm {
+  project: number
+  case_name?: string
+  task_description: string
+  execution_mode: UiAIExecutionMode
+}

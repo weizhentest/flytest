@@ -392,6 +392,108 @@ class UiExecutionRecord(models.Model):
         db_table = 'ui_execution_record'
 
 
+class UiAICase(models.Model):
+    """AI 智能模式用例"""
+
+    EXECUTION_MODE_CHOICES = [
+        ('text', _('文本模式')),
+        ('vision', _('视觉模式')),
+    ]
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE,
+        related_name='ui_ai_cases', verbose_name=_('所属项目')
+    )
+    name = models.CharField(_('用例名称'), max_length=200)
+    description = models.TextField(_('描述'), blank=True, null=True)
+    task_description = models.TextField(_('任务描述'))
+    default_execution_mode = models.CharField(
+        _('默认执行模式'),
+        max_length=20,
+        choices=EXECUTION_MODE_CHOICES,
+        default='text'
+    )
+    creator = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='created_ui_ai_cases', verbose_name=_('创建人')
+    )
+    created_at = models.DateTimeField(_('创建时间'), auto_now_add=True)
+    updated_at = models.DateTimeField(_('更新时间'), auto_now=True)
+
+    class Meta:
+        verbose_name = _('UI AI 用例')
+        verbose_name_plural = _('UI AI 用例')
+        ordering = ['-created_at']
+        db_table = 'ui_ai_case'
+
+    def __str__(self):
+        return f"{self.project.name} - {self.name}"
+
+
+class UiAIExecutionRecord(models.Model):
+    """AI 智能模式执行记录"""
+
+    STATUS_CHOICES = [
+        ('pending', _('等待中')),
+        ('running', _('执行中')),
+        ('passed', _('成功')),
+        ('failed', _('失败')),
+        ('stopped', _('已停止')),
+    ]
+    EXECUTION_MODE_CHOICES = UiAICase.EXECUTION_MODE_CHOICES
+    EXECUTION_BACKEND_CHOICES = [
+        ('planning', _('AI 规划')),
+        ('browser_use', _('Browser Use')),
+    ]
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE,
+        related_name='ui_ai_execution_records', verbose_name=_('所属项目')
+    )
+    ai_case = models.ForeignKey(
+        UiAICase, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='execution_records', verbose_name=_('关联 AI 用例')
+    )
+    case_name = models.CharField(_('用例名称快照'), max_length=200)
+    task_description = models.TextField(_('任务描述'), blank=True, default='')
+    execution_mode = models.CharField(
+        _('执行模式'),
+        max_length=20,
+        choices=EXECUTION_MODE_CHOICES,
+        default='text'
+    )
+    execution_backend = models.CharField(
+        _('执行后端'),
+        max_length=32,
+        choices=EXECUTION_BACKEND_CHOICES,
+        default='planning'
+    )
+    status = models.CharField(_('执行状态'), max_length=20, choices=STATUS_CHOICES, default='pending')
+    start_time = models.DateTimeField(_('开始时间'), auto_now_add=True)
+    end_time = models.DateTimeField(_('结束时间'), null=True, blank=True)
+    duration = models.FloatField(_('执行时长（秒）'), null=True, blank=True)
+    logs = models.TextField(_('执行日志'), blank=True, default='')
+    steps_completed = models.JSONField(_('已完成步骤'), default=list, blank=True)
+    planned_tasks = models.JSONField(_('规划任务'), default=list, blank=True)
+    screenshots_sequence = models.JSONField(_('截图序列'), default=list, blank=True)
+    gif_path = models.CharField(_('GIF 路径'), max_length=500, null=True, blank=True)
+    error_message = models.TextField(_('错误信息'), null=True, blank=True)
+    model_config_name = models.CharField(_('模型配置名称'), max_length=255, null=True, blank=True)
+    executed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='ui_ai_executions', verbose_name=_('执行人')
+    )
+
+    class Meta:
+        verbose_name = _('UI AI 执行记录')
+        verbose_name_plural = _('UI AI 执行记录')
+        ordering = ['-start_time']
+        db_table = 'ui_ai_execution_record'
+
+    def __str__(self):
+        return f"{self.case_name} - {self.status}"
+
+
 class UiPublicData(models.Model):
     """公共数据（跨用例共享变量）"""
     TYPE_CHOICES = [(0, _('字符串')), (1, _('整数')), (2, _('列表')), (3, _('字典'))]

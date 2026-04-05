@@ -21,6 +21,7 @@ import type {
 
 // API基础路径
 const BASE_URL = '/requirements';
+const REVIEW_REQUEST_TIMEOUT = 300000;
 
 /**
  * 需求文档管理服务
@@ -348,7 +349,8 @@ export class RequirementDocumentService {
     const response = await request<any>({
       url: `${BASE_URL}/documents/${id}/start-review/`,
       method: 'POST',
-      data: params
+      data: params,
+      timeout: REVIEW_REQUEST_TIMEOUT
     });
 
     if (response.success) {
@@ -405,7 +407,8 @@ export class RequirementDocumentService {
     const response = await request<any>({
       url: `${BASE_URL}/documents/${id}/restart-review/`,
       method: 'POST',
-      data: params
+      data: params,
+      timeout: REVIEW_REQUEST_TIMEOUT
     });
 
     if (response.success) {

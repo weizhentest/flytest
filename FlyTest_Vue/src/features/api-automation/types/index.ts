@@ -773,6 +773,7 @@ export interface ApiImportJob {
   creator: number | null
   creator_name?: string
   source_name: string
+  source_file?: string | null
   status: 'pending' | 'running' | 'success' | 'failed' | 'canceled'
   progress_percent: number
   progress_stage?: string

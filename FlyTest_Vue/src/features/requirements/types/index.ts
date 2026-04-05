@@ -227,9 +227,17 @@ export interface ModuleProgress {
 }
 
 // 评级类型
-export type Rating = 'excellent' | 'good' | 'fair' | 'poor';
+export type Rating =
+  | 'excellent'
+  | 'good'
+  | 'average'
+  | 'needs_improvement'
+  | 'fair'
+  | 'poor';
 
 // 问题类型
+export type ReviewReportStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
 export type IssueType = 'specification' | 'clarity' | 'completeness' | 'consistency' | 'feasibility' | 'logic';
 
 // 问题优先级
@@ -272,17 +280,47 @@ export interface ModuleReviewResult {
 }
 
 // 评审报告
+export interface SpecializedReviewIssue {
+  id?: string;
+  title?: string;
+  description?: string;
+  priority?: IssuePriority;
+  severity?: IssuePriority;
+  category?: string;
+  suggestion?: string;
+  location?: string;
+  source?: string;
+}
+
+export interface SpecializedAnalysis {
+  overall_score: number;
+  summary: string;
+  issues: SpecializedReviewIssue[];
+  strengths: string[];
+  recommendations: string[];
+}
+
+export interface ReviewScores {
+  completeness: number;
+  consistency: number;
+  testability: number;
+  feasibility: number;
+  clarity: number;
+  logic: number;
+}
+
 export interface ReviewReport {
   id: string;
   document: string;
   document_title: string;
   review_date: string;
   reviewer: string;
-  status: string;
+  status: ReviewReportStatus;
   status_display: string;
   overall_rating: Rating;
   overall_rating_display: string;
   completion_score: number;
+  overall_score?: number;
   total_issues: number;
   high_priority_issues: number;
   medium_priority_issues: number;
@@ -291,6 +329,8 @@ export interface ReviewReport {
   recommendations: string;
   issues: ReviewIssue[];
   module_results: ModuleReviewResult[];
+  scores?: ReviewScores;
+  specialized_analyses?: Record<string, SpecializedAnalysis>;
   // 进度跟踪字段
   progress?: number;
   current_step?: string;
@@ -359,10 +399,12 @@ export const DocumentTypeDisplay: Record<DocumentType, string> = {
 };
 
 export const RatingDisplay: Record<Rating, string> = {
-  excellent: '优秀',
-  good: '良好',
-  fair: '一般',
-  poor: '较差'
+  excellent: '\u4f18\u79c0',
+  good: '\u826f\u597d',
+  average: '\u4e00\u822c',
+  needs_improvement: '\u9700\u6539\u8fdb',
+  fair: '\u4e00\u822c',
+  poor: '\u8f83\u5dee'
 };
 
 export const IssueTypeDisplay: Record<IssueType, string> = {

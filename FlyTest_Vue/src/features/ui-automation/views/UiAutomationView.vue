@@ -12,6 +12,9 @@
         <a-tab-pane key="testcases" title="测试用例">
           <TestCaseList ref="testCaseListRef" :selected-module-id="selectedModuleId" />
         </a-tab-pane>
+        <a-tab-pane key="ai-intelligent" title="AI 智能模式">
+          <AiIntelligentModeView ref="aiIntelligentModeRef" />
+        </a-tab-pane>
         <a-tab-pane key="execution-records" title="执行记录">
           <ExecutionRecordList ref="executionRecordListRef" />
         </a-tab-pane>
@@ -39,6 +42,7 @@ import ModulePanel from '../components/ModulePanel.vue'
 import PageList from './PageList.vue'
 import PageStepList from './PageStepList.vue'
 import TestCaseList from './TestCaseList.vue'
+import AiIntelligentModeView from './AiIntelligentModeView.vue'
 import ExecutionRecordList from './ExecutionRecordList.vue'
 import BatchRecordList from './BatchRecordList.vue'
 import PublicDataList from './PublicDataList.vue'
@@ -50,6 +54,7 @@ type UiAutomationTab =
   | 'pages'
   | 'page-steps'
   | 'testcases'
+  | 'ai-intelligent'
   | 'execution-records'
   | 'batch-records'
   | 'public-data'
@@ -64,12 +69,25 @@ const selectedModuleId = ref<number | undefined>(undefined)
 const pageListRef = ref()
 const pageStepListRef = ref()
 const testCaseListRef = ref()
+const aiIntelligentModeRef = ref()
 const executionRecordListRef = ref()
 const batchRecordListRef = ref()
 const publicDataListRef = ref()
 const envConfigListRef = ref()
 const actuatorListRef = ref()
-void [modulePanelRef, pageListRef, pageStepListRef, testCaseListRef, executionRecordListRef, batchRecordListRef, publicDataListRef, envConfigListRef, actuatorListRef]
+
+void [
+  modulePanelRef,
+  pageListRef,
+  pageStepListRef,
+  testCaseListRef,
+  aiIntelligentModeRef,
+  executionRecordListRef,
+  batchRecordListRef,
+  publicDataListRef,
+  envConfigListRef,
+  actuatorListRef,
+]
 
 const normalizeTab = (value: unknown): UiAutomationTab => {
   const tab = String(value || 'pages')
@@ -77,6 +95,7 @@ const normalizeTab = (value: unknown): UiAutomationTab => {
   if (
     tab === 'page-steps' ||
     tab === 'testcases' ||
+    tab === 'ai-intelligent' ||
     tab === 'execution-records' ||
     tab === 'batch-records' ||
     tab === 'public-data' ||
@@ -134,6 +153,9 @@ watch(activeTab, newTab => {
       break
     case 'testcases':
       testCaseListRef.value?.refresh?.()
+      break
+    case 'ai-intelligent':
+      aiIntelligentModeRef.value?.refresh?.()
       break
     case 'execution-records':
       executionRecordListRef.value?.refresh?.()

@@ -304,6 +304,30 @@ const selectedReportId = ref<string>('');
 const issueTypeFilter = ref<IssueType | ''>('');
 const priorityFilter = ref<IssuePriority | ''>('');
 
+const reportStatusPriority: Record<string, number> = {
+  completed: 0,
+  in_progress: 1,
+  pending: 2,
+  failed: 3
+};
+
+const getDisplayReports = (reports: ReviewReport[] = []) => {
+  const completedReports = reports.filter(item => item.status === 'completed');
+  const source = completedReports.length > 0 ? completedReports : reports;
+
+  return [...source].sort((a, b) => {
+    const statusDiff =
+      (reportStatusPriority[a.status] ?? Number.MAX_SAFE_INTEGER)
+      - (reportStatusPriority[b.status] ?? Number.MAX_SAFE_INTEGER);
+
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    return new Date(b.review_date).getTime() - new Date(a.review_date).getTime();
+  });
+};
+
 // 计算属性
 const filteredIssues = computed(() => {
   if (!report.value?.issues) return [];
@@ -317,11 +341,7 @@ const filteredIssues = computed(() => {
 
 // 获取所有报告版本（按时间倒序）
 const reportVersions = computed(() => {
-  if (!documentDetail.value?.review_reports) return [];
-
-  return [...documentDetail.value.review_reports].sort((a, b) =>
-    new Date(b.review_date).getTime() - new Date(a.review_date).getTime()
-  );
+  return getDisplayReports(documentDetail.value?.review_reports ?? []);
 });
 
 // 判断当前是否为最新版本
@@ -336,6 +356,8 @@ const getRatingColor = (rating?: Rating) => {
   const colorMap = {
     excellent: 'green',
     good: 'blue',
+    average: 'orange',
+    needs_improvement: 'red',
     fair: 'orange',
     poor: 'red'
   };
@@ -372,19 +394,16 @@ const loadDocumentDetail = async () => {
       documentDetail.value = response.data;
 
       // 如果有历史报告，默认选择最新的
-      if (documentDetail.value.review_reports && documentDetail.value.review_reports.length > 0) {
-        const sortedReports = [...documentDetail.value.review_reports].sort((a, b) =>
-          new Date(b.review_date).getTime() - new Date(a.review_date).getTime()
-        );
+      if (reportVersions.value.length > 0) {
 
         // 如果没有指定版本，选择最新版本
         if (!selectedReportId.value) {
-          selectedReportId.value = sortedReports[0].id;
+          selectedReportId.value = reportVersions.value[0].id;
         }
 
         // 加载选中的报告
         loadSelectedReport();
-      } else {
+      } else if (documentDetail.value.review_reports && documentDetail.value.review_reports.length > 0) {
         Message.warning('该文档暂无评审报告');
       }
     } else {
@@ -408,7 +427,7 @@ const loadSelectedReport = () => {
   loading.value = true;
 
   setTimeout(() => {
-    const selectedReport = documentDetail.value?.review_reports?.find(
+    const selectedReport = reportVersions.value.find(
       report => report.id === selectedReportId.value
     );
 
@@ -433,7 +452,7 @@ const handleVersionChange = (reportId: string) => {
   loadSelectedReport();
 
   // 显示切换成功提示
-  const selectedReport = documentDetail.value?.review_reports?.find(r => r.id === reportId);
+  const selectedReport = reportVersions.value.find(r => r.id === reportId);
   if (selectedReport) {
     const isLatest = reportVersions.value[0]?.id === reportId;
     const versionLabel = isLatest ? '最新版本' : `历史版本`;

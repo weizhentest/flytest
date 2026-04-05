@@ -8,17 +8,22 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models.deletion import ProtectedError
 from django.db import transaction
+from django.utils import timezone
 
+from projects.models import Project
+
+from .ai_mode import build_ai_execution_report, request_stop_ai_execution, start_ai_execution
 from .models import (
     UiModule, UiPage, UiElement, UiPageSteps, UiPageStepsDetailed,
-    UiTestCase, UiCaseStepsDetailed, UiExecutionRecord, UiPublicData, UiEnvironmentConfig,
-    UiBatchExecutionRecord
+    UiTestCase, UiCaseStepsDetailed, UiExecutionRecord, UiAICase, UiAIExecutionRecord,
+    UiPublicData, UiEnvironmentConfig, UiBatchExecutionRecord
 )
 from .serializers import (
     UiModuleSerializer, UiPageSerializer, UiPageDetailSerializer,
     UiElementSerializer, UiPageStepsSerializer, UiPageStepsListSerializer, UiPageStepsDetailSerializer,
     UiPageStepsDetailedSerializer, UiTestCaseSerializer, UiTestCaseListSerializer, UiTestCaseDetailSerializer,
     UiCaseStepsDetailedSerializer, UiExecutionRecordSerializer, UiExecutionRecordListSerializer,
+    UiAICaseSerializer, UiAIExecutionRecordSerializer, UiAIExecutionRecordListSerializer,
     UiPublicDataSerializer, UiEnvironmentConfigSerializer, UiTestCaseExecuteSerializer,
     UiPageStepsExecuteSerializer, UiBatchExecutionRecordSerializer, UiBatchExecutionRecordDetailSerializer
 )
@@ -548,6 +553,119 @@ class UiBatchExecutionRecordViewSet(viewsets.ModelViewSet):
         """删除批量执行记录及其关联的执行记录"""
         instance.execution_records.all().delete()
         instance.delete()
+
+
+class UiAICaseViewSet(viewsets.ModelViewSet):
+    """AI 智能模式用例管理"""
+
+    queryset = UiAICase.objects.select_related('project', 'creator')
+    serializer_class = UiAICaseSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['project', 'default_execution_mode']
+    search_fields = ['name', 'description', 'task_description']
+    ordering_fields = ['created_at', 'updated_at', 'name']
+    ordering = ['-created_at']
+
+    def perform_create(self, serializer):
+        serializer.save(creator=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def run(self, request, pk=None):
+        ai_case = self.get_object()
+        execution_mode = request.data.get('execution_mode') or ai_case.default_execution_mode or 'text'
+
+        if execution_mode not in dict(UiAICase.EXECUTION_MODE_CHOICES):
+            return Response({'error': '不支持的执行模式'}, status=status.HTTP_400_BAD_REQUEST)
+
+        execution_record = UiAIExecutionRecord.objects.create(
+            project=ai_case.project,
+            ai_case=ai_case,
+            case_name=ai_case.name,
+            task_description=ai_case.task_description,
+            execution_mode=execution_mode,
+            status='running',
+            executed_by=request.user,
+            logs='',
+        )
+        start_ai_execution(execution_record.id)
+
+        serializer = UiAIExecutionRecordSerializer(execution_record)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
+    """AI 智能模式执行记录管理"""
+
+    queryset = UiAIExecutionRecord.objects.select_related('project', 'ai_case', 'executed_by')
+    serializer_class = UiAIExecutionRecordSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['project', 'ai_case', 'execution_mode', 'status', 'execution_backend']
+    search_fields = ['case_name', 'task_description']
+    ordering_fields = ['start_time', 'end_time', 'duration']
+    ordering = ['-start_time']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == 'list':
+            return queryset.defer('logs', 'planned_tasks', 'steps_completed', 'screenshots_sequence', 'error_message')
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return UiAIExecutionRecordListSerializer
+        return UiAIExecutionRecordSerializer
+
+    @action(detail=False, methods=['post'], url_path='run-adhoc')
+    def run_adhoc(self, request):
+        project_id = request.data.get('project')
+        task_description = (request.data.get('task_description') or '').strip()
+        execution_mode = request.data.get('execution_mode') or 'text'
+        case_name = (request.data.get('case_name') or '').strip()
+
+        if not project_id:
+            return Response({'error': 'project 参数必填'}, status=status.HTTP_400_BAD_REQUEST)
+        if not task_description:
+            return Response({'error': 'task_description 参数必填'}, status=status.HTTP_400_BAD_REQUEST)
+        if execution_mode not in dict(UiAICase.EXECUTION_MODE_CHOICES):
+            return Response({'error': '不支持的执行模式'}, status=status.HTTP_400_BAD_REQUEST)
+
+        project = Project.objects.filter(id=project_id).first()
+        if project is None:
+            return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        execution_record = UiAIExecutionRecord.objects.create(
+            project=project,
+            case_name=case_name or f"临时任务 {timezone.now().strftime('%m-%d %H:%M')}",
+            task_description=task_description,
+            execution_mode=execution_mode,
+            status='running',
+            executed_by=request.user,
+            logs='',
+        )
+        start_ai_execution(execution_record.id)
+
+        serializer = UiAIExecutionRecordSerializer(execution_record)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None):
+        record = self.get_object()
+
+        if record.status not in ['pending', 'running']:
+            return Response({'error': '当前任务未在执行中'}, status=status.HTTP_400_BAD_REQUEST)
+
+        request_stop_ai_execution(record.id)
+        record.refresh_from_db()
+
+        return Response({
+            'message': '已发送停止信号',
+            'data': UiAIExecutionRecordSerializer(record).data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='report')
+    def report(self, request, pk=None):
+        record = self.get_object()
+        return Response(build_ai_execution_report(record))
 
 
 # ---------- 截图上传 ----------

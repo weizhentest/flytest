@@ -108,6 +108,10 @@ export const importJobApi = {
   get: (id: number) => request.get<ApiResponse<ApiImportJob>>(`${BASE_URL}/import-jobs/${id}/`),
 
   cancel: (id: number) => request.post<ApiResponse<ApiImportJob>>(`${BASE_URL}/import-jobs/${id}/cancel/`),
+
+  restart: (id: number) => request.post<ApiResponse<ApiImportJob>>(`${BASE_URL}/import-jobs/${id}/restart/`),
+
+  close: (id: number) => request.post<ApiResponse<{ id: number; closed: boolean }>>(`${BASE_URL}/import-jobs/${id}/close/`),
 }
 
 export const caseGenerationJobApi = {

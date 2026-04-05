@@ -1,39 +1,36 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="logo-mark" x1="32" y1="16" x2="94" y2="108" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3B82F6" />
-      <stop offset="0.52" stop-color="#2563EB" />
-      <stop offset="1" stop-color="#1D4ED8" />
+    <linearGradient id="bird-main" x1="26" y1="36" x2="100" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A7CFF" />
+      <stop offset="0.48" stop-color="#0E67F2" />
+      <stop offset="1" stop-color="#0047C8" />
     </linearGradient>
-    <linearGradient id="logo-loop" x1="76" y1="42" x2="99" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#93C5FD" />
-      <stop offset="1" stop-color="#60A5FA" />
+    <linearGradient id="bird-accent" x1="56" y1="44" x2="92" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#73B7FF" />
+      <stop offset="1" stop-color="#1D7BFF" />
     </linearGradient>
     <filter
-      id="logo-shadow"
-      x="20"
-      y="10"
-      width="88"
-      height="108"
+      id="bird-shadow"
+      x="10"
+      y="18"
+      width="108"
+      height="92"
       filterUnits="userSpaceOnUse"
       color-interpolation-filters="sRGB"
     >
-      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#2563EB" flood-opacity="0.2" />
-      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#FFFFFF" flood-opacity="0.16" />
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0047C8" flood-opacity="0.24" />
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#FFFFFF" flood-opacity="0.12" />
     </filter>
   </defs>
 
-  <g filter="url(#logo-shadow)">
-    <rect x="36" y="18" width="16" height="92" rx="8" fill="url(#logo-mark)" />
-    <rect x="36" y="18" width="56" height="16" rx="8" fill="url(#logo-mark)" />
-    <rect x="36" y="54" width="44" height="14" rx="7" fill="url(#logo-mark)" />
+  <g filter="url(#bird-shadow)">
     <path
-      d="M78 42C88.4934 42 97 52.0736 97 64.5C97 76.9264 88.4934 87 78 87"
-      stroke="url(#logo-loop)"
-      stroke-width="8.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+      d="M16 78C28 50 56 28 98 30C85 37 73 48 64 60C78 59 92 65 108 78C92 75 79 77 69 83C58 91 43 98 24 100C33 92 40 85 44 76C34 78 25 79 16 78Z"
+      fill="url(#bird-main)"
     />
-    <circle cx="97" cy="64.5" r="5.25" fill="#BFDBFE" />
+    <path
+      d="M52 63C61 49 76 40 92 40C82 46 73 54 67 63C76 63 84 66 92 72C82 71 73 73 65 76C60 73 56 68 52 63Z"
+      fill="url(#bird-accent)"
+    />
   </g>
 </svg>

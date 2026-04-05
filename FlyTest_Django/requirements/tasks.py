@@ -1,88 +1,141 @@
-"""
-需求评审异步任务
-"""
+"""Requirement review background tasks."""
+
 import logging
+import threading
+
 from celery import shared_task
-from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, name='requirements.execute_requirement_review')
-def execute_requirement_review(self, document_id, analysis_options=None, review_type='comprehensive', user_id=None):
-    """
-    异步执行需求评审任务
-    
-    Args:
-        document_id: 文档ID
-        analysis_options: 分析选项
-        review_type: 评审类型 ('direct' 或 'comprehensive')
-        user_id: 用户ID（用于获取用户的提示词配置）
-    """
-    from .models import RequirementDocument, ReviewReport
+def _execute_requirement_review(
+    document_id,
+    analysis_options=None,
+    review_type="comprehensive",
+    user_id=None,
+):
+    """Run a requirement review and persist the final status to the database."""
+    from .models import RequirementDocument
     from .services import RequirementReviewService
-    from django.contrib.auth import get_user_model
-    
+
     User = get_user_model()
-    
+
     try:
-        # 获取文档
         document = RequirementDocument.objects.get(id=document_id)
-        
-        # 获取用户对象
+
         user = None
         if user_id:
             try:
                 user = User.objects.get(id=user_id)
-                logger.info(f"开始异步评审文档: {document.title}, 类型: {review_type}, 用户: {user.username}")
+                logger.info(
+                    "Starting requirement review for document %s, type=%s, user=%s",
+                    document.title,
+                    review_type,
+                    user.username,
+                )
             except User.DoesNotExist:
-                logger.warning(f"用户 {user_id} 不存在，使用默认配置")
-        
-        # 文档状态应该已经在视图中设置为 reviewing 了，这里不需要重复设置
-        
-        # 创建评审服务，传入用户对象
+                logger.warning(
+                    "Requirement review user %s does not exist, falling back to default prompts",
+                    user_id,
+                )
+
         review_service = RequirementReviewService(user=user)
-        
-        # 根据类型执行评审
-        if review_type == 'direct':
+
+        if review_type == "direct":
             review_report = review_service.start_direct_review(
                 document,
-                analysis_options or {}
+                analysis_options or {},
             )
         else:
             review_report = review_service.start_comprehensive_review(
                 document,
-                analysis_options or {}  # 传递完整的analysis_options
+                analysis_options or {},
             )
-        
-        logger.info(f"文档 {document.title} 评审完成, 报告ID: {review_report.id}")
-        
+
+        logger.info(
+            "Requirement review completed for document %s, report_id=%s",
+            document.title,
+            review_report.id,
+        )
+
         return {
-            'status': 'success',
-            'document_id': str(document_id),
-            'report_id': str(review_report.id),
-            'completion_score': review_report.completion_score,
-            'total_issues': review_report.total_issues
+            "status": "success",
+            "document_id": str(document_id),
+            "report_id": str(review_report.id),
+            "completion_score": review_report.completion_score,
+            "total_issues": review_report.total_issues,
         }
-        
     except RequirementDocument.DoesNotExist:
-        logger.error(f"文档不存在: {document_id}")
+        logger.error("Requirement document does not exist: %s", document_id)
         return {
-            'status': 'error',
-            'message': f'文档不存在: {document_id}'
+            "status": "error",
+            "message": f"Requirement document does not exist: {document_id}",
         }
-    except Exception as e:
-        logger.error(f"评审任务失败: {e}", exc_info=True)
-        
-        # 更新文档状态为失败
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Requirement review task failed: %s", exc, exc_info=True)
+
         try:
             document = RequirementDocument.objects.get(id=document_id)
-            document.status = 'failed'
+            document.status = "failed"
             document.save()
-        except:
+        except Exception:  # noqa: BLE001
             pass
-        
+
         return {
-            'status': 'error',
-            'message': str(e)
+            "status": "error",
+            "message": str(exc),
         }
+
+
+def _run_local_requirement_review(
+    document_id,
+    analysis_options=None,
+    review_type="comprehensive",
+    user_id=None,
+):
+    """Run the review in a local daemon thread when Celery is unavailable."""
+    close_old_connections()
+    try:
+        _execute_requirement_review(
+            document_id,
+            analysis_options=analysis_options,
+            review_type=review_type,
+            user_id=user_id,
+        )
+    finally:
+        close_old_connections()
+
+
+def start_local_requirement_review(
+    document_id,
+    analysis_options=None,
+    review_type="comprehensive",
+    user_id=None,
+):
+    """Start requirement review in a local background thread."""
+    worker = threading.Thread(
+        target=_run_local_requirement_review,
+        args=(str(document_id), analysis_options or {}, review_type, user_id),
+        daemon=True,
+        name=f"requirement-review-{document_id}",
+    )
+    worker.start()
+    return worker
+
+
+@shared_task(bind=True, name="requirements.execute_requirement_review")
+def execute_requirement_review(
+    self,
+    document_id,
+    analysis_options=None,
+    review_type="comprehensive",
+    user_id=None,
+):
+    return _execute_requirement_review(
+        document_id,
+        analysis_options=analysis_options,
+        review_type=review_type,
+        user_id=user_id,
+    )

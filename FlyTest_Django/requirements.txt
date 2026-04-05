@@ -190,13 +190,13 @@ ollama>=0.6.0
 beautifulsoup4==4.13.3
 
 # 文档处理依赖
-# PDF文件处理 - BSD许可证 (当前版本: 5.6.0)
+# PDF文件处理 - BSD许可证 (当前版本: 6.9.2)
 # https://github.com/py-pdf/pypdf/blob/main/LICENSE
-pypdf==5.6.0
+pypdf==6.9.2
 
-# Word文档处理 - MIT许可证 (当前版本: 1.1.2)
+# Word文档处理 - MIT许可证 (当前版本: 1.2.0)
 # https://github.com/python-openxml/python-docx/blob/master/LICENSE
-python-docx==1.1.2
+python-docx==1.2.0
 
 # PowerPoint文档处理 - MIT许可证 (当前版本: 1.0.2)
 # https://github.com/scanny/python-pptx/blob/master/LICENSE
@@ -266,6 +266,9 @@ pytest>=8.0.0
 # Playwright浏览器自动化 - Apache 2.0许可证
 # https://github.com/microsoft/playwright-python/blob/main/LICENSE
 playwright>=1.40.0
+
+# Browser Use AI browser automation
+browser-use==0.10.1
 
 # Pillow图像处理库 - MIT-CMU许可证（用于Word文档图片尺寸解析）
 # https://github.com/python-pillow/Pillow/blob/main/LICENSE

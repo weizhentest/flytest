@@ -1,9 +1,18 @@
 <svg width="512" height="512" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="app-bg" x1="14" y1="10" x2="114" y2="118" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3B82F6" />
-      <stop offset="0.54" stop-color="#2563EB" />
-      <stop offset="1" stop-color="#1D4ED8" />
+    <linearGradient id="app-bg" x1="16" y1="12" x2="114" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FBFF" />
+      <stop offset="0.52" stop-color="#E7F0FF" />
+      <stop offset="1" stop-color="#D8E6FF" />
+    </linearGradient>
+    <linearGradient id="app-main" x1="26" y1="36" x2="100" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A7CFF" />
+      <stop offset="0.48" stop-color="#0E67F2" />
+      <stop offset="1" stop-color="#0047C8" />
+    </linearGradient>
+    <linearGradient id="app-accent" x1="56" y1="44" x2="92" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#73B7FF" />
+      <stop offset="1" stop-color="#1D7BFF" />
     </linearGradient>
     <radialGradient
       id="app-glow"
@@ -11,30 +20,36 @@
       cy="0"
       r="1"
       gradientUnits="userSpaceOnUse"
-      gradientTransform="translate(94 26) rotate(132) scale(36)"
+      gradientTransform="translate(92 28) rotate(132) scale(36)"
     >
-      <stop stop-color="#BFDBFE" stop-opacity="0.48" />
-      <stop offset="1" stop-color="#BFDBFE" stop-opacity="0" />
+      <stop stop-color="#6AAEFF" stop-opacity="0.34" />
+      <stop offset="1" stop-color="#6AAEFF" stop-opacity="0" />
     </radialGradient>
-    <linearGradient id="app-loop" x1="77" y1="42" x2="99" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#DBEAFE" />
-      <stop offset="1" stop-color="#BFDBFE" />
-    </linearGradient>
+    <filter
+      id="app-shadow"
+      x="8"
+      y="18"
+      width="112"
+      height="92"
+      filterUnits="userSpaceOnUse"
+      color-interpolation-filters="sRGB"
+    >
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#0047C8" flood-opacity="0.2" />
+    </filter>
   </defs>
 
   <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#app-bg)" />
-  <rect x="8.75" y="8.75" width="110.5" height="110.5" rx="29.25" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1.5" />
-  <circle cx="94" cy="26" r="30" fill="url(#app-glow)" />
+  <rect x="8.75" y="8.75" width="110.5" height="110.5" rx="29.25" stroke="#BFD5FF" stroke-opacity="0.68" stroke-width="1.5" />
+  <circle cx="92" cy="28" r="30" fill="url(#app-glow)" />
 
-  <rect x="36" y="18" width="16" height="92" rx="8" fill="#FFFFFF" />
-  <rect x="36" y="18" width="56" height="16" rx="8" fill="#FFFFFF" />
-  <rect x="36" y="54" width="44" height="14" rx="7" fill="#FFFFFF" />
-  <path
-    d="M78 42C88.4934 42 97 52.0736 97 64.5C97 76.9264 88.4934 87 78 87"
-    stroke="url(#app-loop)"
-    stroke-width="8.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-  <circle cx="97" cy="64.5" r="5.25" fill="#DBEAFE" />
+  <g filter="url(#app-shadow)">
+    <path
+      d="M16 78C28 50 56 28 98 30C85 37 73 48 64 60C78 59 92 65 108 78C92 75 79 77 69 83C58 91 43 98 24 100C33 92 40 85 44 76C34 78 25 79 16 78Z"
+      fill="url(#app-main)"
+    />
+    <path
+      d="M52 63C61 49 76 40 92 40C82 46 73 54 67 63C76 63 84 66 92 72C82 71 73 73 65 76C60 73 56 68 52 63Z"
+      fill="url(#app-accent)"
+    />
+  </g>
 </svg>

@@ -7,7 +7,8 @@ from .views import (
     UiModuleViewSet, UiPageViewSet, UiElementViewSet,
     UiPageStepsViewSet, UiPageStepsDetailedViewSet,
     UiTestCaseViewSet, UiCaseStepsDetailedViewSet,
-    UiExecutionRecordViewSet, UiPublicDataViewSet, UiEnvironmentConfigViewSet,
+    UiExecutionRecordViewSet, UiAICaseViewSet, UiAIExecutionRecordViewSet,
+    UiPublicDataViewSet, UiEnvironmentConfigViewSet,
     ActuatorViewSet, UiBatchExecutionRecordViewSet, upload_screenshot, upload_trace
 )
 
@@ -20,6 +21,8 @@ router.register('page-steps-detailed', UiPageStepsDetailedViewSet, basename='ui-
 router.register('testcases', UiTestCaseViewSet, basename='ui-testcases')
 router.register('case-steps', UiCaseStepsDetailedViewSet, basename='ui-case-steps')
 router.register('execution-records', UiExecutionRecordViewSet, basename='ui-execution-records')
+router.register('ai-cases', UiAICaseViewSet, basename='ui-ai-cases')
+router.register('ai-execution-records', UiAIExecutionRecordViewSet, basename='ui-ai-execution-records')
 router.register('public-data', UiPublicDataViewSet, basename='ui-public-data')
 router.register('env-configs', UiEnvironmentConfigViewSet, basename='ui-env-configs')
 router.register('actuators', ActuatorViewSet, basename='ui-actuators')

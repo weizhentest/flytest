@@ -25,6 +25,7 @@ const AiDiagramView = () => import('@/features/diagrams/views/AiDiagramView.vue'
 const SkillsManagementView = () => import('@/features/skills/views/SkillsManagementView.vue')
 const TemplateManagementView = () => import('@/features/testcase-templates/views/TemplateManagementView.vue')
 const ApiAutomationView = () => import('@/features/api-automation/views/ApiAutomationView.vue')
+const AppAutomationView = () => import('@/features/app-automation/views/AppAutomationView.vue')
 const UiAutomationView = () => import('@/features/ui-automation/views/UiAutomationView.vue')
 const TraceDetailView = () => import('@/features/ui-automation/views/TraceDetail.vue')
 
@@ -45,6 +46,7 @@ const privateRouteLoaders = [
   RemoteMcpConfigManagementView,
   SkillsManagementView,
   ApiAutomationView,
+  AppAutomationView,
   UiAutomationView,
 ]
 
@@ -175,6 +177,11 @@ const routes: RouteRecordRaw[] = [
         path: 'api-automation',
         name: 'ApiAutomation',
         component: ApiAutomationView,
+      },
+      {
+        path: 'app-automation',
+        name: 'AppAutomation',
+        component: AppAutomationView,
       },
       {
         path: 'ui-automation',

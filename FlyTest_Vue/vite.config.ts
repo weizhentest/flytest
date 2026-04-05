@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'url'
 
 const apiProxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000'
+const appAutomationProxyTarget = process.env.VITE_APP_AUTOMATION_PROXY_TARGET || 'http://localhost:8010'
 const wsProxyTarget = process.env.VITE_WS_PROXY_TARGET || apiProxyTarget.replace(/^http/i, 'ws')
 
 // https://vite.dev/config/
@@ -58,6 +59,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '^/api/app-automation(?:/|$)': {
+        target: appAutomationProxyTarget,
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/app-automation/, ''),
+      },
       '^/api(?:/|$)': {
         target: apiProxyTarget,
         changeOrigin: true,

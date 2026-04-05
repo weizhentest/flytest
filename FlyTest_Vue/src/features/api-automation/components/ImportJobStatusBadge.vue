@@ -30,7 +30,23 @@
                   status="danger"
                   @click="handleCancel(job)"
                 >
-                  停止解析
+                  暂停解析
+                </a-button>
+                <a-button
+                  v-if="canRestart(job)"
+                  type="text"
+                  size="mini"
+                  @click="handleRestart(job)"
+                >
+                  重启解析
+                </a-button>
+                <a-button
+                  v-if="canClose(job)"
+                  type="text"
+                  size="mini"
+                  @click="handleClose(job)"
+                >
+                  关闭
                 </a-button>
               </div>
             </div>
@@ -70,7 +86,7 @@ import type { ApiImportJob } from '../types'
 const projectStore = useProjectStore()
 const projectId = computed(() => projectStore.currentProject?.id)
 
-const { activeImportJobs, recentImportJobs, importTaskVisible, syncProject, cancelImportJob } = useApiImportJobs()
+const { activeImportJobs, recentImportJobs, importTaskVisible, syncProject, cancelImportJob, restartImportJob, closeImportJob } = useApiImportJobs()
 
 const importTaskSteps = [
   { key: 'uploaded', title: '文档已上传' },
@@ -106,7 +122,7 @@ const badgeTitle = computed(() => {
     return '文档解析异常'
   }
   if (canceledJobs.value.length > 0 && activeImportJobs.value.length === 0) {
-    return '文档解析已停止'
+    return '文档解析已暂停'
   }
   if (activeImportJobs.value.length > 1) {
     return `文档解析中 ${activeImportJobs.value.length} 项`
@@ -129,8 +145,8 @@ const getJobStatusColor = (job: ApiImportJob) => {
 const getJobStatusLabel = (job: ApiImportJob) => {
   if (job.status === 'success') return '已完成'
   if (job.status === 'failed') return '已失败'
-  if (job.status === 'canceled') return '已停止'
-  if (job.cancel_requested) return '停止中'
+  if (job.status === 'canceled') return '已暂停'
+  if (job.cancel_requested) return '暂停中'
   if (job.status === 'running') return '解析中'
   return '排队中'
 }
@@ -139,13 +155,41 @@ const canCancel = (job: ApiImportJob) => {
   return (job.status === 'pending' || job.status === 'running') && !job.cancel_requested
 }
 
+const canRestart = (job: ApiImportJob) => {
+  return job.status === 'canceled' || job.status === 'failed'
+}
+
+const canClose = (job: ApiImportJob) => {
+  return job.status === 'canceled' || job.status === 'failed' || job.status === 'success'
+}
+
 const handleCancel = async (job: ApiImportJob) => {
   try {
     await cancelImportJob(job.id)
-    Message.success('已发送停止解析请求')
+    Message.success('已发送暂停解析请求')
   } catch (error) {
-    console.error('[ImportJobStatusBadge] 停止解析失败:', error)
-    Message.error('停止解析失败')
+    console.error('[ImportJobStatusBadge] 暂停解析失败:', error)
+    Message.error('暂停解析失败')
+  }
+}
+
+const handleRestart = async (job: ApiImportJob) => {
+  try {
+    await restartImportJob(job.id)
+    Message.success('文档解析已重新加入队列')
+  } catch (error) {
+    console.error('[ImportJobStatusBadge] 重启解析失败:', error)
+    Message.error('重启解析失败')
+  }
+}
+
+const handleClose = async (job: ApiImportJob) => {
+  try {
+    await closeImportJob(job.id)
+    Message.success('已关闭该条文档解析任务')
+  } catch (error) {
+    console.error('[ImportJobStatusBadge] 关闭解析任务失败:', error)
+    Message.error('关闭解析任务失败')
   }
 }
 

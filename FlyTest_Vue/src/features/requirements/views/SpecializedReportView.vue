@@ -191,6 +191,7 @@ import {
 } from '@arco-design/web-vue/es/icon';
 import { RequirementDocumentService } from '../services/requirementService';
 import ReportVersionSelector from '../components/ReportVersionSelector.vue';
+import type { DocumentDetail, ReviewReport } from '../types';
 
 // 路由
 const route = useRoute();
@@ -198,12 +199,36 @@ const router = useRouter();
 
 // 响应式数据
 const loading = ref(false);
-const document = ref<any>(null);
+const document = ref<DocumentDetail | null>(null);
 const selectedAnalysisType = ref<string>('completeness');
 const priorityFilter = ref<string>('');
 const selectedReportId = ref<string>(''); // 当前选中的报告ID
 
 // 专项分析类型定义
+const reportStatusPriority: Record<string, number> = {
+  completed: 0,
+  in_progress: 1,
+  pending: 2,
+  failed: 3
+};
+
+const getDisplayReports = (reports: ReviewReport[] = []) => {
+  const completedReports = reports.filter(item => item.status === 'completed');
+  const source = completedReports.length > 0 ? completedReports : reports;
+
+  return [...source].sort((a, b) => {
+    const statusDiff =
+      (reportStatusPriority[a.status] ?? Number.MAX_SAFE_INTEGER)
+      - (reportStatusPriority[b.status] ?? Number.MAX_SAFE_INTEGER);
+
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    return new Date(b.review_date).getTime() - new Date(a.review_date).getTime();
+  });
+};
+
 const analysisTypes = [
   { key: 'completeness', title: '完整性分析', icon: '📋' },
   { key: 'consistency', title: '一致性分析', icon: '🔗' },
@@ -216,10 +241,7 @@ const analysisTypes = [
 // 计算属性
 // 所有报告版本列表(按时间倒序)
 const reportVersions = computed(() => {
-  if (!document.value?.review_reports) return [];
-  return [...document.value.review_reports].sort((a, b) =>
-    new Date(b.review_date).getTime() - new Date(a.review_date).getTime()
-  );
+  return getDisplayReports(document.value?.review_reports ?? []);
 });
 
 // 判断当前是否为最新版本
@@ -230,10 +252,13 @@ const isLatestVersion = computed(() => {
 
 // 当前选中的报告
 const selectedReport = computed(() => {
-  if (!document.value?.review_reports || !selectedReportId.value) {
-    return document.value?.latest_review || null;
+  if (!selectedReportId.value) {
+    return reportVersions.value[0] || null;
   }
-  return document.value.review_reports.find((r: any) => r.id === selectedReportId.value) || null;
+
+  return reportVersions.value.find((report) => report.id === selectedReportId.value)
+    || reportVersions.value[0]
+    || null;
 });
 
 const getCurrentAnalysis = computed(() => {
@@ -274,13 +299,10 @@ const loadDocument = async () => {
       document.value = response.data;
       
       // 如果有历史报告，默认选择最新的
-      if (document.value.review_reports && document.value.review_reports.length > 0) {
-        const sortedReports = [...document.value.review_reports].sort((a: any, b: any) =>
-          new Date(b.review_date).getTime() - new Date(a.review_date).getTime()
-        );
+      if (reportVersions.value.length > 0) {
         // 如果没有指定版本，选择最新版本
         if (!selectedReportId.value) {
-          selectedReportId.value = sortedReports[0].id;
+          selectedReportId.value = reportVersions.value[0].id;
         }
       }
       

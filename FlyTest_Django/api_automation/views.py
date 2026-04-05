@@ -139,6 +139,35 @@ def _is_job_cancelled(job_id: int) -> bool:
     return ApiImportJob.objects.filter(pk=job_id).filter(Q(cancel_requested=True) | Q(status="canceled")).exists()
 
 
+def _resolve_import_job_source_path(job: ApiImportJob) -> str:
+    if not getattr(job, "source_file", None):
+        raise ValueError("未找到可重启的源文档，请重新上传接口文档后再试。")
+    try:
+        file_path = job.source_file.path
+    except (ValueError, NotImplementedError) as exc:
+        raise ValueError("源文档暂不可访问，请重新上传接口文档后再试。") from exc
+    if not file_path or not os.path.exists(file_path):
+        raise ValueError("源文档已不存在，请重新上传接口文档后再试。")
+    return file_path
+
+
+def _delete_import_job_source_file(job: ApiImportJob):
+    if not getattr(job, "source_file", None):
+        return
+    try:
+        job.source_file.delete(save=False)
+    except FileNotFoundError:
+        pass
+
+
+def _clear_import_job_source_file(job_id: int):
+    job = ApiImportJob.objects.filter(pk=job_id).first()
+    if not job or not getattr(job, "source_file", None):
+        return
+    _delete_import_job_source_file(job)
+    ApiImportJob.objects.filter(pk=job_id).update(source_file="", updated_at=timezone.now())
+
+
 def _save_case_generation_job(job_id: int, *, force: bool = False, **fields):
     job = ApiCaseGenerationJob.objects.get(pk=job_id)
     terminal_statuses = {"success", "failed", "canceled"}
@@ -157,7 +186,7 @@ def _is_case_generation_job_cancelled(job_id: int) -> bool:
     ).exists()
 
 
-def _run_import_job(job_id: int, file_path: str):
+def _run_import_job(job_id: int):
     try:
         job = ApiImportJob.objects.select_related("collection", "project", "creator").get(pk=job_id)
         if job.cancel_requested or job.status == "canceled":
@@ -166,10 +195,11 @@ def _run_import_job(job_id: int, file_path: str):
                 force=True,
                 status="canceled",
                 progress_stage="canceled",
-                progress_message="文档解析任务已取消。",
+                progress_message="文档解析任务已暂停。",
                 completed_at=timezone.now(),
             )
             return
+        file_path = _resolve_import_job_source_path(job)
         _save_job(
             job_id,
             status="running",
@@ -211,13 +241,14 @@ def _run_import_job(job_id: int, file_path: str):
             error_message="",
             completed_at=timezone.now(),
         )
+        _clear_import_job_source_file(job_id)
     except ImportJobCancelled as exc:
         _save_job(
             job_id,
             force=True,
             status="canceled",
             progress_stage="canceled",
-            progress_message="文档解析任务已取消。",
+            progress_message="文档解析任务已暂停。",
             error_message=str(exc),
             completed_at=timezone.now(),
             cancel_requested=True,
@@ -231,13 +262,10 @@ def _run_import_job(job_id: int, file_path: str):
             error_message=str(exc),
             completed_at=timezone.now(),
         )
-    finally:
-        if os.path.exists(file_path):
-            os.unlink(file_path)
 
 
-def _start_import_job(job_id: int, file_path: str):
-    worker = threading.Thread(target=_run_import_job, args=(job_id, file_path), daemon=True)
+def _start_import_job(job_id: int):
+    worker = threading.Thread(target=_run_import_job, args=(job_id,), daemon=True)
     worker.start()
 
 
@@ -2067,7 +2095,7 @@ class ApiImportJobViewSet(BaseModelViewSet):
 
         update_fields = {
             "cancel_requested": True,
-            "progress_message": "已收到停止解析请求，正在终止任务。",
+            "progress_message": "已收到暂停解析请求，正在终止任务。",
         }
         if job.status == "pending":
             update_fields.update(
@@ -2075,6 +2103,7 @@ class ApiImportJobViewSet(BaseModelViewSet):
                     "status": "canceled",
                     "progress_stage": "canceled",
                     "progress_percent": min(job.progress_percent or 0, 100),
+                    "progress_message": "文档解析任务已暂停。",
                     "completed_at": timezone.now(),
                 }
             )
@@ -2082,6 +2111,44 @@ class ApiImportJobViewSet(BaseModelViewSet):
         _save_job(job.id, force=True, **update_fields)
         serializer = self.get_serializer(ApiImportJob.objects.get(pk=job.id))
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def restart(self, request, pk=None):
+        job = self.get_object()
+        if job.status not in {"failed", "canceled"}:
+            return Response({"error": "仅已暂停或失败的解析任务支持重启"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            _resolve_import_job_source_path(job)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        _save_job(
+            job.id,
+            force=True,
+            status="pending",
+            progress_percent=4,
+            progress_stage="uploaded",
+            progress_message="文档已重新入队，正在准备再次解析。",
+            cancel_requested=False,
+            result_payload={},
+            error_message="",
+            completed_at=None,
+        )
+        _start_import_job(job.id)
+        serializer = self.get_serializer(ApiImportJob.objects.get(pk=job.id))
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"])
+    def close(self, request, pk=None):
+        job = self.get_object()
+        if job.status in {"pending", "running"} or job.cancel_requested:
+            return Response({"error": "任务仍在执行中，请先暂停并等待任务停止后再关闭"}, status=status.HTTP_400_BAD_REQUEST)
+
+        job_id = job.id
+        _delete_import_job_source_file(job)
+        job.delete()
+        return Response({"id": job_id, "closed": True})
 
 
 class ApiCaseGenerationJobViewSet(BaseModelViewSet):
@@ -2274,18 +2341,13 @@ class ApiRequestViewSet(BaseModelViewSet):
         enable_ai_parse = str(request.data.get("enable_ai_parse", "true")).lower() in {"1", "true", "yes", "on"}
         async_mode = str(request.data.get("async_mode", "true")).lower() in {"1", "true", "yes", "on"}
 
-        suffix = Path(file.name).suffix or ""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            for chunk in file.chunks():
-                temp_file.write(chunk)
-            temp_path = temp_file.name
-
         if async_mode:
             job = ApiImportJob.objects.create(
                 project=collection.project,
                 collection=collection,
                 creator=request.user,
                 source_name=file.name,
+                source_file=file,
                 status="pending",
                 progress_percent=4,
                 progress_stage="uploaded",
@@ -2293,9 +2355,15 @@ class ApiRequestViewSet(BaseModelViewSet):
                 generate_test_cases=generate_test_cases,
                 enable_ai_parse=enable_ai_parse,
             )
-            _start_import_job(job.id, temp_path)
+            _start_import_job(job.id)
             serializer = ApiImportJobSerializer(job)
             return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
+        suffix = Path(file.name).suffix or ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            for chunk in file.chunks():
+                temp_file.write(chunk)
+            temp_path = temp_file.name
 
         try:
             payload = process_document_import(

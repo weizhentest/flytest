@@ -32,6 +32,7 @@
       <div class="filter-row">
         <a-input-search
           v-model="searchKeyword"
+          class="filter-search"
           placeholder="搜索文档标题或描述"
           @search="handleSearch"
           @clear="handleSearch"
@@ -39,6 +40,7 @@
         />
         <a-select
           v-model="statusFilter"
+          class="filter-select"
           placeholder="文档状态"
           @change="handleSearch"
           allow-clear
@@ -55,6 +57,7 @@
         </a-select>
         <a-select
           v-model="typeFilter"
+          class="filter-select"
           placeholder="文档类型"
           @change="handleSearch"
           allow-clear
@@ -67,7 +70,7 @@
           <a-option value="txt">文本</a-option>
           <a-option value="html">HTML</a-option>
         </a-select>
-        <a-button type="primary" @click="showUploadModal">
+        <a-button type="primary" class="filter-upload-button" @click="showUploadModal">
           <template #icon><icon-plus /></template>
           上传需求文档
         </a-button>
@@ -906,19 +909,32 @@ projectStore.$subscribe((_mutation, state) => {
 }
 
 .filter-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) 128px 128px 150px;
   align-items: center;
-  gap: 12px;
+  justify-content: start;
+  gap: 10px;
 }
 
-.filter-row .arco-input-search {
-  width: 300px;
-  flex-shrink: 0;
+.filter-search,
+.filter-select,
+.filter-upload-button {
+  min-width: 0;
 }
 
-.filter-row .arco-select {
-  width: 120px;
-  flex-shrink: 0;
+.filter-search {
+  width: 100%;
+}
+
+.filter-select {
+  width: 128px;
+}
+
+.filter-upload-button {
+  width: 150px;
+  justify-content: center;
+  padding-inline: 14px;
+  white-space: nowrap;
 }
 
 .content-section {
@@ -1031,6 +1047,23 @@ projectStore.$subscribe((_mutation, state) => {
   border-radius: 24px;
 }
 
+.filter-search :deep(.arco-input-wrapper),
+.filter-select :deep(.arco-select-view),
+.filter-upload-button {
+  height: 36px;
+  border-radius: 12px;
+}
+
+.filter-search :deep(.arco-input-wrapper),
+.filter-select :deep(.arco-select-view) {
+  font-size: 13px;
+}
+
+.filter-upload-button {
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .content-section {
   border-radius: 26px;
 }
@@ -1043,6 +1076,10 @@ projectStore.$subscribe((_mutation, state) => {
 
   .workspace-hero--requirement-command .workspace-hero-title {
     font-size: 22px;
+  }
+
+  .filter-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

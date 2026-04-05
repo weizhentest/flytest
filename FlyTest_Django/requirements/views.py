@@ -100,6 +100,29 @@ class RequirementDocumentViewSet(BaseModelViewSet):
             return RequirementDocumentDetailSerializer
         return RequirementDocumentSerializer
 
+    def _get_active_review(self, document):
+        """返回当前仍应阻止新评审启动的活动评审报告。"""
+        latest_active_review = (
+            document.review_reports.filter(status__in=["pending", "in_progress"])
+            .order_by("-review_date")
+            .first()
+        )
+        if not latest_active_review:
+            return None
+
+        latest_completed_review = (
+            document.review_reports.filter(status="completed")
+            .order_by("-review_date")
+            .first()
+        )
+        if (
+            latest_completed_review
+            and latest_completed_review.review_date > latest_active_review.review_date
+        ):
+            return None
+
+        return latest_active_review
+
     def perform_create(self, serializer):
         """创建文档时自动设置上传人并提取内容"""
         document = serializer.save(uploader=self.request.user)
@@ -123,27 +146,27 @@ class RequirementDocumentViewSet(BaseModelViewSet):
                 logger.error(f"文档内容提取失败: {e}")
 
     def destroy(self, request, *args, **kwargs):
-        """删除需求文档时同时删除物理文件"""
+        """Delete requirement document and its physical file."""
         document = self.get_object()
 
         try:
-            # 删除物理文件
+            # Delete the physical file first.
             if document.file:
                 if os.path.exists(document.file.path):
                     os.remove(document.file.path)
-                    logger.info(f"已删除文件: {document.file.path}")
+                    logger.info(f"Deleted file: {document.file.path}")
 
-            # 删除数据库记录（这会级联删除相关的模块、评审报告等）
+            # Delete the database record and related children.
             document_title = document.title
             document.delete()
 
-            logger.info(f"需求文档删除成功: {document_title}")
+            logger.info(f"Requirement document deleted: {document_title}")
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         except Exception as e:
-            logger.error(f"删除需求文档失败: {e}")
+            logger.error(f"Failed to delete requirement document: {e}")
             return Response(
-                {"error": f"删除失败: {str(e)}"},
+                {"error": f"Delete failed: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -560,17 +583,29 @@ class RequirementDocumentViewSet(BaseModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            # 模块评审：必须是ready_for_review或failed状态（允许重新评审）
+            # Comprehensive review only supports ready_for_review and failed.
             if document.status not in ["ready_for_review", "failed"]:
                 return Response(
-                    {"error": "文档状态不允许开始评审，请先完成模块拆分"},
+                    {"error": "\u6587\u6863\u72b6\u6001\u4e0d\u5141\u8bb8\u5f00\u59cb\u8bc4\u5ba1\uff0c\u8bf7\u5148\u5b8c\u6210\u6a21\u5757\u62c6\u5206"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # 检查权限
+        # Check permissions.
         if not CanStartReview().has_object_permission(request, self, document):
             return Response(
-                {"error": "没有权限启动评审"}, status=status.HTTP_403_FORBIDDEN
+                {"error": "\u6ca1\u6709\u6743\u9650\u542f\u52a8\u8bc4\u5ba1"}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        active_review = self._get_active_review(document)
+        if active_review:
+            return Response(
+                {
+                    "error": "\u5f53\u524d\u6587\u6863\u5df2\u6709\u8fdb\u884c\u4e2d\u7684\u8bc4\u5ba1\uff0c\u8bf7\u7b49\u5f85\u5f53\u524d\u8bc4\u5ba1\u5b8c\u6210\u540e\u518d\u53d1\u8d77\u65b0\u7684\u8bc4\u5ba1",
+                    "report_id": str(active_review.id),
+                    "progress": active_review.progress,
+                    "current_step": active_review.current_step,
+                },
+                status=status.HTTP_409_CONFLICT,
             )
 
         try:
@@ -585,7 +620,10 @@ class RequirementDocumentViewSet(BaseModelViewSet):
             }
 
             # 启动异步评审任务
-            from .tasks import execute_requirement_review
+            from .tasks import (
+                execute_requirement_review,
+                start_local_requirement_review,
+            )
 
             review_type = "direct" if direct_review else "comprehensive"
             try:
@@ -614,10 +652,59 @@ class RequirementDocumentViewSet(BaseModelViewSet):
                 )
             except Exception as dispatch_error:
                 logger.warning(
-                    "异步评审任务投递失败，降级为同步执行: %s",
+                    "异步评审任务投递失败，降级为本地后台线程执行: %s",
                     dispatch_error,
                     exc_info=True,
                 )
+
+                try:
+                    if direct_review:
+                        if document.status == "failed":
+                            document.status = "uploaded"
+                            document.save()
+                    else:
+                        if document.status not in ["ready_for_review", "reviewing"]:
+                            document.status = "ready_for_review"
+                            document.save()
+
+                    document.status = "reviewing"
+                    document.save()
+
+                    start_local_requirement_review(
+                        str(document.id),
+                        analysis_options,
+                        review_type,
+                        user_id=request.user.id,
+                    )
+
+                    return Response(
+                        {
+                            "message": "Redis/Celery 不可用，评审已切换为本地后台执行。",
+                            "review_type": "直接评审" if direct_review else "模块评审",
+                            "direct_review": direct_review,
+                            "status": "reviewing",
+                            "document_id": str(document.id),
+                            "execution_mode": "local_async_fallback",
+                        }
+                    )
+                except Exception as local_fallback_error:
+                    document.status = "failed"
+                    document.save()
+                    logger.error(
+                        "启动评审失败：异步投递和本地后台兜底都失败。dispatch_error=%s, local_fallback_error=%s",
+                        dispatch_error,
+                        local_fallback_error,
+                        exc_info=True,
+                    )
+                    return Response(
+                        {
+                            "error": (
+                                "启动评审失败：Redis/Celery 不可用，且本地后台执行也失败了。"
+                                f" 详情：{local_fallback_error}"
+                            )
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
 
                 try:
                     review_service = RequirementReviewService(user=request.user)
