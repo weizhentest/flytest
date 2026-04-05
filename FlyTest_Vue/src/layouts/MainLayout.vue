@@ -81,7 +81,11 @@
         <a-avatar class="avatar">
           <span>{{ userInitial }}</span>
         </a-avatar>
-        <a-dropdown trigger="click" class="user-dropdown-wrapper">
+        <a-dropdown
+          trigger="click"
+          class="user-dropdown-wrapper"
+          :trigger-props="{ contentClass: 'user-panel-dropdown' }"
+        >
           <div class="user-dropdown">
             <span class="username">{{ username }}</span>
             <icon-down />
@@ -111,124 +115,150 @@
       >
         <a-menu
           mode="vertical"
-          :default-selected-keys="[activeMenu]"
+          :selected-keys="[activeMenu]"
           v-model:open-keys="openKeys"
           :auto-open-selected="true"
           :collapsed="collapsed"
           :popup-max-height="false"
+          :trigger-props="{ contentClass: 'layout-menu-popup' }"
           class="menu"
+          @menu-item-click="handleMenuItemClick"
+          @sub-menu-click="handleSubMenuClick"
         >
-
           <a-menu-item key="dashboard">
             <template #icon><icon-home /></template>
-            <router-link to="/dashboard">首页</router-link>
+            <span class="menu-link">首页</span>
           </a-menu-item>
 
           <a-menu-item key="projects" v-if="hasProjectsPermission">
             <template #icon><icon-storage /></template>
-            <router-link to="/projects">项目管理</router-link>
+            <span class="menu-link">项目管理</span>
           </a-menu-item>
 
           <a-menu-item key="requirements" v-if="hasRequirementsPermission">
             <template #icon><icon-file /></template>
-            <a href="#" @click="checkProjectAndNavigate($event, '/requirements')">需求管理</a>
+            <span class="menu-link">需求管理</span>
           </a-menu-item>
 
           <a-sub-menu key="api-automation" v-if="hasApiAutomationMenuItems">
             <template #icon><icon-code-block /></template>
-            <template #title>
-              <span @click="handleApiAutomationClick">API自动化</span>
-            </template>
+            <template #title>API自动化</template>
             <a-menu-item key="api-automation-requests" v-if="hasApiAutomationPermission">
               <template #icon><icon-code-block /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-automation?tab=requests')">接口管理</a>
+              <span class="menu-link">接口管理</span>
             </a-menu-item>
             <a-menu-item key="api-automation-test-cases" v-if="hasApiAutomationPermission">
               <template #icon><icon-folder /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-automation?tab=test-cases')">测试用例</a>
+              <span class="menu-link">测试用例</span>
             </a-menu-item>
             <a-menu-item key="api-automation-environments" v-if="hasApiAutomationPermission">
               <template #icon><icon-tool /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-automation?tab=environments')">环境配置</a>
+              <span class="menu-link">环境配置</span>
             </a-menu-item>
             <a-menu-item key="api-automation-execution-records" v-if="hasApiAutomationPermission">
               <template #icon><icon-history /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-automation?tab=execution-records')">执行历史</a>
+              <span class="menu-link">执行历史</span>
             </a-menu-item>
             <a-menu-item key="api-automation-execution-report" v-if="hasApiAutomationPermission">
               <template #icon><icon-bar-chart /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-automation?tab=execution-report')">测试报告</a>
+              <span class="menu-link">测试报告</span>
             </a-menu-item>
           </a-sub-menu>
 
-          <a-menu-item key="ui-automation" v-if="hasUiAutomationPermission">
+          <a-sub-menu key="ui-automation" v-if="hasUiAutomationPermission">
             <template #icon><icon-computer /></template>
-            <a href="#" @click="checkProjectAndNavigate($event, '/ui-automation')">UI自动化</a>
-          </a-menu-item>
+            <template #title>UI自动化</template>
+            <a-menu-item key="ui-automation-pages">
+              <template #icon><icon-computer /></template>
+              <span class="menu-link">页面管理</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-page-steps">
+              <template #icon><icon-code-block /></template>
+              <span class="menu-link">页面步骤</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-testcases">
+              <template #icon><icon-folder /></template>
+              <span class="menu-link">测试用例</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-execution-records">
+              <template #icon><icon-history /></template>
+              <span class="menu-link">执行记录</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-batch-records">
+              <template #icon><icon-bar-chart /></template>
+              <span class="menu-link">批量执行</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-public-data">
+              <template #icon><icon-book /></template>
+              <span class="menu-link">公共数据</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-env-config">
+              <template #icon><icon-tool /></template>
+              <span class="menu-link">环境配置</span>
+            </a-menu-item>
+            <a-menu-item key="ui-automation-actuators">
+              <template #icon><icon-apps /></template>
+              <span class="menu-link">执行器</span>
+            </a-menu-item>
+          </a-sub-menu>
 
-          <!-- 测试管理子菜单 -->
           <a-sub-menu key="test-management" v-if="hasTestManagementMenuItems">
             <template #icon><icon-experiment /></template>
-            <template #title>
-              <span @click="handleTestManagementClick">测试管理</span>
-            </template>
+            <template #title>测试管理</template>
             <a-menu-item key="testcases" v-if="hasTestcasesPermission">
               <template #icon><icon-code-block /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/testcases')">用例管理</a>
+              <span class="menu-link">用例管理</span>
             </a-menu-item>
             <a-menu-item key="testsuites" v-if="hasTestSuitesPermission">
               <template #icon><icon-folder /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/testsuites')">测试套件</a>
+              <span class="menu-link">测试套件</span>
             </a-menu-item>
             <a-menu-item key="test-executions" v-if="hasTestExecutionsPermission">
               <template #icon><icon-history /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/test-executions')">执行历史</a>
+              <span class="menu-link">执行历史</span>
             </a-menu-item>
           </a-sub-menu>
 
           <a-menu-item key="langgraph-chat" v-if="hasLangGraphChatPermission">
             <template #icon><icon-message /></template>
-            <a href="#" @click="checkProjectAndNavigate($event, '/langgraph-chat')">AI对话</a>
+            <span class="menu-link">AI对话</span>
           </a-menu-item>
 
           <a-menu-item key="knowledge-management" v-if="hasKnowledgePermission">
             <template #icon><icon-book /></template>
-            <a href="#" @click="checkProjectAndNavigate($event, '/knowledge-management')">知识库管理</a>
+            <span class="menu-link">知识库管理</span>
           </a-menu-item>
 
-          <!-- 系统管理子菜单 -->
           <a-sub-menu key="settings" v-if="hasSystemMenuItems">
             <template #icon><icon-settings /></template>
-            <template #title>
-              <span @click="handleSystemManagementClick">系统管理</span>
-            </template>
+            <template #title>系统管理</template>
             <a-menu-item key="users" v-if="hasUsersPermission">
               <template #icon><icon-user /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/users')">用户管理</a>
+              <span class="menu-link">用户管理</span>
             </a-menu-item>
             <a-menu-item key="organizations" v-if="hasOrganizationsPermission">
               <template #icon><icon-apps /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/organizations')">组织管理</a>
+              <span class="menu-link">组织管理</span>
             </a-menu-item>
             <a-menu-item key="permissions" v-if="hasPermissionsPermission">
               <template #icon><icon-safe /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/permissions')">权限管理</a>
+              <span class="menu-link">权限管理</span>
             </a-menu-item>
             <a-menu-item key="llm-configs" v-if="hasLlmConfigsPermission">
               <template #icon><icon-tool /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/llm-configs')">LLM配置</a>
+              <span class="menu-link">LLM配置</span>
             </a-menu-item>
             <a-menu-item key="api-keys" v-if="hasApiKeysPermission">
               <template #icon><icon-safe /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/api-keys')">KEY管理</a>
+              <span class="menu-link">KEY管理</span>
             </a-menu-item>
             <a-menu-item key="remote-mcp-configs" v-if="hasMcpConfigsPermission">
               <template #icon><icon-cloud /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/remote-mcp-configs')">MCP配置</a>
+              <span class="menu-link">MCP配置</span>
             </a-menu-item>
             <a-menu-item key="skills" v-if="hasSkillsPermission">
               <template #icon><icon-apps /></template>
-              <a href="#" @click="checkProjectAndNavigate($event, '/skills')">Skills管理</a>
+              <span class="menu-link">Skills管理</span>
             </a-menu-item>
           </a-sub-menu>
         </a-menu>
@@ -262,8 +292,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useThemeStore } from '@/store/themeStore';
@@ -319,6 +349,7 @@ const ALayoutContent = ALayout.Content;
 const AMenuItem = AMenu.Item;
 const AOption = ASelect.Option;
 
+const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const projectStore = useProjectStore();
@@ -364,40 +395,95 @@ const userInitial = computed(() => {
 
 const themeButtonLabel = computed(() => themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题');
 
-// 当前激活的菜单项
+type MenuNavigationTarget = {
+  route: RouteLocationRaw;
+  requiresProject?: boolean;
+};
+
+const menuNavigationMap: Record<string, MenuNavigationTarget> = {
+  dashboard: { route: '/dashboard' },
+  projects: { route: '/projects' },
+  requirements: { route: '/requirements', requiresProject: true },
+  'api-automation-requests': { route: { path: '/api-automation', query: { tab: 'requests' } }, requiresProject: true },
+  'api-automation-test-cases': { route: { path: '/api-automation', query: { tab: 'test-cases' } }, requiresProject: true },
+  'api-automation-environments': { route: { path: '/api-automation', query: { tab: 'environments' } }, requiresProject: true },
+  'api-automation-execution-records': { route: { path: '/api-automation', query: { tab: 'execution-records' } }, requiresProject: true },
+  'api-automation-execution-report': { route: { path: '/api-automation', query: { tab: 'execution-report' } }, requiresProject: true },
+  'ui-automation-pages': { route: { path: '/ui-automation', query: { tab: 'pages' } }, requiresProject: true },
+  'ui-automation-page-steps': { route: { path: '/ui-automation', query: { tab: 'page-steps' } }, requiresProject: true },
+  'ui-automation-testcases': { route: { path: '/ui-automation', query: { tab: 'testcases' } }, requiresProject: true },
+  'ui-automation-execution-records': { route: { path: '/ui-automation', query: { tab: 'execution-records' } }, requiresProject: true },
+  'ui-automation-batch-records': { route: { path: '/ui-automation', query: { tab: 'batch-records' } }, requiresProject: true },
+  'ui-automation-public-data': { route: { path: '/ui-automation', query: { tab: 'public-data' } }, requiresProject: true },
+  'ui-automation-env-config': { route: { path: '/ui-automation', query: { tab: 'env-config' } }, requiresProject: true },
+  'ui-automation-actuators': { route: { path: '/ui-automation', query: { tab: 'actuators' } }, requiresProject: true },
+  testcases: { route: '/testcases', requiresProject: true },
+  testsuites: { route: '/testsuites', requiresProject: true },
+  'test-executions': { route: '/test-executions', requiresProject: true },
+  'langgraph-chat': { route: '/langgraph-chat', requiresProject: true },
+  'knowledge-management': { route: '/knowledge-management', requiresProject: true },
+  users: { route: '/users' },
+  organizations: { route: '/organizations' },
+  permissions: { route: '/permissions' },
+  'llm-configs': { route: '/llm-configs' },
+  'api-keys': { route: '/api-keys' },
+  'remote-mcp-configs': { route: '/remote-mcp-configs' },
+  skills: { route: '/skills' },
+};
+
 const activeMenu = computed(() => {
-  const path = router.currentRoute.value.path;
+  const path = route.path;
+
   if (path.startsWith('/dashboard')) return 'dashboard';
   if (path.startsWith('/projects')) return 'projects';
-  if (path.startsWith('/requirements')) return 'requirements'; // 添加对需求管理路由的识别
-  if (path.startsWith('/testsuites')) return 'testsuites'; // 添加对测试套件路由的识别
-  if (path.startsWith('/test-executions')) return 'test-executions'; // 添加对执行历史路由的识别
+  if (path.startsWith('/requirements')) return 'requirements';
+  if (path.startsWith('/testsuites')) return 'testsuites';
+  if (path.startsWith('/test-executions')) return 'test-executions';
   if (path.startsWith('/testcases')) return 'testcases';
   if (path.startsWith('/users')) return 'users';
   if (path.startsWith('/organizations')) return 'organizations';
   if (path.startsWith('/permissions')) return 'permissions';
   if (path.startsWith('/llm-configs')) return 'llm-configs';
   if (path.startsWith('/langgraph-chat')) return 'langgraph-chat';
-  if (path.startsWith('/ai-diagram')) return 'ai-diagram';
+  if (path.startsWith('/knowledge-management')) return 'knowledge-management';
+  if (path.startsWith('/api-keys')) return 'api-keys';
+  if (path.startsWith('/remote-mcp-configs')) return 'remote-mcp-configs';
+  if (path.startsWith('/skills')) return 'skills';
   if (path.startsWith('/api-automation')) {
-    const tab = String(router.currentRoute.value.query.tab || 'requests');
+    const tab = String(route.query.tab || 'requests');
     if (tab === 'test-cases') return 'api-automation-test-cases';
     if (tab === 'environments') return 'api-automation-environments';
     if (tab === 'execution-records') return 'api-automation-execution-records';
     if (tab === 'execution-report') return 'api-automation-execution-report';
     return 'api-automation-requests';
   }
-  if (path.startsWith('/knowledge-management')) return 'knowledge-management';
-  if (path.startsWith('/api-keys')) return 'api-keys';
-  if (path.startsWith('/remote-mcp-configs')) return 'remote-mcp-configs';
-  // 其他路由对应的菜单项
+  if (path.startsWith('/ui-automation/trace')) return 'ui-automation-execution-records';
+  if (path.startsWith('/ui-automation')) {
+    const tab = String(route.query.tab || 'pages');
+    if (tab === 'page-steps') return 'ui-automation-page-steps';
+    if (tab === 'testcases') return 'ui-automation-testcases';
+    if (tab === 'execution-records') return 'ui-automation-execution-records';
+    if (tab === 'batch-records') return 'ui-automation-batch-records';
+    if (tab === 'public-data') return 'ui-automation-public-data';
+    if (tab === 'env-config') return 'ui-automation-env-config';
+    if (tab === 'actuators') return 'ui-automation-actuators';
+    return 'ui-automation-pages';
+  }
+
   return '';
 });
 
-// 当前打开的子菜单
-const openKeys = ref<string[]>([]); // 默认所有子菜单都收起
+const activeGroupKey = computed(() => {
+  if (activeMenu.value.startsWith('api-automation-')) return 'api-automation';
+  if (activeMenu.value.startsWith('ui-automation-')) return 'ui-automation';
+  if (['testcases', 'testsuites', 'test-executions'].includes(activeMenu.value)) return 'test-management';
+  if (['users', 'organizations', 'permissions', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
+    return 'settings';
+  }
+  return '';
+});
 
-// 侧边栏收起状态
+const openKeys = ref<string[]>([]);
 const collapsed = ref(false);
 
 // 检查各个菜单项的权限
@@ -499,86 +585,53 @@ const hasSystemMenuItems = computed(() => {
 // 切换侧边栏收起状态
 const toggleCollapse = () => {
   collapsed.value = !collapsed.value;
-};
 
-// 处理点击测试管理图标的事件
-const handleTestManagementClick = (event: MouseEvent) => {
-  // 阻止事件冒泡，防止触发其他事件
-  if (event) {
-    event.stopPropagation();
-  }
-
-  // 如果是收起状态，点击测试管理图标时展开侧边栏
-  if (collapsed.value) {
-    collapsed.value = false;
-    // 展开测试管理子菜单
-    openKeys.value = ['test-management'];
-  } else {
-    // 如果已经展开，则切换子菜单的展开状态
-    if (openKeys.value.includes('test-management')) {
-      openKeys.value = openKeys.value.filter(key => key !== 'test-management');
-    } else {
-      openKeys.value.push('test-management');
-    }
-  }
-
-  // 确保状态更新后立即应用
-  nextTick(() => {
-    console.log('测试管理菜单状态更新:', openKeys.value);
-  });
-};
-
-const handleApiAutomationClick = (event: MouseEvent) => {
-  if (event) {
-    event.stopPropagation();
-  }
-
-  if (collapsed.value) {
-    collapsed.value = false;
-    openKeys.value = ['api-automation'];
-  } else if (openKeys.value.includes('api-automation')) {
-    openKeys.value = openKeys.value.filter(key => key !== 'api-automation');
-  } else {
-    openKeys.value.push('api-automation');
+  if (!collapsed.value && activeGroupKey.value && !openKeys.value.includes(activeGroupKey.value)) {
+    openKeys.value = [...openKeys.value, activeGroupKey.value];
   }
 };
 
-// 处理点击系统管理图标的事件
-const handleSystemManagementClick = (event: MouseEvent) => {
-  // 阻止事件冒泡，防止触发其他事件
-  if (event) {
-    event.stopPropagation();
-  }
-
-  // 如果是收起状态，点击系统管理图标时展开侧边栏
-  if (collapsed.value) {
-    collapsed.value = false;
-    // 展开系统管理子菜单
-    openKeys.value = ['settings'];
-  } else {
-    // 如果已经展开，则切换子菜单的展开状态
-    if (openKeys.value.includes('settings')) {
-      openKeys.value = openKeys.value.filter(key => key !== 'settings');
-    } else {
-      openKeys.value.push('settings');
-    }
-  }
-
-  // 确保状态更新后立即应用
-  nextTick(() => {
-    console.log('系统管理菜单状态更新:', openKeys.value);
-  });
-};
-
-// 检查是否选择了项目，用于需要项目的菜单项
-const checkProjectAndNavigate = (event: MouseEvent, path: string) => {
-  if (!projectStore.currentProjectId) {
-    event.preventDefault();
+const navigateToMenuTarget = (target: MenuNavigationTarget) => {
+  if (target.requiresProject && !projectStore.currentProjectId) {
     Message.warning('请先选择或创建项目');
     return;
   }
-  router.push(path);
+
+  void router.push(target.route);
 };
+
+const handleMenuItemClick = (key: string) => {
+  const target = menuNavigationMap[key];
+  if (!target) {
+    return;
+  }
+
+  navigateToMenuTarget(target);
+};
+
+const handleSubMenuClick = (key: string) => {
+  if (!collapsed.value) {
+    return;
+  }
+
+  collapsed.value = false;
+
+  if (!openKeys.value.includes(key)) {
+    openKeys.value = [...openKeys.value, key];
+  }
+};
+
+watch(
+  activeGroupKey,
+  groupKey => {
+    if (collapsed.value || !groupKey || openKeys.value.includes(groupKey)) {
+      return;
+    }
+
+    openKeys.value = [...openKeys.value, groupKey];
+  },
+  { immediate: true }
+);
 
 const handleLogout = () => {
   authStore.logout();
@@ -621,8 +674,8 @@ onMounted(async () => {
   // 加载项目列表
   await projectStore.fetchProjects();
 
-  if (router.currentRoute.value.path.startsWith('/api-automation') && !openKeys.value.includes('api-automation')) {
-    openKeys.value = [...openKeys.value, 'api-automation'];
+  if (activeGroupKey.value && !openKeys.value.includes(activeGroupKey.value)) {
+    openKeys.value = [...openKeys.value, activeGroupKey.value];
   }
   
   // 检查版本更新（后台执行，不阻塞页面）
@@ -842,6 +895,11 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   cursor: pointer;
+}
+
+.menu-link {
+  display: block;
+  width: 100%;
 }
 
 .username {
@@ -1191,10 +1249,10 @@ onMounted(async () => {
   margin: 0 0 16px 16px;
   border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 249, 253, 0.88));
-  border: 1px solid rgba(148, 163, 184, 0.14);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(246, 249, 253, 0.58));
+  border: 1px solid rgba(148, 163, 184, 0.18);
   box-shadow: var(--theme-card-shadow-strong);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(22px);
 }
 
 .menu {
@@ -1381,6 +1439,56 @@ onMounted(async () => {
 .content > * {
   position: relative;
   z-index: 1;
+}
+
+.layout-menu-popup,
+.user-panel-dropdown {
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(245, 248, 252, 0.58));
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(22px);
+}
+
+.layout-menu-popup .arco-menu,
+.layout-menu-popup .arco-menu-light,
+.user-panel-dropdown .arco-dropdown,
+.user-panel-dropdown .arco-dropdown-list-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.layout-menu-popup .arco-menu-item,
+.layout-menu-popup .arco-menu-pop-header,
+.user-panel-dropdown .arco-dropdown-option {
+  border-radius: 14px;
+}
+
+.layout-menu-popup .arco-menu-item:hover,
+.layout-menu-popup .arco-menu-pop-header:hover,
+.user-panel-dropdown .arco-dropdown-option:not(.arco-dropdown-option-disabled):hover {
+  background: rgba(var(--theme-accent-rgb), 0.1);
+}
+
+.main-layout,
+.main-layout * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
+}
+
+.main-layout ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.main-layout ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-layout ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.28);
 }
 
 @media (max-width: 1100px) {

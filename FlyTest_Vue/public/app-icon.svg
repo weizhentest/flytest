@@ -1,39 +1,40 @@
 <svg width="512" height="512" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="20" y1="14" x2="112" y2="120" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#07111F" />
-      <stop offset="0.52" stop-color="#102445" />
-      <stop offset="1" stop-color="#1A56D6" />
+    <linearGradient id="app-bg" x1="14" y1="10" x2="114" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B82F6" />
+      <stop offset="0.54" stop-color="#2563EB" />
+      <stop offset="1" stop-color="#1D4ED8" />
     </linearGradient>
-    <linearGradient id="mark" x1="39" y1="33" x2="91" y2="97" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#D8F8FF" />
-      <stop offset="0.42" stop-color="#88E8FF" />
-      <stop offset="1" stop-color="#3A84FF" />
-    </linearGradient>
-    <linearGradient id="check" x1="60" y1="66" x2="96" y2="91" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7DF9FF" />
-      <stop offset="1" stop-color="#2CD4FF" />
-    </linearGradient>
-    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(93 33) rotate(132.709) scale(52.4074)">
-      <stop stop-color="#7EEBFF" stop-opacity="0.56" />
-      <stop offset="1" stop-color="#7EEBFF" stop-opacity="0" />
+    <radialGradient
+      id="app-glow"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(94 26) rotate(132) scale(36)"
+    >
+      <stop stop-color="#BFDBFE" stop-opacity="0.48" />
+      <stop offset="1" stop-color="#BFDBFE" stop-opacity="0" />
     </radialGradient>
+    <linearGradient id="app-loop" x1="77" y1="42" x2="99" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#DBEAFE" />
+      <stop offset="1" stop-color="#BFDBFE" />
+    </linearGradient>
   </defs>
 
-  <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#bg)" />
-  <rect x="8.75" y="8.75" width="110.5" height="110.5" rx="29.25" stroke="rgba(165, 208, 255, 0.18)" />
-  <circle cx="91" cy="34" r="34" fill="url(#glow)" />
-  <path d="M24 42H104" stroke="rgba(173, 205, 255, 0.08)" stroke-width="1.5" />
-  <path d="M24 66H104" stroke="rgba(173, 205, 255, 0.08)" stroke-width="1.5" />
-  <path d="M24 90H104" stroke="rgba(173, 205, 255, 0.08)" stroke-width="1.5" />
-  <path d="M42 24V104" stroke="rgba(173, 205, 255, 0.06)" stroke-width="1.5" />
-  <path d="M84 24V104" stroke="rgba(173, 205, 255, 0.06)" stroke-width="1.5" />
-  <path d="M32 91C43 74 55 65 69 65C81 65 92 69 101 80" stroke="rgba(125, 249, 255, 0.46)" stroke-width="4.5" stroke-linecap="round" />
-  <path d="M76 39L88 49" stroke="rgba(125, 249, 255, 0.38)" stroke-width="3" stroke-linecap="round" />
-  <path d="M88 49L101 80" stroke="rgba(125, 249, 255, 0.32)" stroke-width="3" stroke-linecap="round" />
-  <circle cx="31" cy="91" r="5" fill="#A3DCFF" />
-  <circle cx="76" cy="39" r="4.5" fill="#6BE8FF" />
-  <circle cx="101" cy="80" r="5" fill="#57D8FF" />
-  <path d="M44 35C44 31.6863 46.6863 29 50 29H83C86.3137 29 89 31.6863 89 35C89 38.3137 86.3137 41 83 41H56V55H73C76.3137 55 79 57.6863 79 61C79 64.3137 76.3137 67 73 67H56V89C56 92.866 52.866 96 49 96C45.134 96 42 92.866 42 89V37C42 35.8954 42.8954 35 44 35Z" fill="url(#mark)" />
-  <path d="M61 78L71.5 88.5L92.5 61" stroke="url(#check)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#app-bg)" />
+  <rect x="8.75" y="8.75" width="110.5" height="110.5" rx="29.25" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1.5" />
+  <circle cx="94" cy="26" r="30" fill="url(#app-glow)" />
+
+  <rect x="36" y="18" width="16" height="92" rx="8" fill="#FFFFFF" />
+  <rect x="36" y="18" width="56" height="16" rx="8" fill="#FFFFFF" />
+  <rect x="36" y="54" width="44" height="14" rx="7" fill="#FFFFFF" />
+  <path
+    d="M78 42C88.4934 42 97 52.0736 97 64.5C97 76.9264 88.4934 87 78 87"
+    stroke="url(#app-loop)"
+    stroke-width="8.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="97" cy="64.5" r="5.25" fill="#DBEAFE" />
 </svg>

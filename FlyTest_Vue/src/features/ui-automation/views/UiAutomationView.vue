@@ -2,7 +2,7 @@
   <div class="ui-automation-layout">
     <ModulePanel ref="modulePanelRef" @select="onModuleSelect" @updated="onModuleUpdated" />
     <div class="layout-content">
-      <a-tabs v-model:active-key="activeTab" type="card-gutter">
+      <a-tabs v-model:active-key="activeTab" type="card-gutter" lazy-load>
         <a-tab-pane key="pages" title="页面管理">
           <PageList ref="pageListRef" :selected-module-id="selectedModuleId" />
         </a-tab-pane>
@@ -33,7 +33,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ModulePanel from '../components/ModulePanel.vue'
 import PageList from './PageList.vue'
 import PageStepList from './PageStepList.vue'
@@ -45,7 +46,18 @@ import EnvConfigList from './EnvConfigList.vue'
 import ActuatorList from './ActuatorList.vue'
 import type { UiModule } from '../types'
 
-const activeTab = ref('pages')
+type UiAutomationTab =
+  | 'pages'
+  | 'page-steps'
+  | 'testcases'
+  | 'execution-records'
+  | 'batch-records'
+  | 'public-data'
+  | 'env-config'
+  | 'actuators'
+
+const route = useRoute()
+const router = useRouter()
 const modulePanelRef = ref()
 const selectedModuleId = ref<number | undefined>(undefined)
 
@@ -59,8 +71,60 @@ const envConfigListRef = ref()
 const actuatorListRef = ref()
 void [modulePanelRef, pageListRef, pageStepListRef, testCaseListRef, executionRecordListRef, batchRecordListRef, publicDataListRef, envConfigListRef, actuatorListRef]
 
-// 页签切换时刷新对应数据
-watch(activeTab, (newTab) => {
+const normalizeTab = (value: unknown): UiAutomationTab => {
+  const tab = String(value || 'pages')
+
+  if (
+    tab === 'page-steps' ||
+    tab === 'testcases' ||
+    tab === 'execution-records' ||
+    tab === 'batch-records' ||
+    tab === 'public-data' ||
+    tab === 'env-config' ||
+    tab === 'actuators'
+  ) {
+    return tab
+  }
+
+  return 'pages'
+}
+
+const activeTab = computed<UiAutomationTab>({
+  get: () => normalizeTab(route.query.tab),
+  set: value => {
+    if (value === normalizeTab(route.query.tab)) {
+      return
+    }
+
+    void router.replace({
+      path: '/ui-automation',
+      query: {
+        ...route.query,
+        tab: value,
+      },
+    })
+  },
+})
+
+watch(
+  () => route.query.tab,
+  tab => {
+    const normalizedTab = normalizeTab(tab)
+
+    if (tab !== normalizedTab) {
+      void router.replace({
+        path: '/ui-automation',
+        query: {
+          ...route.query,
+          tab: normalizedTab,
+        },
+      })
+    }
+  },
+  { immediate: true }
+)
+
+watch(activeTab, newTab => {
   switch (newTab) {
     case 'pages':
       pageListRef.value?.refresh?.()
@@ -118,6 +182,7 @@ const onModuleUpdated = () => {
 
 .layout-content {
   flex: 1;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
   display: flex;

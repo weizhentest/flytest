@@ -13,7 +13,7 @@
 
     <!-- 右侧聊天区域 -->
     <div class="chat-container">
-      <section class="workspace-hero workspace-hero--chat workspace-hero--compact">
+      <section class="workspace-hero workspace-hero--chat workspace-hero--compact workspace-hero--chat-command">
         <div class="workspace-hero-copy">
           <span class="workspace-hero-eyebrow">AI Conversation</span>
           <h2 class="workspace-hero-title">{{ projectStore.currentProject?.name || '当前项目' }} AI 对话中枢</h2>
@@ -2342,6 +2342,117 @@ export default {
   border-radius: 30px;
 }
 
+.workspace-hero--chat-command {
+  gap: 14px;
+  margin: 14px 14px 10px;
+  padding: 16px 18px;
+  border-radius: 24px;
+  border: 1px solid var(--theme-card-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 249, 253, 0.78));
+  box-shadow: var(--theme-card-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.workspace-hero--chat-command::before {
+  background-image:
+    linear-gradient(to right, rgba(var(--theme-accent-rgb), 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--theme-accent-rgb), 0.06) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.08));
+}
+
+.workspace-hero--chat-command::after {
+  width: 160px;
+  height: 160px;
+  right: -44px;
+  top: -56px;
+  background: radial-gradient(circle, rgba(var(--theme-accent-rgb), 0.16), transparent 66%);
+  filter: blur(10px);
+}
+
+.workspace-hero--chat-command .workspace-hero-copy {
+  gap: 8px;
+}
+
+.workspace-hero--chat-command .workspace-hero-eyebrow {
+  padding: 5px 10px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--theme-accent);
+  background: rgba(var(--theme-accent-rgb), 0.08);
+  border-color: rgba(var(--theme-accent-rgb), 0.14);
+}
+
+.workspace-hero--chat-command .workspace-hero-title {
+  font-size: clamp(24px, 2.5vw, 30px);
+  line-height: 1.08;
+  color: var(--theme-text);
+}
+
+.workspace-hero--chat-command .workspace-hero-description {
+  max-width: 620px;
+  font-size: 13px;
+  line-height: 1.58;
+  color: var(--theme-text-secondary);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.workspace-hero--chat-command .workspace-chip-row {
+  gap: 8px;
+}
+
+.workspace-hero--chat-command .workspace-chip {
+  padding: 6px 10px;
+  border-color: rgba(var(--theme-accent-rgb), 0.12);
+  background: rgba(var(--theme-accent-rgb), 0.08);
+  color: var(--theme-accent);
+  font-size: 11px;
+  backdrop-filter: blur(10px);
+}
+
+.workspace-hero--chat-command .workspace-hero-stats {
+  grid-template-columns: repeat(2, minmax(108px, 128px));
+  gap: 10px;
+}
+
+.workspace-hero--chat-command .workspace-stat-card {
+  min-height: 92px;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border-color: rgba(var(--theme-accent-rgb), 0.12);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.62));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.workspace-hero--chat-command .workspace-stat-value {
+  font-size: clamp(20px, 1.8vw, 28px);
+  color: var(--theme-text);
+}
+
+.workspace-hero--chat-command .workspace-stat-label {
+  font-size: 11px;
+  color: var(--theme-text-tertiary);
+}
+
+.workspace-hero--chat-command .workspace-hero-orb {
+  width: 118px;
+  height: 118px;
+  right: 8px;
+  bottom: -18px;
+  opacity: 0.58;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(135, 244, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 50% 50%, rgba(var(--theme-accent-rgb), 0.16), transparent 72%);
+}
+
 .chat-container::before {
   content: '';
   position: absolute;
@@ -2376,5 +2487,17 @@ export default {
 
 .floating-panel-header {
   background: rgba(245, 248, 252, 0.94);
+}
+
+@media (max-width: 768px) {
+  .workspace-hero--chat-command {
+    margin: 12px 12px 8px;
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .workspace-hero--chat-command .workspace-hero-title {
+    font-size: 22px;
+  }
 }
 </style>

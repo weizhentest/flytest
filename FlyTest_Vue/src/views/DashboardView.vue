@@ -433,14 +433,17 @@ onMounted(() => {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.95fr);
-  gap: 16px;
-  padding: 24px 28px;
-  border-radius: 28px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.78fr);
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 22px;
   background:
-    radial-gradient(circle at top right, rgba(15, 126, 168, 0.14), transparent 28%),
-    linear-gradient(135deg, rgba(17, 31, 57, 0.98), rgba(28, 51, 92, 0.95));
-  color: #f7fbff;
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(246, 249, 253, 0.72));
+  color: var(--theme-text);
+  border: 1px solid var(--theme-card-border);
+  box-shadow: var(--theme-card-shadow-strong);
+  backdrop-filter: blur(16px);
   overflow: hidden;
   position: relative;
 }
@@ -448,11 +451,11 @@ onMounted(() => {
 .hero-section::after {
   content: '';
   position: absolute;
-  inset: auto -80px -120px auto;
-  width: 240px;
-  height: 240px;
+  inset: auto -70px -100px auto;
+  width: 180px;
+  height: 180px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 68%);
+  background: radial-gradient(circle, rgba(var(--theme-accent-rgb), 0.14), transparent 68%);
 }
 
 .hero-copy,
@@ -464,81 +467,89 @@ onMounted(() => {
 .hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
 }
 
 .hero-eyebrow {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(208, 226, 255, 0.7);
+  color: var(--theme-accent);
 }
 
 .hero-title {
   margin: 0;
-  font-size: 40px;
-  line-height: 1.05;
+  font-family: var(--theme-display-font);
+  font-size: 26px;
+  line-height: 1.06;
   font-weight: 700;
+  color: var(--theme-text);
 }
 
 .hero-description {
   margin: 0;
-  max-width: 720px;
-  color: rgba(223, 235, 255, 0.82);
-  font-size: 15px;
-  line-height: 1.75;
+  max-width: 560px;
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
 }
 
 .hero-tag {
-  padding: 8px 12px;
+  padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(242, 247, 255, 0.92);
-  font-size: 12px;
+  background: rgba(var(--theme-accent-rgb), 0.08);
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  color: var(--theme-accent);
+  font-size: 10px;
   font-weight: 600;
 }
 
 .hero-metrics {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .hero-metric-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 18px 18px 16px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.6));
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .hero-metric-label {
-  color: rgba(206, 224, 255, 0.74);
-  font-size: 12px;
+  color: var(--theme-text-tertiary);
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
 }
 
 .hero-metric-value {
-  font-size: 34px;
+  font-size: 22px;
   line-height: 1;
   font-weight: 800;
+  color: var(--theme-text);
 }
 
 .hero-metric-foot {
-  color: rgba(218, 232, 255, 0.72);
-  font-size: 12px;
-  line-height: 1.6;
+  color: var(--theme-text-secondary);
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 /* 顶部概览卡片 */
@@ -1001,12 +1012,12 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .hero-section {
-    padding: 20px;
-    border-radius: 24px;
+    padding: 12px 14px;
+    border-radius: 18px;
   }
 
   .hero-title {
-    font-size: 30px;
+    font-size: 22px;
   }
 
   .overview-section {

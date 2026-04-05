@@ -135,6 +135,18 @@
   --theme-accent-hover: #60a5fa;
   --theme-accent-active: #1d4ed8;
   --theme-accent-rgb: 59, 130, 246;
+  --theme-panel-bg: linear-gradient(180deg, rgba(19, 30, 47, 0.96), rgba(13, 21, 34, 0.94));
+  --theme-panel-bg-strong: linear-gradient(180deg, rgba(20, 31, 48, 0.98), rgba(12, 20, 33, 0.98));
+  --theme-panel-bg-soft: linear-gradient(180deg, rgba(22, 34, 52, 0.88), rgba(15, 23, 42, 0.78));
+  --theme-hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(16, 27, 43, 0.94) 58%, rgba(20, 44, 82, 0.88));
+  --theme-hero-stat-bg: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.14), rgba(17, 24, 39, 0.72));
+  --theme-code-bg: rgba(15, 23, 42, 0.82);
+  --theme-card-header-bg: rgba(255, 255, 255, 0.03);
+  --theme-table-row-bg: rgba(17, 24, 39, 0.82);
+  --theme-table-row-alt-bg: rgba(21, 32, 48, 0.88);
+  --theme-table-row-hover-bg: rgba(var(--theme-accent-rgb), 0.12);
+  --theme-scrollbar-thumb: rgba(118, 138, 168, 0.38);
+  --theme-scrollbar-thumb-hover: rgba(148, 163, 184, 0.56);
 }
 
 :root[data-theme='black'] body[arco-theme='dark'] {
@@ -2337,4 +2349,344 @@ h4,
   .workspace-hero--chat {
     margin: 12px 12px 8px;
   }
+}
+
+/* Additional dark-theme overrides for custom admin surfaces */
+:root[data-theme='black'] body {
+  background:
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.18), transparent 28%),
+    radial-gradient(circle at 82% 12%, rgba(56, 189, 248, 0.12), transparent 22%),
+    linear-gradient(180deg, #08111f 0%, #0b1220 42%, #0f172a 100%) !important;
+}
+
+:root[data-theme='black'] .main-layout,
+:root[data-theme='black'] .chat-layout,
+:root[data-theme='black'] .chat-container {
+  background:
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.12), transparent 24%),
+    radial-gradient(circle at 84% 12%, rgba(56, 189, 248, 0.08), transparent 20%),
+    linear-gradient(180deg, #08111f 0%, #0d1628 46%, #101a2d 100%) !important;
+}
+
+:root[data-theme='black'] .main-layout::before {
+  opacity: 0.18;
+}
+
+:root[data-theme='black'] .main-layout .header,
+:root[data-theme='black'] .main-layout .sider,
+:root[data-theme='black'] .main-layout .content,
+:root[data-theme='black'] .page-header,
+:root[data-theme='black'] .filter-card,
+:root[data-theme='black'] .content-card,
+:root[data-theme='black'] .filter-section,
+:root[data-theme='black'] .content-section,
+:root[data-theme='black'] .right-content-area,
+:root[data-theme='black'] .module-panel,
+:root[data-theme='black'] .panel,
+:root[data-theme='black'] .overview-card,
+:root[data-theme='black'] .chat-sidebar,
+:root[data-theme='black'] .chat-container,
+:root[data-theme='black'] .chat-header-container,
+:root[data-theme='black'] .kb-settings-panel,
+:root[data-theme='black'] .floating-tool-image-panel,
+:root[data-theme='black'] .layout-menu-popup,
+:root[data-theme='black'] .user-panel-dropdown,
+:root[data-theme='black'] .version-popover,
+:root[data-theme='black'] .no-project-selected,
+:root[data-theme='black'] .no-permission-panel,
+:root[data-theme='black'] .empty-state,
+:root[data-theme='black'] .empty-data,
+:root[data-theme='black'] .loading-state,
+:root[data-theme='black'] .error-state {
+  background: var(--theme-panel-bg) !important;
+  border-color: rgba(148, 163, 184, 0.14) !important;
+  box-shadow: 0 28px 64px rgba(2, 6, 23, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  color: var(--theme-page-text) !important;
+}
+
+:root[data-theme='black'] .main-layout .header::before,
+:root[data-theme='black'] .main-layout .sider::before,
+:root[data-theme='black'] .main-layout .content::before,
+:root[data-theme='black'] .page-header::before,
+:root[data-theme='black'] .filter-card::before,
+:root[data-theme='black'] .content-card::before,
+:root[data-theme='black'] .filter-section::before,
+:root[data-theme='black'] .content-section::before,
+:root[data-theme='black'] .chat-container::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 18%),
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.12), transparent 26%) !important;
+}
+
+:root[data-theme='black'] .main-layout .header,
+:root[data-theme='black'] .main-layout .sider,
+:root[data-theme='black'] .main-layout .content {
+  backdrop-filter: blur(22px);
+}
+
+:root[data-theme='black'] .workspace-badge,
+:root[data-theme='black'] .main-layout .version-badge,
+:root[data-theme='black'] .project-selector .arco-select-view,
+:root[data-theme='black'] .main-layout .theme-switch-button,
+:root[data-theme='black'] .kb-toggle,
+:root[data-theme='black'] .html-preview-fullscreen-btn {
+  background: rgba(15, 23, 42, 0.62) !important;
+  border: 1px solid rgba(148, 163, 184, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='black'] .workspace-badge,
+:root[data-theme='black'] .main-layout .version-badge,
+:root[data-theme='black'] .project-selector .arco-select-view {
+  backdrop-filter: blur(14px);
+}
+
+:root[data-theme='black'] .dropdown-user-info,
+:root[data-theme='black'] .version-update-info,
+:root[data-theme='black'] .version-update-header,
+:root[data-theme='black'] .version-update-footer,
+:root[data-theme='black'] .floating-panel-header {
+  background: transparent !important;
+  border-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+:root[data-theme='black'] .version-update-notes,
+:root[data-theme='black'] .dropdown-email,
+:root[data-theme='black'] .toggle-label,
+:root[data-theme='black'] .prompt-label,
+:root[data-theme='black'] .floating-panel-title,
+:root[data-theme='black'] .history-item-time,
+:root[data-theme='black'] .empty-history,
+:root[data-theme='black'] .float-placeholder-label {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='black'] .dropdown-username,
+:root[data-theme='black'] .history-item-title,
+:root[data-theme='black'] .chat-title,
+:root[data-theme='black'] .main-layout .username,
+:root[data-theme='black'] .logo-text {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] .history-item-icon,
+:root[data-theme='black'] .floating-panel-close,
+:root[data-theme='black'] .main-layout .logo-eyebrow {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='black'] .floating-panel-close:hover {
+  color: var(--theme-accent-hover) !important;
+}
+
+:root[data-theme='black'] .diagram-preview-iframe {
+  background: rgba(15, 23, 42, 0.72) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+:root[data-theme='black'] .workspace-hero--project-command,
+:root[data-theme='black'] .workspace-hero--requirement-command,
+:root[data-theme='black'] .workspace-hero--chat-command,
+:root[data-theme='black'] .hero-section {
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.18), transparent 26%),
+    var(--theme-hero-bg) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  box-shadow: 0 28px 60px rgba(2, 6, 23, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+:root[data-theme='black'] .workspace-hero--project-command .workspace-chip,
+:root[data-theme='black'] .workspace-hero--requirement-command .workspace-chip,
+:root[data-theme='black'] .workspace-hero--chat-command .workspace-chip,
+:root[data-theme='black'] .hero-tag {
+  background: rgba(var(--theme-accent-rgb), 0.14) !important;
+  border-color: rgba(var(--theme-accent-rgb), 0.28) !important;
+  color: #bfdbfe !important;
+}
+
+:root[data-theme='black'] .workspace-hero--project-command .workspace-stat-card,
+:root[data-theme='black'] .workspace-hero--requirement-command .workspace-stat-card,
+:root[data-theme='black'] .workspace-hero--chat-command .workspace-stat-card,
+:root[data-theme='black'] .hero-metric-card {
+  background: var(--theme-hero-stat-bg) !important;
+  border-color: rgba(var(--theme-accent-rgb), 0.2) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+:root[data-theme='black'] .chat-layout {
+  gap: 16px;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+:root[data-theme='black'] .chat-sidebar {
+  border-right-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+:root[data-theme='black'] .chat-history-item {
+  background: transparent !important;
+}
+
+:root[data-theme='black'] .chat-history-item:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme='black'] .chat-history-item.active {
+  background: rgba(var(--theme-accent-rgb), 0.14) !important;
+}
+
+:root[data-theme='black'] .sidebar-header,
+:root[data-theme='black'] .chat-header-container,
+:root[data-theme='black'] .kb-settings-panel {
+  border-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+:root[data-theme='black'] .ai-message .message-bubble {
+  background: var(--theme-panel-bg-strong) !important;
+  color: var(--theme-text) !important;
+  border: 1px solid rgba(148, 163, 184, 0.14) !important;
+  box-shadow: 0 18px 32px rgba(2, 6, 23, 0.24) !important;
+}
+
+:root[data-theme='black'] .tool-message .message-bubble {
+  background: linear-gradient(180deg, rgba(63, 46, 18, 0.86), rgba(33, 25, 12, 0.9)) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(250, 173, 20, 0.2) !important;
+  box-shadow: 0 18px 32px rgba(2, 6, 23, 0.24) !important;
+}
+
+:root[data-theme='black'] .tool-header {
+  color: rgba(250, 231, 181, 0.88) !important;
+  border-bottom-color: rgba(250, 173, 20, 0.22) !important;
+}
+
+:root[data-theme='black'] .tool-content.collapsed::after {
+  background: linear-gradient(transparent, rgba(17, 24, 39, 0.96)) !important;
+}
+
+:root[data-theme='black'] .expand-button {
+  background-color: rgba(250, 173, 20, 0.14) !important;
+  border-color: rgba(250, 173, 20, 0.32) !important;
+  color: #fcd34d !important;
+}
+
+:root[data-theme='black'] .expand-button:hover {
+  background-color: rgba(250, 173, 20, 0.2) !important;
+  border-color: rgba(250, 173, 20, 0.44) !important;
+}
+
+:root[data-theme='black'] .tool-image-float-placeholder {
+  background: rgba(15, 23, 42, 0.64) !important;
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+:root[data-theme='black'] .tool-image-float-placeholder:hover {
+  background: rgba(var(--theme-accent-rgb), 0.14) !important;
+}
+
+:root[data-theme='black'] .message-bubble pre {
+  background: var(--theme-code-bg) !important;
+  color: var(--theme-page-text) !important;
+}
+
+:root[data-theme='black'] .tool-message .message-bubble pre {
+  background: rgba(250, 173, 20, 0.12) !important;
+}
+
+:root[data-theme='black'] .message-bubble code {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #dbeafe !important;
+}
+
+:root[data-theme='black'] .message-bubble details.message-code-collapse {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background-color: rgba(15, 23, 42, 0.42) !important;
+}
+
+:root[data-theme='black'] .message-bubble details.message-code-collapse[open] > summary.message-code-toggle {
+  border-bottom-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+:root[data-theme='black'] .message-bubble th,
+:root[data-theme='black'] .message-bubble td {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+:root[data-theme='black'] .message-bubble th {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] .floating-tool-image-panel,
+:root[data-theme='black'] .layout-menu-popup,
+:root[data-theme='black'] .user-panel-dropdown,
+:root[data-theme='black'] .version-popover {
+  backdrop-filter: blur(22px);
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-card,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-card-bordered,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-list,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-list-bordered,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-list-item,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-descriptions,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-collapse-item,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-collapse-item-content {
+  background: var(--theme-panel-bg) !important;
+  border-color: rgba(148, 163, 184, 0.12) !important;
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.28) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-card-header,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-collapse-item-header,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-descriptions-item-label {
+  background: var(--theme-card-header-bg) !important;
+  border-color: rgba(148, 163, 184, 0.12) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-tabs-nav::before,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-divider {
+  border-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-tabs-tab {
+  color: var(--theme-text-tertiary) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-tabs-tab-active,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-tabs-tab:hover {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-tabs-nav-ink {
+  background-color: var(--theme-accent) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-table-tr .arco-table-td,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-table-tbody > .arco-table-tr > .arco-table-td {
+  background: var(--theme-table-row-bg) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-table-striped .arco-table-tr:nth-child(even) .arco-table-td {
+  background: var(--theme-table-row-alt-bg) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark'] .arco-table-tr:hover .arco-table-td,
+:root[data-theme='black'] body[arco-theme='dark'] .arco-table-tbody > .arco-table-tr:hover > .arco-table-td {
+  background: var(--theme-table-row-hover-bg) !important;
+}
+
+:root[data-theme='black'] .main-layout,
+:root[data-theme='black'] .main-layout * {
+  scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+}
+
+:root[data-theme='black'] .main-layout ::-webkit-scrollbar-thumb {
+  background: var(--theme-scrollbar-thumb);
+}
+
+:root[data-theme='black'] .main-layout ::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-thumb-hover);
 }

@@ -28,6 +28,37 @@ const ApiAutomationView = () => import('@/features/api-automation/views/ApiAutom
 const UiAutomationView = () => import('@/features/ui-automation/views/UiAutomationView.vue')
 const TraceDetailView = () => import('@/features/ui-automation/views/TraceDetail.vue')
 
+const privateRouteLoaders = [
+  DashboardView,
+  ProjectManagementView,
+  RequirementManagementView,
+  UserManagementView,
+  OrganizationManagementView,
+  PermissionManagementView,
+  TestCaseManagementView,
+  TestSuiteManagementView,
+  TestExecutionHistoryView,
+  LlmConfigManagementView,
+  LangGraphChatView,
+  KnowledgeManagementView,
+  ApiKeyManagementView,
+  RemoteMcpConfigManagementView,
+  SkillsManagementView,
+  ApiAutomationView,
+  UiAutomationView,
+]
+
+let privateRouteComponentsPreloaded = false
+
+export const preloadPrivateRouteComponents = async () => {
+  if (privateRouteComponentsPreloaded) {
+    return
+  }
+
+  privateRouteComponentsPreloaded = true
+  await Promise.allSettled(privateRouteLoaders.map(load => load()))
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
