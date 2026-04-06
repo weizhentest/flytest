@@ -1,5 +1,7 @@
 import { request } from '@/utils/request'
 import type {
+  AppAdbDetectionResult,
+  AppAdbDiagnostics,
   AppAutomationSettings,
   AppComponent,
   AppComponentPackage,
@@ -12,6 +14,7 @@ import type {
   AppImageCategory,
   AppNotificationLog,
   AppPackage,
+  AppRuntimeCapabilities,
   AppScheduledTask,
   AppTestCase,
   AppTestSuite,
@@ -508,6 +511,27 @@ export const AppAutomationService = {
     return unwrap<AppAutomationSettings>({
       url: `${APP_BASE}/settings/current/`,
       method: 'GET',
+    })
+  },
+
+  getAdbDiagnostics() {
+    return unwrap<AppAdbDiagnostics>({
+      url: `${APP_BASE}/settings/diagnostics/`,
+      method: 'GET',
+    })
+  },
+
+  getRuntimeCapabilities() {
+    return unwrap<AppRuntimeCapabilities>({
+      url: `${APP_BASE}/settings/runtime-capabilities/`,
+      method: 'GET',
+    })
+  },
+
+  detectAdb() {
+    return unwrap<AppAdbDetectionResult>({
+      url: `${APP_BASE}/settings/detect-adb/`,
+      method: 'POST',
     })
   },
 

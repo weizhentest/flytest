@@ -1,287 +1,99 @@
-# Django Web框架 - BSD许可证 (当前版本: 5.2)
-# https://github.com/django/django/blob/main/LICENSE
+# Core framework
 Django==5.2
-
-# Django REST框架 - BSD许可证 (当前版本: 3.16.0)
-# https://github.com/encode/django-rest-framework/blob/master/LICENSE.md
 djangorestframework==3.16.0
-
-# JWT认证支持 - MIT许可证 (当前版本: 5.3.1)
-# https://github.com/jazzband/djangorestframework-simplejwt/blob/master/LICENSE
 djangorestframework-simplejwt==5.3.1
-
-# API文档生成 - BSD许可证 (当前版本: 0.28.0)
-# https://github.com/tfranzel/drf-spectacular/blob/master/LICENSE
 drf-spectacular==0.28.0
-
-# CORS跨域支持 - MIT许可证 (当前版本: 4.3.1)
-# https://github.com/adamchainz/django-cors-headers/blob/main/LICENSE
 django-cors-headers==4.3.1
+python-dotenv==1.1.1
+django-filter==25.1
+drf-nested-routers==0.94.2
 
-# Django Channels WebSocket支持 - BSD许可证
-# https://github.com/django/channels/blob/main/LICENSE
+# Async and WebSocket
 channels==4.3.2
 channels-redis==4.3.0
 daphne==4.2.1
 
-# 环境变量管理 - BSD许可证 (当前版本: 1.1.1)
-# https://github.com/theskumar/python-dotenv/blob/main/LICENSE
-python-dotenv==1.1.1
-
-# OpenAI API客户端 - MIT许可证 (v1.x 重大升级)
-# https://github.com/openai/openai-python/blob/main/LICENSE
+# OpenAI and agent stack
 openai>=1.109.1
-
-# Django查询过滤器 - BSD许可证 (当前版本: 25.1)
-# https://github.com/carltongibson/django-filter/blob/main/LICENSE
-django-filter==25.1
-
-# DRF嵌套路由 - BSD许可证 (当前版本: 0.94.2)
-# https://github.com/alanjds/drf-nested-routers/blob/master/LICENSE
-drf-nested-routers==0.94.2
-
-# LangGraph工作流框架 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/LICENSE
 langgraph==1.0.6
-
-# LangChain主库 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langchain/blob/master/LICENSE
 langchain==1.2.3
-
-# LangChain OpenAI集成 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langchain/blob/master/libs/partners/openai/LICENSE
 langchain-openai==1.1.7
-
-# LangChain Qwen集成 - MIT许可证
-# https://github.com/langchain-ai/langchain-qwq/blob/main/LICENSE
 langchain-qwq==0.3.4
-
-# LangChain Anthropic/Claude 支持（已移除 - 保留注释以便记录）
-# 如果将来需要使用 Anthropic/Claude，请取消注释以下依赖：
-# langchain-anthropic>=0.3.0
-# anthropic>=0.48.0
-
-# LangChain核心库 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langchain/blob/master/libs/core/LICENSE
 langchain-core==1.2.7
-
-# LangChain实验性功能 - MIT许可证 (已移除 - 项目未使用)
-# 注意：langchain-experimental 尚未适配 v1.x 生态
-# 如需使用请取消注释并确保版本兼容
-# langchain-experimental>=0.4.0
-
-# LangGraph检查点 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/libs/checkpoint/LICENSE
 langgraph-checkpoint==4.0.0
-
-# LangGraph预构建组件 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/libs/prebuilt/LICENSE
 langgraph-prebuilt==1.0.6
-
-# LangGraph SDK - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/libs/sdk-py/LICENSE
 langgraph-sdk>=0.2.0
-
-# LangSmith开发平台 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langsmith/blob/main/LICENSE
 langsmith>=0.3.45,<1.0.0
-
-# LangGraph SQLite检查点 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/libs/checkpoint-sqlite/LICENSE
 langgraph-checkpoint-sqlite==3.0.2
-
-# LangGraph PostgreSQL检查点 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langgraph/blob/main/libs/checkpoint-postgres/LICENSE
 langgraph-checkpoint-postgres==3.0.3
-
-# PostgreSQL数据库驱动 - LGPL许可证
-# psycopg2-binary: Django ORM 使用
-# psycopg[binary]: langgraph-checkpoint-postgres 使用
-# https://github.com/psycopg/psycopg2/blob/master/LICENSE
-psycopg2-binary==2.9.10
-psycopg[binary]==3.3.1
-
-# LangChain MCP适配器 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langchain-mcp-adapters/blob/main/LICENSE
 langchain-mcp-adapters==0.2.1
 
-# Excel文件处理 - MIT许可证 (当前版本: 3.1.5)
-# https://github.com/theorchard/openpyxl/blob/master/LICENCE.rst
-openpyxl==3.1.5
-
-# 数据分析库(用于Excel表格解析) - BSD 3-Clause许可证
-# https://github.com/pandas-dev/pandas/blob/main/LICENSE
-pandas==2.2.3
-
-# Excel旧版(.xls)读取支持 - BSD许可证
-# https://github.com/python-excel/xlrd/blob/master/LICENSE
-xlrd==2.0.1
-
-# 知识库依赖
-# LangChain社区库 - MIT许可证 (最新稳定版)
-# https://github.com/langchain-ai/langchain/blob/master/libs/community/LICENSE
-langchain-community==0.4.1
-
-# 文本分割器 - MIT许可证 (最新稳定版)
-# https://github.com/langchain-ai/langchain/blob/master/libs/text-splitters/LICENSE
-langchain-text-splitters==1.1.0
-
-# Qdrant向量数据库 - Apache 2.0许可证 (v1.x 重大升级)
-# https://github.com/qdrant/qdrant-client/blob/master/LICENSE
-langchain-qdrant==1.0.0
-
-# Qdrant客户端 - Apache 2.0许可证
-# https://github.com/qdrant/qdrant-client/blob/master/LICENSE
-qdrant-client==1.11.3
-
-# FastEmbed - 用于BM25稀疏向量编码（混合检索）
-# https://github.com/qdrant/fastembed/blob/main/LICENSE
-fastembed>=0.7.0,<1.0
-
-# HuggingFace嵌入模型支持（已弃用 - 会自动安装 torch 和 CUDA 依赖）
-# 注意：langchain-huggingface 依赖 sentence-transformers，会自动安装 torch（约800MB+）和 CUDA 库（约1GB+）
-# 现使用 CustomAPIEmbeddings，无需此依赖
-# 如需本地模型，请同时取消注释 requirements.txt 中的 torch、sentence-transformers 等依赖
-# # HuggingFace嵌入模型支持 - MIT许可证 (当前版本: 0.2.0)
-# # https://github.com/langchain-ai/langchain/blob/master/libs/partners/huggingface/LICENSE
+# Optional providers kept for reference
+# langchain-anthropic>=0.3.0
+# anthropic>=0.48.0
+# langchain-experimental>=0.4.0
 # langchain-huggingface==0.2.0
-
-# 未使用的 LLM 供应商（可选，如需要请取消注释）
-# Cohere AI 支持
-# # Cohere AI支持 - MIT许可证 (当前版本: 0.3.5)
-# # https://github.com/langchain-ai/langchain/blob/master/libs/partners/cohere/LICENSE
 # langchain-cohere==0.3.5
-# # Cohere API客户端 - MIT许可证 (当前版本: 5.15.0)
-# # https://github.com/cohere-ai/cohere-python/blob/main/LICENSE
 # cohere==5.15.0
-
-# Fireworks AI 支持
-# # Fireworks AI支持 - MIT许可证 (当前版本: 0.2.7)
-# # https://github.com/langchain-ai/langchain/blob/master/libs/partners/fireworks/LICENSE
 # langchain-fireworks==0.2.7
-# # Fireworks AI客户端 - Apache 2.0许可证 (当前版本: 0.15.12)
-# # https://github.com/fireworks-ai/fireworks-ai-python/blob/main/LICENSE
 # fireworks-ai==0.15.12
-
-# Google Gemini 及相关 Google AI 依赖（已移除 - 保留注释以便记录）
-# 如果将来需要使用 Google Gemini 或 Google 生成式 API，请取消注释以下依赖：
 # langchain-google-genai==2.0.8
 # google-ai-generativelanguage==0.6.15
 # google-api-core==2.24.1
 # google-api-python-client==2.162.0
 # google-auth==2.38.0
 # google-generativeai==0.8.4
-
-# Mistral AI 支持（未使用，如需要请取消注释）
-# # Mistral AI支持 - MIT许可证 (当前版本: 0.2.4)
-# # https://github.com/langchain-ai/langchain/blob/master/libs/partners/mistralai/LICENSE
 # langchain-mistralai==0.2.4
 
-# Ollama本地模型支持 - MIT许可证 (v1.x 重大升级)
-# https://github.com/langchain-ai/langchain/blob/master/libs/partners/ollama/LICENSE
-langchain-ollama==1.0.1
+# Database drivers
+psycopg2-binary==2.9.10
+psycopg[binary]==3.3.1
 
-# Ollama客户端 - MIT许可证 (v1.x 重大升级)
-# https://github.com/ollama/ollama-python/blob/main/LICENSE
-ollama>=0.6.0
-
-# HTML/XML解析器 - MIT许可证 (当前版本: 4.13.3)
-# https://github.com/wention/BeautifulSoup4/blob/master/LICENSE
+# Spreadsheet and office documents
+openpyxl==3.1.5
+pandas==2.2.3
+xlrd==2.0.1
+pypdf==6.9.2
+python-docx==1.2.0
+python-pptx==1.0.2
+docx2txt==0.9
+olefile>=0.46
+markdown==3.9
+unstructured==0.17.2
 beautifulsoup4==4.13.3
 
-# 文档处理依赖
-# PDF文件处理 - BSD许可证 (当前版本: 6.9.2)
-# https://github.com/py-pdf/pypdf/blob/main/LICENSE
-pypdf==6.9.2
-
-# Word文档处理 - MIT许可证 (当前版本: 1.2.0)
-# https://github.com/python-openxml/python-docx/blob/master/LICENSE
-python-docx==1.2.0
-
-# PowerPoint文档处理 - MIT许可证 (当前版本: 1.0.2)
-# https://github.com/scanny/python-pptx/blob/master/LICENSE
-python-pptx==1.0.2
-
-# Word文本提取 - MIT许可证 (当前版本: 0.9)
-# https://github.com/ankushshah89/python-docx2txt/blob/master/LICENSE
-docx2txt==0.9
-
-# OLE文件解析(用于.doc格式) - BSD许可证
-# https://github.com/decalage2/olefile/blob/master/LICENSE.txt
-olefile>=0.46
-
-# Markdown文档处理 - BSD许可证 (当前版本: 3.9)
-# https://github.com/Python-Markdown/markdown/blob/master/LICENSE.md
-markdown==3.9
-
-# 非结构化文档处理 - Apache 2.0许可证 (当前版本: 0.17.2)
-# https://github.com/Unstructured-IO/unstructured/blob/main/LICENSE.md
-unstructured==0.17.2
-
-# HuggingFace模型依赖（已弃用 - 现使用CustomAPIEmbeddings通过API调用嵌入模型）
-# 如需使用本地嵌入模型，请取消注释以下依赖包：
-# 注意：以下依赖包总计约1GB+，会显著增加镜像体积和安装时间
-# 
-# # 句子嵌入模型 - Apache 2.0许可证 (当前版本: 4.1.0)
-# # https://github.com/UKPLab/sentence-transformers/blob/master/LICENSE
-# sentence-transformers==4.1.0  # ~90MB模型，需要网络下载
-# 
-# # PyTorch深度学习框架 - BSD许可证 (当前版本: 2.7.1)
-# # https://github.com/pytorch/pytorch/blob/main/LICENSE
-# torch==2.7.1  # 修复CVE-2025-32434安全漏洞，约800MB+
-# 
-# # HuggingFace transformers库 - Apache 2.0许可证 (当前版本: 4.52.4)
-# # https://github.com/huggingface/transformers/blob/main/LICENSE
-# transformers==4.52.4
-# 
-# # HuggingFace模型中心 - Apache 2.0许可证 (当前版本: 0.32.4)
-# # https://github.com/huggingface/huggingface_hub/blob/main/LICENSE
-# huggingface-hub==0.32.4  # HuggingFace模型下载
-
-# 语言检测库 - Apache 2.0许可证 (当前版本: 1.0.9)
-# https://github.com/Mimino666/langdetect/blob/master/LICENSE
+# Knowledge base and vector search
+langchain-community==0.4.1
+langchain-text-splitters==1.1.0
+langchain-qdrant==1.0.0
+qdrant-client==1.11.3
+fastembed>=0.7.0,<1.0
 langdetect==1.0.9
 
-# Celery异步任务队列 - BSD许可证 (当前版本: 5.4.0)
-# https://github.com/celery/celery/blob/main/LICENSE
+# Optional local embedding stack
+# sentence-transformers==4.1.0
+# torch==2.7.1
+# transformers==4.52.4
+# huggingface-hub==0.32.4
+
+# Background jobs and service runtime
 celery==5.4.0
-
-# Redis客户端(用作Celery的broker和backend) - MIT许可证 (当前版本: 5.2.0)
-# https://github.com/redis/redis-py/blob/master/LICENSE
 redis==5.2.0
-
-# Uvicorn ASGI服务器 - BSD许可证 (当前版本: 0.34.0)
-# https://github.com/encode/uvicorn/blob/master/LICENSE.md
-# 使用 [standard] 以支持 websockets
 uvicorn[standard]==0.34.0
-
-# HTTPX异步HTTP客户端 - BSD许可证 (当前版本: 0.28.1)
-# https://github.com/encode/httpx/blob/master/LICENSE.md
 httpx==0.28.1
 
-# Pytest测试框架 - MIT许可证 (用于自动化脚本执行)
-# https://github.com/pytest-dev/pytest/blob/main/LICENSE
+# Test automation and utilities
 pytest>=8.0.0
-
-# Playwright浏览器自动化 - Apache 2.0许可证
-# https://github.com/microsoft/playwright-python/blob/main/LICENSE
 playwright>=1.40.0
-
-# Browser Use AI browser automation
 browser-use==0.10.1
-
-# Pillow图像处理库 - MIT-CMU许可证（用于Word文档图片尺寸解析）
-# https://github.com/python-pillow/Pillow/blob/main/LICENSE
 Pillow>=10.0.0
-
-# Token计数库 - MIT许可证 (用于上下文长度计算)
-# https://github.com/openai/tiktoken/blob/main/LICENSE
+Faker>=28.4.1
+jsonpath-ng>=1.7.0
+croniter>=3.0.3
+qrcode>=8.2
+python-barcode>=0.15.1
+pycryptodome>=3.21.0
+PyYAML>=6.0.2
 tiktoken>=0.5.0
-
-# NLTK自然语言处理库 - Apache 2.0许可证 (用于文本分割)
-# https://github.com/nltk/nltk/blob/develop/LICENSE.txt
 nltk>=3.8.0
-
-# WebSocket客户端 - LGPL许可证 (用于WebSocket连接)
-# https://github.com/websocket-client/websocket-client/blob/master/LICENSE
 websocket-client>=1.6.0

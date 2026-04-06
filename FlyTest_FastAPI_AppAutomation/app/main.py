@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import re
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +17,14 @@ from fastapi import FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .adb import AdbError, capture_device_screenshot, connect_remote_device, disconnect_remote_device, discover_devices
+from .adb import (
+    AdbError,
+    capture_device_screenshot,
+    connect_remote_device,
+    disconnect_remote_device,
+    discover_devices,
+    inspect_adb_environment,
+)
 from .database import (
     ELEMENT_UPLOADS_DIR,
     connection,
@@ -25,8 +35,9 @@ from .database import (
     json_loads,
     utc_now,
 )
+from .execution_runtime import AppFlowExecutor, StepExecutionError, StopRequested
 from .extended_routes import router as extended_router
-from .reporting import get_report_content_type, resolve_report_file, write_execution_report
+from .reporting import ensure_reports_root, get_report_content_type, resolve_report_file, write_execution_report
 from .scheduler import app_scheduler
 from .schemas import (
     DeviceConnectPayload,
@@ -71,6 +82,102 @@ def get_settings(conn) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="APP 自动化配置初始化失败")
     row["auto_discover_on_open"] = bool(row["auto_discover_on_open"])
     return row
+
+
+def build_adb_diagnostics(settings: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = inspect_adb_environment(settings.get("adb_path", "adb"))
+    diagnostics["checked_at"] = utc_now()
+    return diagnostics
+
+
+def resolve_distribution_version(*distribution_names: str) -> str:
+    for distribution_name in distribution_names:
+        try:
+            return version(distribution_name)
+        except PackageNotFoundError:
+            continue
+    return ""
+
+
+def build_runtime_capabilities() -> dict[str, Any]:
+    dependency_definitions = [
+        ("EasyOCR", "easyocr", ("easyocr",)),
+        ("NumPy", "numpy", ("numpy",)),
+        ("Pillow", "PIL", ("Pillow",)),
+        ("OpenCV", "cv2", ("opencv-python", "opencv-python-headless")),
+    ]
+
+    dependencies: list[dict[str, Any]] = []
+    installed_modules: set[str] = set()
+    for label, module_name, distributions in dependency_definitions:
+        installed = importlib.util.find_spec(module_name) is not None
+        if installed:
+            installed_modules.add(module_name)
+        dependencies.append(
+            {
+                "name": label,
+                "module_name": module_name,
+                "installed": installed,
+                "version": resolve_distribution_version(*distributions) if installed else "",
+            }
+        )
+
+    def capability(
+        key: str,
+        label: str,
+        required_modules: list[str],
+        success_message: str,
+        fallback_message: str,
+    ) -> dict[str, Any]:
+        missing = [module_name for module_name in required_modules if module_name not in installed_modules]
+        ready = not missing
+        return {
+            "key": key,
+            "label": label,
+            "ready": ready,
+            "dependencies": required_modules,
+            "missing": missing,
+            "message": success_message if ready else f"{fallback_message}：缺少 {', '.join(missing)}",
+        }
+
+    capabilities = [
+        capability(
+            "ocr_assertions",
+            "OCR 断言",
+            ["easyocr", "numpy", "PIL"],
+            "OCR 文本、数字、范围、正则断言已就绪",
+            "OCR 断言暂不可用",
+        ),
+        capability(
+            "foreach_assert",
+            "循环点击断言",
+            ["easyocr", "numpy", "PIL"],
+            "foreach_assert 已可执行",
+            "foreach_assert 暂不可用",
+        ),
+        capability(
+            "template_matching",
+            "全屏模板找图",
+            ["cv2", "numpy"],
+            "全屏模板找图已就绪",
+            "全屏模板找图暂不可用",
+        ),
+        capability(
+            "basic_image_matching",
+            "基础图片比对",
+            ["PIL"],
+            "裁剪区域图片比对已就绪",
+            "基础图片比对暂不可用",
+        ),
+    ]
+
+    return {
+        "checked_at": utc_now(),
+        "python_version": sys.version.split()[0],
+        "install_command": "python -m pip install easyocr numpy pillow opencv-python",
+        "dependencies": dependencies,
+        "capabilities": capabilities,
+    }
 
 
 def serialize_device(row: dict[str, Any]) -> dict[str, Any]:
@@ -212,7 +319,7 @@ def get_test_case_or_404(conn, test_case_id: int) -> dict[str, Any]:
     row = fetch_one(
         conn,
         """
-        SELECT tc.*, p.name AS package_display_name, p.package_name AS package_name
+        SELECT tc.*, p.name AS package_display_name, p.package_name AS package_name, p.activity_name AS activity_name
         FROM test_cases tc
         LEFT JOIN packages p ON p.id = tc.package_id
         WHERE tc.id = ?
@@ -307,6 +414,31 @@ def finish_device_lock(conn, device_id: int) -> None:
         """,
         (now, device_id),
     )
+
+
+def extract_steps(ui_flow: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(ui_flow, list):
+        return [item for item in ui_flow if isinstance(item, dict)]
+    if isinstance(ui_flow, dict):
+        steps = ui_flow.get("steps")
+        if isinstance(steps, list):
+            return [item for item in steps if isinstance(item, dict)]
+    return []
+
+
+def append_log(
+    logs: list[dict[str, Any]],
+    message: str,
+    level: str = "info",
+    *,
+    artifact: str | None = None,
+) -> list[dict[str, Any]]:
+    next_logs = list(logs)
+    entry = {"timestamp": utc_now(), "level": level, "message": message}
+    if artifact:
+        entry["artifact"] = artifact
+    next_logs.append(entry)
+    return next_logs
 
 
 def run_execution(execution_id: int) -> None:
@@ -415,6 +547,7 @@ def run_execution(execution_id: int) -> None:
                 (finished_at, finished_at, current["test_case_id"]),
             )
             finish_device_lock(conn, current["device_id"])
+            _refresh_suite_stats_for_execution(conn, execution_id)
     except Exception as exc:
         with connection() as conn:
             execution = fetch_one(conn, "SELECT device_id, logs FROM executions WHERE id = ?", (execution_id,))
@@ -428,6 +561,235 @@ def run_execution(execution_id: int) -> None:
                 WHERE id = ?
                 """,
                 (str(exc), now, now, json_dumps(logs), execution_id),
+            )
+            write_execution_report(conn, execution_id)
+            if execution and execution.get("device_id"):
+                finish_device_lock(conn, execution["device_id"])
+            _refresh_suite_stats_for_execution(conn, execution_id)
+
+
+def _execution_is_stopped(execution_id: int) -> bool:
+    with connection() as conn:
+        row = fetch_one(conn, "SELECT status FROM executions WHERE id = ?", (execution_id,))
+        return bool(row and row.get("status") == "stopped")
+
+
+def _refresh_suite_stats_for_execution(conn, execution_id: int) -> None:
+    execution = fetch_one(conn, "SELECT test_suite_id FROM executions WHERE id = ?", (execution_id,))
+    suite_id = execution.get("test_suite_id") if execution else None
+    if suite_id:
+        from .extended_routes import refresh_suite_stats
+
+        refresh_suite_stats(conn, suite_id)
+
+
+def run_execution(execution_id: int) -> None:
+    executor: AppFlowExecutor | None = None
+    started_time: datetime | None = None
+
+    try:
+        with connection() as conn:
+            execution = get_execution_or_404(conn, execution_id)
+            test_case = get_test_case_or_404(conn, execution["test_case_id"])
+            device = get_device_or_404(conn, execution["device_id"])
+            settings = get_settings(conn)
+            steps = extract_steps(test_case["ui_flow"])
+
+            report_dir = ensure_reports_root(conn) / f"execution-{execution_id}"
+            artifact_dir = report_dir / "artifacts"
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+
+            executor = AppFlowExecutor(
+                adb_path=str(settings.get("adb_path") or "adb").strip() or "adb",
+                device_serial=str(device.get("device_id") or "").strip(),
+                project_id=int(test_case["project_id"]),
+                variables=test_case.get("variables") or [],
+                default_timeout=int(test_case.get("timeout") or settings.get("default_timeout") or 30),
+                default_package_name=str(test_case.get("package_name") or "").strip(),
+                default_activity_name=str(test_case.get("activity_name") or "").strip(),
+                report_dir=report_dir,
+                artifact_dir=artifact_dir,
+                stop_requested=lambda: _execution_is_stopped(execution_id),
+            )
+
+            total_steps = max(executor.count_total_steps(steps), 1)
+            logs = append_log([], f"开始执行测试用例 {test_case['name']}")
+
+            if device["status"] == "offline":
+                logs = append_log(logs, "设备离线，无法执行", "error")
+                now = utc_now()
+                conn.execute(
+                    """
+                    UPDATE executions
+                    SET status = 'failed', result = 'failed', error_message = ?, logs = ?, finished_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    ("设备离线，无法执行", json_dumps(logs), now, now, execution_id),
+                )
+                write_execution_report(conn, execution_id)
+                return
+
+            if not steps:
+                logs = append_log(logs, "未检测到可执行步骤，请先在场景编排中添加步骤", "error")
+                now = utc_now()
+                conn.execute(
+                    """
+                    UPDATE executions
+                    SET status = 'failed', result = 'failed', error_message = ?, logs = ?, finished_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    ("未检测到可执行步骤", json_dumps(logs), now, now, execution_id),
+                )
+                write_execution_report(conn, execution_id)
+                return
+
+            started_at = utc_now()
+            conn.execute(
+                """
+                UPDATE executions
+                SET status = 'running', started_at = ?, updated_at = ?, logs = ?, progress = 3,
+                    total_steps = ?, passed_steps = 0, failed_steps = 0, error_message = ''
+                WHERE id = ?
+                """,
+                (started_at, started_at, json_dumps(logs), total_steps, execution_id),
+            )
+            conn.execute(
+                """
+                UPDATE devices
+                SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (execution.get("triggered_by") or "FlyTest", started_at, started_at, device["id"]),
+            )
+            started_time = datetime.fromisoformat(started_at)
+
+        if executor is None:
+            raise RuntimeError("Execution runtime was not initialized")
+
+        if executor.default_package_name and not executor.has_action(steps, {"launch_app"}):
+            launch_detail = executor.launch_default_app()
+            with connection() as conn:
+                current = get_execution_or_404(conn, execution_id)
+                logs = append_log(current["logs"], launch_detail)
+                conn.execute(
+                    "UPDATE executions SET logs = ?, updated_at = ? WHERE id = ?",
+                    (json_dumps(logs), utc_now(), execution_id),
+                )
+
+        def on_step_complete(index: int, total: int, step_name: str, detail: str) -> None:
+            with connection() as conn:
+                current = get_execution_or_404(conn, execution_id)
+                if current["status"] == "stopped":
+                    raise StopRequested("Execution was stopped")
+                progress = min(98, max(5, int(index / max(total, 1) * 100)))
+                message = f"完成步骤 {index}/{total}: {step_name}"
+                if detail:
+                    message = f"{message} - {detail}"
+                logs = append_log(current["logs"], message)
+                conn.execute(
+                    """
+                    UPDATE executions
+                    SET progress = ?, logs = ?, passed_steps = ?, failed_steps = 0, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (progress, json_dumps(logs), index, utc_now(), execution_id),
+                )
+
+        result = executor.run(steps, on_step_complete=on_step_complete)
+
+        finished_at = utc_now()
+        with connection() as conn:
+            current = get_execution_or_404(conn, execution_id)
+            duration = max(0.0, (datetime.fromisoformat(finished_at) - started_time).total_seconds()) if started_time else 0.0
+            logs = append_log(current["logs"], "执行完成，结果通过")
+            summary = f"APP 自动化真实执行完成，共执行 {result['passed_steps']}/{result['total_steps']} 个步骤。"
+            conn.execute(
+                """
+                UPDATE executions
+                SET status = 'completed', result = 'passed', progress = 100, report_summary = ?,
+                    finished_at = ?, duration = ?, logs = ?, passed_steps = ?, failed_steps = 0, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    summary,
+                    finished_at,
+                    duration,
+                    json_dumps(logs),
+                    result["passed_steps"],
+                    finished_at,
+                    execution_id,
+                ),
+            )
+            write_execution_report(conn, execution_id)
+            conn.execute(
+                """
+                UPDATE test_cases
+                SET last_result = 'passed', last_run_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (finished_at, finished_at, current["test_case_id"]),
+            )
+            finish_device_lock(conn, current["device_id"])
+    except StopRequested:
+        with connection() as conn:
+            execution = fetch_one(conn, "SELECT device_id, logs FROM executions WHERE id = ?", (execution_id,))
+            logs = append_log(json_loads(execution.get("logs") if execution else "[]", []), "执行已停止", "warning")
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE executions
+                SET status = 'stopped', result = 'stopped', finished_at = ?, updated_at = ?, logs = ?
+                WHERE id = ?
+                """,
+                (now, now, json_dumps(logs), execution_id),
+            )
+            write_execution_report(conn, execution_id)
+            if execution and execution.get("device_id"):
+                finish_device_lock(conn, execution["device_id"])
+            _refresh_suite_stats_for_execution(conn, execution_id)
+    except StepExecutionError as exc:
+        with connection() as conn:
+            execution = fetch_one(conn, "SELECT device_id, logs FROM executions WHERE id = ?", (execution_id,))
+            logs = append_log(
+                json_loads(execution.get("logs") if execution else "[]", []),
+                f"步骤失败 {exc.index}: {exc.step_name} - {exc.cause}",
+                "error",
+                artifact=exc.screenshot_path,
+            )
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE executions
+                SET status = 'failed', result = 'failed', error_message = ?, report_summary = ?, finished_at = ?, updated_at = ?,
+                    logs = ?, failed_steps = 1
+                WHERE id = ?
+                """,
+                (
+                    f"{exc.step_name}: {exc.cause}",
+                    f"执行在步骤 {exc.index} 失败: {exc.step_name}",
+                    now,
+                    now,
+                    json_dumps(logs),
+                    execution_id,
+                ),
+            )
+            write_execution_report(conn, execution_id)
+            if execution and execution.get("device_id"):
+                finish_device_lock(conn, execution["device_id"])
+            _refresh_suite_stats_for_execution(conn, execution_id)
+    except Exception as exc:
+        with connection() as conn:
+            execution = fetch_one(conn, "SELECT device_id, logs FROM executions WHERE id = ?", (execution_id,))
+            logs = append_log(json_loads(execution.get("logs") if execution else "[]", []), f"执行异常: {exc}", "error")
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE executions
+                SET status = 'failed', result = 'failed', error_message = ?, report_summary = ?, finished_at = ?, updated_at = ?, logs = ?,
+                    failed_steps = CASE WHEN total_steps > 0 THEN 1 ELSE 0 END
+                WHERE id = ?
+                """,
+                (str(exc), str(exc), now, now, json_dumps(logs), execution_id),
             )
             write_execution_report(conn, execution_id)
             if execution and execution.get("device_id"):
@@ -1132,6 +1494,41 @@ def delete_execution(execution_id: int) -> dict[str, Any]:
 def get_current_settings() -> dict[str, Any]:
     with connection() as conn:
         return success(get_settings(conn))
+
+
+@app.get("/settings/diagnostics/")
+def get_settings_diagnostics() -> dict[str, Any]:
+    with connection() as conn:
+        settings = get_settings(conn)
+    return success(build_adb_diagnostics(settings))
+
+
+@app.get("/settings/runtime-capabilities/")
+def get_runtime_capabilities() -> dict[str, Any]:
+    return success(build_runtime_capabilities())
+
+
+@app.post("/settings/detect-adb/")
+def detect_adb() -> dict[str, Any]:
+    with connection() as conn:
+        settings = get_settings(conn)
+        diagnostics = build_adb_diagnostics(settings)
+        if diagnostics["executable_found"]:
+            detected_path = str(diagnostics.get("resolved_path") or diagnostics.get("configured_path") or "").strip()
+            if detected_path and detected_path != settings["adb_path"]:
+                conn.execute(
+                    "UPDATE settings SET adb_path = ?, updated_at = ? WHERE id = 1",
+                    (detected_path, utc_now()),
+                )
+                settings = get_settings(conn)
+            return success(
+                {"settings": settings, "diagnostics": diagnostics},
+                "ADB 自动检测完成",
+            )
+        return success(
+            {"settings": settings, "diagnostics": diagnostics},
+            "未检测到可用 ADB，请检查 Android SDK 或模拟器安装",
+        )
 
 
 @app.post("/settings/save/")

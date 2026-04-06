@@ -55,7 +55,7 @@
           <template #content>
             <div class="version-update-info">
               <div class="version-update-header">
-                <span class="update-title">🎉 新版本可用</span>
+                <span class="update-title">新版本可用</span>
                 <span class="update-version">v{{ versionInfo?.latest }}</span>
               </div>
               <div class="version-update-notes" v-if="releaseNotesPreview">
@@ -92,7 +92,7 @@
               <div class="dropdown-role" v-if="user?.is_staff">管理员</div>
             </div>
             <a-divider style="margin: 4px 0" />
-            <a-doption @click="handleLogout">登出</a-doption>
+            <a-doption @click="handleLogout">退出登录</a-doption>
           </template>
         </a-dropdown>
       </div>
@@ -140,7 +140,7 @@
             <template #title>API自动化</template>
             <a-menu-item key="api-automation-requests" v-if="hasApiAutomationPermission">
               <template #icon><icon-code-block /></template>
-              <span class="menu-link">接口管理</span>
+              <span class="menu-link">请求管理</span>
             </a-menu-item>
             <a-menu-item key="api-automation-test-cases" v-if="hasApiAutomationPermission">
               <template #icon><icon-folder /></template>
@@ -152,7 +152,7 @@
             </a-menu-item>
             <a-menu-item key="api-automation-execution-records" v-if="hasApiAutomationPermission">
               <template #icon><icon-history /></template>
-              <span class="menu-link">执行历史</span>
+              <span class="menu-link">执行记录</span>
             </a-menu-item>
             <a-menu-item key="api-automation-execution-report" v-if="hasApiAutomationPermission">
               <template #icon><icon-bar-chart /></template>
@@ -228,6 +228,10 @@
               <template #icon><icon-folder /></template>
               <span class="menu-link">测试用例</span>
             </a-menu-item>
+            <a-menu-item key="ui-automation-ai-intelligent">
+              <template #icon><icon-message /></template>
+              <span class="menu-link">AI智能模式</span>
+            </a-menu-item>
             <a-menu-item key="ui-automation-execution-records">
               <template #icon><icon-history /></template>
               <span class="menu-link">执行记录</span>
@@ -255,7 +259,7 @@
             <template #title>测试管理</template>
             <a-menu-item key="testcases" v-if="hasTestcasesPermission">
               <template #icon><icon-code-block /></template>
-              <span class="menu-link">用例管理</span>
+              <span class="menu-link">测试用例管理</span>
             </a-menu-item>
             <a-menu-item key="testsuites" v-if="hasTestSuitesPermission">
               <template #icon><icon-folder /></template>
@@ -269,13 +273,18 @@
 
           <a-menu-item key="langgraph-chat" v-if="hasLangGraphChatPermission">
             <template #icon><icon-message /></template>
-            <span class="menu-link">AI对话</span>
+            <span class="menu-link">AI 对话</span>
           </a-menu-item>
 
           <a-menu-item key="knowledge-management" v-if="hasKnowledgePermission">
             <template #icon><icon-book /></template>
             <span class="menu-link">知识库管理</span>
           </a-menu-item>
+          <a-menu-item key="data-factory" v-if="hasDataFactoryPermission">
+            <template #icon><icon-tool /></template>
+            <span class="menu-link">数据工厂</span>
+          </a-menu-item>
+
 
           <a-sub-menu key="settings" v-if="hasSystemMenuItems">
             <template #icon><icon-settings /></template>
@@ -294,19 +303,19 @@
             </a-menu-item>
             <a-menu-item key="llm-configs" v-if="hasLlmConfigsPermission">
               <template #icon><icon-tool /></template>
-              <span class="menu-link">LLM配置</span>
+              <span class="menu-link">LLM 配置</span>
             </a-menu-item>
             <a-menu-item key="api-keys" v-if="hasApiKeysPermission">
               <template #icon><icon-safe /></template>
-              <span class="menu-link">KEY管理</span>
+              <span class="menu-link">API KEY 管理</span>
             </a-menu-item>
             <a-menu-item key="remote-mcp-configs" v-if="hasMcpConfigsPermission">
               <template #icon><icon-cloud /></template>
-              <span class="menu-link">MCP配置</span>
+              <span class="menu-link">MCP 配置</span>
             </a-menu-item>
             <a-menu-item key="skills" v-if="hasSkillsPermission">
               <template #icon><icon-apps /></template>
-              <span class="menu-link">Skills管理</span>
+              <span class="menu-link">Skills 管理</span>
             </a-menu-item>
           </a-sub-menu>
         </a-menu>
@@ -328,7 +337,7 @@
       </a-layout-sider>
 
       <!-- 右侧内容区域 -->
-      <a-layout-content class="content">
+      <a-layout-content class="content" :class="{ 'content--page-scroll': enableContentPageScroll }">
         <router-view v-slot="{ Component }">
           <keep-alive include="LangGraphChat">
             <component :is="Component" />
@@ -427,7 +436,7 @@ async function checkVersion() {
   try {
     versionInfo.value = await checkLatestVersion();
   } catch (error) {
-    console.warn('版本检查失败:', error);
+    console.warn('版本检查失败', error);
   }
 }
 
@@ -441,7 +450,8 @@ const userInitial = computed(() => {
   return username.value.charAt(0).toUpperCase();
 });
 
-const themeButtonLabel = computed(() => themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题');
+const themeButtonLabel = computed(() => (themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题'));
+const enableContentPageScroll = computed(() => route.path.startsWith('/data-factory'));
 
 type MenuNavigationTarget = {
   route: RouteLocationRaw;
@@ -472,6 +482,7 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   'ui-automation-pages': { route: { path: '/ui-automation', query: { tab: 'pages' } }, requiresProject: true },
   'ui-automation-page-steps': { route: { path: '/ui-automation', query: { tab: 'page-steps' } }, requiresProject: true },
   'ui-automation-testcases': { route: { path: '/ui-automation', query: { tab: 'testcases' } }, requiresProject: true },
+  'ui-automation-ai-intelligent': { route: { path: '/ui-automation', query: { tab: 'ai-intelligent' } }, requiresProject: true },
   'ui-automation-execution-records': { route: { path: '/ui-automation', query: { tab: 'execution-records' } }, requiresProject: true },
   'ui-automation-batch-records': { route: { path: '/ui-automation', query: { tab: 'batch-records' } }, requiresProject: true },
   'ui-automation-public-data': { route: { path: '/ui-automation', query: { tab: 'public-data' } }, requiresProject: true },
@@ -482,6 +493,7 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   'test-executions': { route: '/test-executions', requiresProject: true },
   'langgraph-chat': { route: '/langgraph-chat', requiresProject: true },
   'knowledge-management': { route: '/knowledge-management', requiresProject: true },
+  'data-factory': { route: '/data-factory' },
   users: { route: '/users' },
   organizations: { route: '/organizations' },
   permissions: { route: '/permissions' },
@@ -506,6 +518,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/llm-configs')) return 'llm-configs';
   if (path.startsWith('/langgraph-chat')) return 'langgraph-chat';
   if (path.startsWith('/knowledge-management')) return 'knowledge-management';
+  if (path.startsWith('/data-factory')) return 'data-factory';
   if (path.startsWith('/api-keys')) return 'api-keys';
   if (path.startsWith('/remote-mcp-configs')) return 'remote-mcp-configs';
   if (path.startsWith('/skills')) return 'skills';
@@ -537,6 +550,7 @@ const activeMenu = computed(() => {
     const tab = String(route.query.tab || 'pages');
     if (tab === 'page-steps') return 'ui-automation-page-steps';
     if (tab === 'testcases') return 'ui-automation-testcases';
+    if (tab === 'ai-intelligent') return 'ui-automation-ai-intelligent';
     if (tab === 'execution-records') return 'ui-automation-execution-records';
     if (tab === 'batch-records') return 'ui-automation-batch-records';
     if (tab === 'public-data') return 'ui-automation-public-data';
@@ -611,6 +625,11 @@ const hasUiAutomationPermission = computed(() => {
 
 const hasKnowledgePermission = computed(() => {
   return authStore.hasPermission('knowledge.view_knowledgebase');
+});
+
+const hasDataFactoryPermission = computed(() => {
+  return authStore.hasPermission('data_factory.view_datafactoryrecord') ||
+         authStore.hasPermission('data_factory.view_datafactorytag');
 });
 
 const hasUsersPermission = computed(() => {
@@ -722,7 +741,7 @@ const handleLogout = () => {
 // 在所有页面都显示项目选择器
 const showProjectSelector = computed(() => true);
 
-// 当前选中的项目ID
+// 当前选中的项目 ID
 const selectedProjectId = computed({
   get: () => projectStore.currentProjectId,
   set: (value) => {
@@ -758,7 +777,7 @@ onMounted(async () => {
     openKeys.value = [...openKeys.value, activeGroupKey.value];
   }
   
-  // 检查版本更新（后台执行，不阻塞页面）
+  // 检查版本更新，在后台执行且不阻塞页面
   checkVersion();
 });
 </script>
@@ -781,7 +800,7 @@ onMounted(async () => {
 .left-section {
   display: flex;
   align-items: center;
-  margin-left: 0; /* 移除左边距，让logo顶着边缘 */
+  margin-left: 0; /* 移除左边距，让 logo 顶着边缘 */
 }
 
 .logo {
@@ -1478,6 +1497,14 @@ onMounted(async () => {
 .content {
   position: relative;
   overflow: hidden;
+}
+
+.content--page-scroll {
+  overflow: auto;
+}
+
+.content--page-scroll > * {
+  min-height: 100%;
 }
 
 .content::before {

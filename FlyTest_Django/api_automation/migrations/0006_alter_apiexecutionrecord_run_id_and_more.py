@@ -302,17 +302,17 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='apiexecutionrecord',
             name='run_id',
-            field=models.CharField(blank=True, db_index=True, default='', max_length=64, verbose_name='鎵ц\ue511鎵规\ue0bc ID'),
+            field=models.CharField(blank=True, db_index=True, default='', max_length=64, verbose_name='执行批次 ID'),
         ),
         migrations.AlterField(
             model_name='apiexecutionrecord',
             name='run_name',
-            field=models.CharField(blank=True, default='', max_length=160, verbose_name='鎵ц\ue511鎵规\ue0bc鍚嶇О'),
+            field=models.CharField(blank=True, default='', max_length=160, verbose_name='执行批次名称'),
         ),
         migrations.AlterField(
             model_name='apiexecutionrecord',
             name='test_case',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='execution_records', to='api_automation.apitestcase', verbose_name='鍏宠仈娴嬭瘯鐢ㄤ緥'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='execution_records', to='api_automation.apitestcase', verbose_name='关联测试用例'),
         ),
         migrations.CreateModel(
             name='ApiAssertionSpec',

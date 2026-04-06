@@ -18,6 +18,7 @@ const RemoteMcpConfigManagementView = () => import('../views/RemoteMcpConfigMana
 const LlmConfigManagementView = () => import('@/features/langgraph/views/LlmConfigManagementView.vue')
 const LangGraphChatView = () => import('@/features/langgraph/views/LangGraphChatView.vue')
 const KnowledgeManagementView = () => import('@/features/knowledge/views/KnowledgeManagementView.vue')
+const DataFactoryView = () => import('@/features/data-factory/views/DataFactoryView.vue')
 const RequirementManagementView = () => import('@/features/requirements/views/RequirementManagementView.vue')
 const DocumentDetailView = () => import('@/features/requirements/views/DocumentDetailView.vue')
 const SpecializedReportView = () => import('@/features/requirements/views/SpecializedReportView.vue')
@@ -42,6 +43,7 @@ const privateRouteLoaders = [
   LlmConfigManagementView,
   LangGraphChatView,
   KnowledgeManagementView,
+  DataFactoryView,
   ApiKeyManagementView,
   RemoteMcpConfigManagementView,
   SkillsManagementView,
@@ -132,6 +134,11 @@ const routes: RouteRecordRaw[] = [
         path: 'knowledge-management',
         name: 'KnowledgeManagement',
         component: KnowledgeManagementView,
+      },
+      {
+        path: 'data-factory',
+        name: 'DataFactory',
+        component: DataFactoryView,
       },
       {
         path: 'api-keys',

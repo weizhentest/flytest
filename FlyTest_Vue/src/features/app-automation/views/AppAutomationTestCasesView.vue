@@ -1,7 +1,7 @@
 <template>
   <div class="page-shell">
     <div v-if="!projectStore.currentProjectId" class="empty-shell">
-      <a-empty description="请先选择项目后管理 APP 测试用例" />
+      <a-empty description="请先选择项目后再管理 APP 测试用例" />
     </div>
     <template v-else>
       <div class="page-header">
@@ -30,10 +30,11 @@
               </template>
             </a-table-column>
             <a-table-column title="超时" data-index="timeout" />
-            <a-table-column title="操作" :width="220">
+            <a-table-column title="操作" :width="300">
               <template #cell="{ record }">
-                <a-space>
+                <a-space wrap>
                   <a-button type="text" @click="openExecute(record)">执行</a-button>
+                  <a-button type="text" @click="openSceneBuilder(record)">场景编排</a-button>
                   <a-button type="text" @click="openEdit(record)">编辑</a-button>
                   <a-button type="text" status="danger" @click="remove(record.id)">删除</a-button>
                 </a-space>
@@ -101,6 +102,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../services/appAutomationService'
@@ -108,6 +110,8 @@ import type { AppDevice, AppPackage, AppTestCase } from '../types'
 
 const authStore = useAuthStore()
 const projectStore = useProjectStore()
+const router = useRouter()
+
 const loading = ref(false)
 const visible = ref(false)
 const executeVisible = ref(false)
@@ -151,6 +155,7 @@ const loadData = async () => {
     packages.value = []
     return
   }
+
   loading.value = true
   try {
     const [caseList, packageList, deviceList] = await Promise.all([
@@ -198,6 +203,7 @@ const submit = async () => {
       timeout: form.timeout,
       retry_count: form.retry_count,
     }
+
     if (form.id) {
       await AppAutomationService.updateTestCase(form.id, payload)
       Message.success('测试用例已更新')
@@ -205,6 +211,7 @@ const submit = async () => {
       await AppAutomationService.createTestCase(payload)
       Message.success('测试用例已创建')
     }
+
     visible.value = false
     await loadData()
   } catch (error: any) {
@@ -218,11 +225,22 @@ const openExecute = (record: AppTestCase) => {
   executeVisible.value = true
 }
 
+const openSceneBuilder = (record: AppTestCase) => {
+  void router.push({
+    path: '/app-automation',
+    query: {
+      tab: 'scene-builder',
+      caseId: String(record.id),
+    },
+  })
+}
+
 const executeCase = async () => {
   if (!currentExecutionCaseId.value || !executeForm.device_id) {
     Message.warning('请选择执行设备')
     return
   }
+
   try {
     await AppAutomationService.executeTestCase(currentExecutionCaseId.value, {
       device_id: executeForm.device_id,
@@ -255,7 +273,7 @@ watch(
     resetForm()
     void loadData()
   },
-  { immediate: true }
+  { immediate: true },
 )
 </script>
 
@@ -298,5 +316,12 @@ watch(
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+@media (max-width: 960px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

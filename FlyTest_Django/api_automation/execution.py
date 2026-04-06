@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from data_factory.reference import build_reference_tree
+
 from .generation import build_request_script, build_parameterized_test_case_script
 from .models import ApiEnvironment, ApiExecutionRecord, ApiRequest, ApiTestCase
 from .services import VariableResolver, build_request_url, extract_json_path, find_missing_variables
@@ -957,7 +959,12 @@ def execute_api_request(
         extractor_specs_override=extractor_specs_override,
     )
     base_url, environment_headers, environment_variables, environment_cookies = _build_environment_defaults(environment)
-    runtime_variables = {**environment_variables, **(run_context.variables or {})}
+    data_factory_variables = {"df": build_reference_tree(api_request.collection.project_id)}
+    runtime_variables = {
+        **environment_variables,
+        **data_factory_variables,
+        **(run_context.variables or {}),
+    }
     resolver = VariableResolver(runtime_variables)
     resolved_headers: dict[str, Any] = {}
     resolved_params: dict[str, Any] = {}

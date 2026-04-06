@@ -62,11 +62,20 @@ def _render_logs(logs: list[dict[str, Any]]) -> str:
 
     rows: list[str] = []
     for item in logs:
+        artifact_html = ""
+        artifact = str(item.get("artifact") or "").strip()
+        if artifact:
+            safe_artifact = escape(artifact, quote=True)
+            artifact_html = (
+                "<div style='margin-top: 6px;'>"
+                f"<a href='{safe_artifact}' target='_blank' rel='noreferrer'>View artifact</a>"
+                "</div>"
+            )
         rows.append(
             "<tr>"
             f"<td>{_format_value(item.get('timestamp'))}</td>"
             f"<td>{escape(str(item.get('level') or 'info'))}</td>"
-            f"<td>{escape(str(item.get('message') or ''))}</td>"
+            f"<td>{escape(str(item.get('message') or ''))}{artifact_html}</td>"
             "</tr>"
         )
     return "".join(rows)

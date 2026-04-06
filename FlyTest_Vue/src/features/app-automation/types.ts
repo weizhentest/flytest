@@ -77,6 +77,11 @@ export interface AppSceneStep {
   component_type?: string
   config?: Record<string, unknown>
   steps?: AppSceneStep[]
+  then_steps?: AppSceneStep[]
+  try_steps?: AppSceneStep[]
+  else_steps?: AppSceneStep[]
+  catch_steps?: AppSceneStep[]
+  finally_steps?: AppSceneStep[]
   _expanded?: boolean
   selector_type?: string
   selector?: string
@@ -152,6 +157,46 @@ export interface AppAutomationSettings {
   workspace_root: string
   auto_discover_on_open: boolean
   notes: string
+}
+
+export interface AppAdbDiagnostics {
+  configured_path: string
+  resolved_path: string
+  executable_found: boolean
+  version: string
+  device_count: number
+  devices: AppDevice[]
+  error: string
+  checked_at: string
+}
+
+export interface AppAdbDetectionResult {
+  settings: AppAutomationSettings
+  diagnostics: AppAdbDiagnostics
+}
+
+export interface AppRuntimeDependency {
+  name: string
+  module_name: string
+  installed: boolean
+  version: string
+}
+
+export interface AppRuntimeCapability {
+  key: string
+  label: string
+  ready: boolean
+  dependencies: string[]
+  missing: string[]
+  message: string
+}
+
+export interface AppRuntimeCapabilities {
+  checked_at: string
+  python_version: string
+  install_command: string
+  dependencies: AppRuntimeDependency[]
+  capabilities: AppRuntimeCapability[]
 }
 
 export interface AppDashboardStatistics {

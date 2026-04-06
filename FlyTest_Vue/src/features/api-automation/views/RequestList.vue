@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="request-list">
     <div class="page-header api-page-header">
       <div class="page-summary">

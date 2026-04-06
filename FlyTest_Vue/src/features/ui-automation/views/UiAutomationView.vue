@@ -2,35 +2,45 @@
   <div class="ui-automation-layout">
     <ModulePanel ref="modulePanelRef" @select="onModuleSelect" @updated="onModuleUpdated" />
     <div class="layout-content">
-      <a-tabs v-model:active-key="activeTab" type="card-gutter" lazy-load>
-        <a-tab-pane key="pages" title="页面管理">
-          <PageList ref="pageListRef" :selected-module-id="selectedModuleId" />
-        </a-tab-pane>
-        <a-tab-pane key="page-steps" title="页面步骤">
-          <PageStepList ref="pageStepListRef" :selected-module-id="selectedModuleId" />
-        </a-tab-pane>
-        <a-tab-pane key="testcases" title="测试用例">
-          <TestCaseList ref="testCaseListRef" :selected-module-id="selectedModuleId" />
-        </a-tab-pane>
-        <a-tab-pane key="ai-intelligent" title="AI 智能模式">
-          <AiIntelligentModeView ref="aiIntelligentModeRef" />
-        </a-tab-pane>
-        <a-tab-pane key="execution-records" title="执行记录">
-          <ExecutionRecordList ref="executionRecordListRef" />
-        </a-tab-pane>
-        <a-tab-pane key="batch-records" title="批量执行">
-          <BatchRecordList ref="batchRecordListRef" />
-        </a-tab-pane>
-        <a-tab-pane key="public-data" title="公共数据">
-          <PublicDataList ref="publicDataListRef" />
-        </a-tab-pane>
-        <a-tab-pane key="env-config" title="环境配置">
-          <EnvConfigList ref="envConfigListRef" />
-        </a-tab-pane>
-        <a-tab-pane key="actuators" title="执行器">
-          <ActuatorList ref="actuatorListRef" />
-        </a-tab-pane>
-      </a-tabs>
+      <PageList
+        v-show="activeTab === 'pages'"
+        ref="pageListRef"
+        :selected-module-id="selectedModuleId"
+      />
+      <PageStepList
+        v-show="activeTab === 'page-steps'"
+        ref="pageStepListRef"
+        :selected-module-id="selectedModuleId"
+      />
+      <TestCaseList
+        v-show="activeTab === 'testcases'"
+        ref="testCaseListRef"
+        :selected-module-id="selectedModuleId"
+      />
+      <AiIntelligentModeView
+        v-show="activeTab === 'ai-intelligent'"
+        ref="aiIntelligentModeRef"
+      />
+      <ExecutionRecordList
+        v-show="activeTab === 'execution-records'"
+        ref="executionRecordListRef"
+      />
+      <BatchRecordList
+        v-show="activeTab === 'batch-records'"
+        ref="batchRecordListRef"
+      />
+      <PublicDataList
+        v-show="activeTab === 'public-data'"
+        ref="publicDataListRef"
+      />
+      <EnvConfigList
+        v-show="activeTab === 'env-config'"
+        ref="envConfigListRef"
+      />
+      <ActuatorList
+        v-show="activeTab === 'actuators'"
+        ref="actuatorListRef"
+      />
     </div>
   </div>
 </template>
@@ -63,9 +73,8 @@ type UiAutomationTab =
 
 const route = useRoute()
 const router = useRouter()
-const modulePanelRef = ref()
-const selectedModuleId = ref<number | undefined>(undefined)
 
+const modulePanelRef = ref()
 const pageListRef = ref()
 const pageStepListRef = ref()
 const testCaseListRef = ref()
@@ -76,18 +85,7 @@ const publicDataListRef = ref()
 const envConfigListRef = ref()
 const actuatorListRef = ref()
 
-void [
-  modulePanelRef,
-  pageListRef,
-  pageStepListRef,
-  testCaseListRef,
-  aiIntelligentModeRef,
-  executionRecordListRef,
-  batchRecordListRef,
-  publicDataListRef,
-  envConfigListRef,
-  actuatorListRef,
-]
+const selectedModuleId = ref<number | undefined>(undefined)
 
 const normalizeTab = (value: unknown): UiAutomationTab => {
   const tab = String(value || 'pages')
@@ -108,22 +106,7 @@ const normalizeTab = (value: unknown): UiAutomationTab => {
   return 'pages'
 }
 
-const activeTab = computed<UiAutomationTab>({
-  get: () => normalizeTab(route.query.tab),
-  set: value => {
-    if (value === normalizeTab(route.query.tab)) {
-      return
-    }
-
-    void router.replace({
-      path: '/ui-automation',
-      query: {
-        ...route.query,
-        tab: value,
-      },
-    })
-  },
-})
+const activeTab = computed<UiAutomationTab>(() => normalizeTab(route.query.tab))
 
 watch(
   () => route.query.tab,
@@ -188,45 +171,34 @@ const onModuleUpdated = () => {
 
 <style scoped>
 .ui-automation-layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  gap: 10px;
+  min-height: 0;
+  gap: 20px;
   overflow: hidden;
-  background-color: var(--color-bg-1);
-}
-
-@media (max-width: 768px) {
-  .ui-automation-layout {
-    flex-direction: column;
-  }
 }
 
 .layout-content {
-  flex: 1;
   min-width: 0;
+  min-height: 0;
   height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
-  padding: 20px;
-}
-
-:deep(.arco-tabs) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.arco-tabs-content) {
-  flex: 1;
   overflow: auto;
+  display: block;
 }
 
-:deep(.arco-tabs-pane) {
-  height: 100%;
+@media (max-width: 1200px) {
+  .ui-automation-layout {
+    grid-template-columns: 272px minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ui-automation-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
 }
 </style>

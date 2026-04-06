@@ -422,8 +422,8 @@ class ApiExecutionRecord(models.Model):
         ("error", "error"),
     ]
 
-    run_id = models.CharField(_("鎵ц鎵规 ID"), max_length=64, blank=True, default="", db_index=True)
-    run_name = models.CharField(_("鎵ц鎵规鍚嶇О"), max_length=160, blank=True, default="")
+    run_id = models.CharField(_("执行批次 ID"), max_length=64, blank=True, default="", db_index=True)
+    run_name = models.CharField(_("执行批次名称"), max_length=160, blank=True, default="")
 
     project = models.ForeignKey(
         Project,
@@ -445,7 +445,7 @@ class ApiExecutionRecord(models.Model):
         null=True,
         blank=True,
         related_name="execution_records",
-        verbose_name=_("鍏宠仈娴嬭瘯鐢ㄤ緥"),
+        verbose_name=_("关联测试用例"),
     )
     environment = models.ForeignKey(
         ApiEnvironment,

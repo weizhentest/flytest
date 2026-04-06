@@ -1,5 +1,14 @@
 <template>
   <div class="structured-http-editor">
+    <div class="structured-http-editor__toolbar">
+      <div class="structured-http-editor__hint">
+        先点击一个文本输入框，再插入数据工厂引用
+        <span v-if="referenceTargetLabel">当前目标：{{ referenceTargetLabel }}</span>
+      </div>
+      <a-button size="small" :disabled="!projectStore.currentProjectId" @click="openReferencePicker">
+        插入数据工厂引用
+      </a-button>
+    </div>
     <div v-if="showRequestTarget" class="structured-http-editor__top">
       <a-row :gutter="16">
         <a-col :span="8">
@@ -11,7 +20,11 @@
         </a-col>
         <a-col :span="16">
           <a-form-item field="url" label="请求地址">
-            <a-input v-model="localModel.url" placeholder="支持完整 URL 或相对路径" />
+            <a-input
+              v-model="localModel.url"
+              placeholder="支持完整 URL 或相对路径"
+              @focus="setReferenceTarget('url', '请求地址')"
+            />
           </a-form-item>
         </a-col>
       </a-row>
@@ -29,7 +42,12 @@
         <div v-if="!localModel.headers.length" class="editor-empty">暂无 Header 配置</div>
         <div v-for="(item, index) in localModel.headers" :key="`header-${index}`" class="kv-row">
           <a-input v-model="item.name" class="kv-row__name" placeholder="名称" />
-          <a-input v-model="item.value" class="kv-row__value" placeholder="值" />
+          <a-input
+            v-model="item.value"
+            class="kv-row__value"
+            placeholder="值"
+            @focus="setReferenceTarget(`headers.${index}.value`, `Header 值 #${index + 1}`)"
+          />
           <div class="kv-row__toggle">
             <span>启用</span>
             <a-switch v-model="item.enabled" size="small" />
@@ -49,7 +67,12 @@
         <div v-if="!localModel.query.length" class="editor-empty">暂无 Query 参数</div>
         <div v-for="(item, index) in localModel.query" :key="`query-${index}`" class="kv-row">
           <a-input v-model="item.name" class="kv-row__name" placeholder="参数名" />
-          <a-input v-model="item.value" class="kv-row__value" placeholder="参数值" />
+          <a-input
+            v-model="item.value"
+            class="kv-row__value"
+            placeholder="参数值"
+            @focus="setReferenceTarget(`query.${index}.value`, `Query 值 #${index + 1}`)"
+          />
           <div class="kv-row__toggle">
             <span>启用</span>
             <a-switch v-model="item.enabled" size="small" />
@@ -69,7 +92,12 @@
         <div v-if="!localModel.cookies.length" class="editor-empty">暂无 Cookie 配置</div>
         <div v-for="(item, index) in localModel.cookies" :key="`cookie-${index}`" class="kv-row">
           <a-input v-model="item.name" class="kv-row__name" placeholder="Cookie 名" />
-          <a-input v-model="item.value" class="kv-row__value" placeholder="Cookie 值" />
+          <a-input
+            v-model="item.value"
+            class="kv-row__value"
+            placeholder="Cookie 值"
+            @focus="setReferenceTarget(`cookies.${index}.value`, `Cookie 值 #${index + 1}`)"
+          />
           <div class="kv-row__toggle">
             <span>启用</span>
             <a-switch v-model="item.enabled" size="small" />
@@ -105,12 +133,20 @@
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'basic'" :span="8">
             <a-form-item label="用户名">
-              <a-input v-model="localModel.auth.username" placeholder="用户名" />
+              <a-input
+                v-model="localModel.auth.username"
+                placeholder="用户名"
+                @focus="setReferenceTarget('auth.username', '认证用户名')"
+              />
             </a-form-item>
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'basic'" :span="8">
             <a-form-item label="密码">
-              <a-input-password v-model="localModel.auth.password" placeholder="密码" />
+              <a-input-password
+                v-model="localModel.auth.password"
+                placeholder="密码"
+                @focus="setReferenceTarget('auth.password', '认证密码')"
+              />
             </a-form-item>
           </a-col>
           <a-col v-if="['bearer', 'bootstrap_request'].includes(localModel.auth.auth_type)" :span="8">
@@ -130,7 +166,11 @@
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'bearer'" :span="12">
             <a-form-item label="静态 Token">
-              <a-input v-model="localModel.auth.token_value" placeholder="可直接填写，也可交给变量解析" />
+              <a-input
+                v-model="localModel.auth.token_value"
+                placeholder="可直接填写，也可交给变量解析"
+                @focus="setReferenceTarget('auth.token_value', '静态 Token')"
+              />
             </a-form-item>
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'api_key'" :span="8">
@@ -149,7 +189,11 @@
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'api_key'" :span="8">
             <a-form-item label="静态 Key 值">
-              <a-input v-model="localModel.auth.api_key_value" placeholder="可留空并用变量解析" />
+              <a-input
+                v-model="localModel.auth.api_key_value"
+                placeholder="可留空并用变量解析"
+                @focus="setReferenceTarget('auth.api_key_value', '静态 Key 值')"
+              />
             </a-form-item>
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'cookie'" :span="8">
@@ -169,7 +213,11 @@
           </a-col>
           <a-col v-if="localModel.auth.auth_type === 'bootstrap_request'" :span="24">
             <a-form-item label="Token 提取路径">
-              <a-input v-model="localModel.auth.bootstrap_token_path" placeholder="支持多个 JSONPath，用英文逗号分隔" />
+              <a-input
+                v-model="localModel.auth.bootstrap_token_path"
+                placeholder="支持多个 JSONPath，用英文逗号分隔"
+                @focus="setReferenceTarget('auth.bootstrap_token_path', 'Token 提取路径')"
+              />
             </a-form-item>
           </a-col>
         </a-row>
@@ -210,6 +258,7 @@
             v-model="localModel.body_json_text"
             :auto-size="{ minRows: 8, maxRows: 18 }"
             placeholder='例如：{"page":1,"size":20}'
+            @focus="setReferenceTarget('body_json_text', 'JSON Body')"
           />
         </a-form-item>
 
@@ -221,7 +270,12 @@
           <div v-if="!localModel.form_fields.length" class="editor-empty">暂无表单字段</div>
           <div v-for="(item, index) in localModel.form_fields" :key="`form-${index}`" class="kv-row">
             <a-input v-model="item.name" class="kv-row__name" placeholder="字段名" />
-            <a-input v-model="item.value" class="kv-row__value" placeholder="字段值" />
+            <a-input
+              v-model="item.value"
+              class="kv-row__value"
+              placeholder="字段值"
+              @focus="setReferenceTarget(`form_fields.${index}.value`, `表单值 #${index + 1}`)"
+            />
             <div class="kv-row__toggle">
               <span>启用</span>
               <a-switch v-model="item.enabled" size="small" />
@@ -238,7 +292,12 @@
           <div v-if="!localModel.multipart_parts.length" class="editor-empty">暂无 multipart 文本字段</div>
           <div v-for="(item, index) in localModel.multipart_parts" :key="`multipart-${index}`" class="kv-row">
             <a-input v-model="item.name" class="kv-row__name" placeholder="字段名" />
-            <a-input v-model="item.value" class="kv-row__value" placeholder="字段值" />
+            <a-input
+              v-model="item.value"
+              class="kv-row__value"
+              placeholder="字段值"
+              @focus="setReferenceTarget(`multipart_parts.${index}.value`, `Multipart 值 #${index + 1}`)"
+            />
             <div class="kv-row__toggle">
               <span>启用</span>
               <a-switch v-model="item.enabled" size="small" />
@@ -248,27 +307,50 @@
         </template>
 
         <a-form-item v-if="localModel.body_mode === 'raw'" label="Raw 文本">
-          <a-textarea v-model="localModel.raw_text" :auto-size="{ minRows: 8, maxRows: 18 }" />
+          <a-textarea
+            v-model="localModel.raw_text"
+            :auto-size="{ minRows: 8, maxRows: 18 }"
+            @focus="setReferenceTarget('raw_text', 'Raw 文本')"
+          />
         </a-form-item>
 
         <a-form-item v-if="localModel.body_mode === 'xml'" label="XML 文本">
-          <a-textarea v-model="localModel.xml_text" :auto-size="{ minRows: 8, maxRows: 18 }" />
+          <a-textarea
+            v-model="localModel.xml_text"
+            :auto-size="{ minRows: 8, maxRows: 18 }"
+            @focus="setReferenceTarget('xml_text', 'XML 文本')"
+          />
         </a-form-item>
 
         <template v-if="localModel.body_mode === 'graphql'">
           <a-form-item label="GraphQL Query">
-            <a-textarea v-model="localModel.graphql_query" :auto-size="{ minRows: 8, maxRows: 18 }" />
+            <a-textarea
+              v-model="localModel.graphql_query"
+              :auto-size="{ minRows: 8, maxRows: 18 }"
+              @focus="setReferenceTarget('graphql_query', 'GraphQL Query')"
+            />
           </a-form-item>
           <a-form-item label="Operation Name">
-            <a-input v-model="localModel.graphql_operation_name" />
+            <a-input
+              v-model="localModel.graphql_operation_name"
+              @focus="setReferenceTarget('graphql_operation_name', 'Operation Name')"
+            />
           </a-form-item>
           <a-form-item label="GraphQL Variables">
-            <a-textarea v-model="localModel.graphql_variables_text" :auto-size="{ minRows: 6, maxRows: 12 }" />
+            <a-textarea
+              v-model="localModel.graphql_variables_text"
+              :auto-size="{ minRows: 6, maxRows: 12 }"
+              @focus="setReferenceTarget('graphql_variables_text', 'GraphQL Variables')"
+            />
           </a-form-item>
         </template>
 
         <a-form-item v-if="localModel.body_mode === 'binary'" label="Base64 内容">
-          <a-textarea v-model="localModel.binary_base64" :auto-size="{ minRows: 6, maxRows: 12 }" />
+          <a-textarea
+            v-model="localModel.binary_base64"
+            :auto-size="{ minRows: 6, maxRows: 12 }"
+            @focus="setReferenceTarget('binary_base64', 'Base64 内容')"
+          />
         </a-form-item>
       </a-tab-pane>
 
@@ -288,14 +370,23 @@
             <a-option value="base64" label="Base64" />
             <a-option value="placeholder" label="变量占位符" />
           </a-select>
-          <a-input v-model="item.file_path" placeholder="文件路径 / 占位符" />
-          <a-input v-model="item.file_name" placeholder="文件名" />
+          <a-input
+            v-model="item.file_path"
+            placeholder="文件路径 / 占位符"
+            @focus="setReferenceTarget(`files.${index}.file_path`, `文件路径 #${index + 1}`)"
+          />
+          <a-input
+            v-model="item.file_name"
+            placeholder="文件名"
+            @focus="setReferenceTarget(`files.${index}.file_name`, `文件名 #${index + 1}`)"
+          />
           <a-input v-model="item.content_type" placeholder="Content-Type" />
           <a-textarea
             v-if="item.source_type === 'base64'"
             v-model="item.base64_content"
             :auto-size="{ minRows: 3, maxRows: 6 }"
             placeholder="Base64 内容"
+            @focus="setReferenceTarget(`files.${index}.base64_content`, `文件 Base64 #${index + 1}`)"
           />
           <div class="file-row__footer">
             <div class="kv-row__toggle">
@@ -339,6 +430,7 @@
                 v-model="item.selector"
                 style="width: 280px"
                 :placeholder="getSelectorPlaceholder(item.assertion_type)"
+                @focus="setReferenceTarget(`assertions.${index}.selector`, `断言选择器 #${index + 1}`)"
               />
             </a-space>
             <div class="kv-row__toggle">
@@ -362,7 +454,11 @@
           </a-row>
 
           <a-form-item v-else-if="usesSchema(item.assertion_type)" label="Schema / Contract">
-            <a-textarea v-model="item.schema_text" :auto-size="{ minRows: 6, maxRows: 12 }" />
+            <a-textarea
+              v-model="item.schema_text"
+              :auto-size="{ minRows: 6, maxRows: 12 }"
+              @focus="setReferenceTarget(`assertions.${index}.schema_text`, `断言 Schema #${index + 1}`)"
+            />
           </a-form-item>
 
           <template v-else-if="usesFlexibleExpectedValue(item.assertion_type)">
@@ -388,8 +484,14 @@
                     v-model="item.expected_json_text"
                     :auto-size="{ minRows: 4, maxRows: 10 }"
                     placeholder='{"ok": true}'
+                    @focus="setReferenceTarget(`assertions.${index}.expected_json_text`, `断言 JSON #${index + 1}`)"
                   />
-                  <a-input v-else v-model="item.expected_text" :placeholder="getExpectedPlaceholder(item.assertion_type)" />
+                  <a-input
+                    v-else
+                    v-model="item.expected_text"
+                    :placeholder="getExpectedPlaceholder(item.assertion_type)"
+                    @focus="setReferenceTarget(`assertions.${index}.expected_text`, `断言期望值 #${index + 1}`)"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -400,7 +502,11 @@
           </a-form-item>
 
           <a-form-item v-else-if="usesExpectedText(item.assertion_type)" label="期望文本">
-            <a-input v-model="item.expected_text" :placeholder="getExpectedPlaceholder(item.assertion_type)" />
+            <a-input
+              v-model="item.expected_text"
+              :placeholder="getExpectedPlaceholder(item.assertion_type)"
+              @focus="setReferenceTarget(`assertions.${index}.expected_text`, `断言文本 #${index + 1}`)"
+            />
           </a-form-item>
         </div>
       </a-tab-pane>
@@ -425,7 +531,12 @@
                 <a-option value="status_code" label="status_code" />
                 <a-option value="response_time" label="response_time" />
               </a-select>
-              <a-input v-model="item.selector" style="width: 260px" placeholder="提取路径 / Header / Regex" />
+              <a-input
+                v-model="item.selector"
+                style="width: 260px"
+                placeholder="提取路径 / Header / Regex"
+                @focus="setReferenceTarget(`extractors.${index}.selector`, `提取器选择器 #${index + 1}`)"
+              />
               <a-input v-model="item.variable_name" style="width: 200px" placeholder="变量名" />
             </a-space>
             <div class="kv-row__toggle">
@@ -439,7 +550,11 @@
             <a-button status="danger" size="mini" @click="removeAt(localModel.extractors, index)">删除</a-button>
           </div>
           <a-form-item label="默认值">
-            <a-input v-model="item.default_value" placeholder="提取失败时回填默认值" />
+            <a-input
+              v-model="item.default_value"
+              placeholder="提取失败时回填默认值"
+              @focus="setReferenceTarget(`extractors.${index}.default_value`, `提取器默认值 #${index + 1}`)"
+            />
           </a-form-item>
         </div>
       </a-tab-pane>
@@ -498,11 +613,21 @@
         </a-row>
       </a-tab-pane>
     </a-tabs>
+
+    <DataFactoryReferencePicker
+      v-model="referencePickerVisible"
+      :project-id="projectStore.currentProjectId"
+      mode="api"
+      @select="handleReferenceSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { Message } from '@arco-design/web-vue'
+import { useProjectStore } from '@/store/projectStore'
+import DataFactoryReferencePicker from '@/features/data-factory/components/DataFactoryReferencePicker.vue'
 import type { ApiAssertionSpec, ApiHttpEditorModel } from '../types'
 import {
   createAssertionSpec,
@@ -549,9 +674,68 @@ const assertionTypeOptions = [
 ] as const
 const activeTab = ref('headers')
 const localModel = ref<ApiHttpEditorModel>(createEmptyHttpEditorModel())
+const projectStore = useProjectStore()
+const referencePickerVisible = ref(false)
+const referenceTargetPath = ref('')
+const referenceTargetLabel = ref('')
 let syncingFromProps = false
 
 const cloneModel = (value: ApiHttpEditorModel) => JSON.parse(JSON.stringify(value)) as ApiHttpEditorModel
+
+const resolveTarget = (path: string) => {
+  if (!path) return null
+  const segments = path.split('.').map(segment => (/^\d+$/.test(segment) ? Number(segment) : segment))
+  let target: any = localModel.value
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    target = target?.[segments[index] as keyof typeof target]
+  }
+  if (target === null || target === undefined) return null
+  return { target, key: segments[segments.length - 1] as string | number }
+}
+
+const getValueAtPath = (path: string) => {
+  const resolved = resolveTarget(path)
+  if (!resolved) return ''
+  return resolved.target?.[resolved.key as keyof typeof resolved.target]
+}
+
+const setValueAtPath = (path: string, value: string) => {
+  const resolved = resolveTarget(path)
+  if (!resolved) return
+  const currentValue = getValueAtPath(path)
+  if (typeof currentValue === 'string') {
+    resolved.target[resolved.key] = `${currentValue}${value}`
+    return
+  }
+  if (currentValue === null || currentValue === undefined) {
+    resolved.target[resolved.key] = value
+    return
+  }
+  resolved.target[resolved.key] = value
+}
+
+const setReferenceTarget = (path: string, label: string) => {
+  referenceTargetPath.value = path
+  referenceTargetLabel.value = label
+}
+
+const openReferencePicker = () => {
+  if (!projectStore.currentProjectId) {
+    Message.warning('请先选择项目')
+    return
+  }
+  if (!referenceTargetPath.value) {
+    Message.warning('请先点击一个文本输入框')
+    return
+  }
+  referencePickerVisible.value = true
+}
+
+const handleReferenceSelect = (placeholder: string) => {
+  if (!referenceTargetPath.value) return
+  setValueAtPath(referenceTargetPath.value, placeholder)
+  Message.success('数据工厂引用已插入')
+}
 
 watch(
   () => props.modelValue,
@@ -800,6 +984,25 @@ const handleAssertionTypeChange = (item: ApiAssertionSpec) => {
   gap: 16px;
 }
 
+.structured-http-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 14px;
+  background: rgba(var(--primary-6), 0.06);
+}
+
+.structured-http-editor__hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
 .structured-http-editor__tabs {
   border: 1px solid var(--color-neutral-3);
   border-radius: 16px;
@@ -888,6 +1091,11 @@ const handleAssertionTypeChange = (item: ApiAssertionSpec) => {
 }
 
 @media (max-width: 900px) {
+  .structured-http-editor__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .kv-row {
     grid-template-columns: 1fr;
   }

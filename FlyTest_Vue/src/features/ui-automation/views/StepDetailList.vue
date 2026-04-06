@@ -92,6 +92,15 @@
       @before-ok="handleSubmit"
       @cancel="handleCancel"
     >
+      <div class="reference-toolbar">
+        <div class="reference-toolbar__hint">
+          先点击一个文本输入框，再插入数据工厂引用
+          <span v-if="referenceTargetLabel">当前目标：{{ referenceTargetLabel }}</span>
+        </div>
+        <a-button size="small" :disabled="!props.pageStep.project" @click="openReferencePicker">
+          插入数据工厂引用
+        </a-button>
+      </div>
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical">
         <a-form-item field="step_type" label="操作类型" required>
           <a-select v-model="formData.step_type" @change="onStepTypeChange">
@@ -142,6 +151,7 @@
                 v-if="param.type === 'input'"
                 v-model="opeParams[param.field]"
                 :placeholder="param.placeholder"
+                @focus="setReferenceTarget(`opeParams.${param.field}`, param.label)"
               />
               <a-input-number
                 v-else-if="param.type === 'number'"
@@ -155,6 +165,7 @@
                 v-model="opeParams[param.field]"
                 :placeholder="param.placeholder"
                 :auto-size="{ minRows: 2, maxRows: 5 }"
+                @focus="setReferenceTarget(`opeParams.${param.field}`, param.label)"
               />
             </a-form-item>
           </template>
@@ -190,6 +201,7 @@
                 v-if="param.type === 'input'"
                 v-model="opeParams[param.field]"
                 :placeholder="param.placeholder"
+                @focus="setReferenceTarget(`opeParams.${param.field}`, param.label)"
               />
               <a-input-number
                 v-else-if="param.type === 'number'"
@@ -205,29 +217,54 @@
         <!-- SQL 操作 -->
         <template v-else-if="formData.step_type === 2">
           <a-form-item field="sql_execute" label="SQL 配置">
-            <a-textarea v-model="sqlExecuteStr" placeholder="JSON 格式 SQL 配置" :auto-size="{ minRows: 3 }" />
+            <a-textarea
+              v-model="sqlExecuteStr"
+              placeholder="JSON 格式 SQL 配置"
+              :auto-size="{ minRows: 3 }"
+              @focus="setReferenceTarget('sqlExecuteStr', 'SQL 配置')"
+            />
           </a-form-item>
         </template>
 
         <!-- 自定义变量 -->
         <template v-else-if="formData.step_type === 3">
           <a-form-item field="custom" label="自定义变量">
-            <a-textarea v-model="customStr" placeholder="JSON 格式变量定义" :auto-size="{ minRows: 3 }" />
+            <a-textarea
+              v-model="customStr"
+              placeholder="JSON 格式变量定义"
+              :auto-size="{ minRows: 3 }"
+              @focus="setReferenceTarget('customStr', '自定义变量')"
+            />
           </a-form-item>
         </template>
 
         <!-- 条件判断 -->
         <template v-else-if="formData.step_type === 4">
           <a-form-item field="condition_value" label="条件配置">
-            <a-textarea v-model="conditionValueStr" placeholder="JSON 格式条件配置" :auto-size="{ minRows: 3 }" />
+            <a-textarea
+              v-model="conditionValueStr"
+              placeholder="JSON 格式条件配置"
+              :auto-size="{ minRows: 3 }"
+              @focus="setReferenceTarget('conditionValueStr', '条件配置')"
+            />
           </a-form-item>
         </template>
 
         <a-form-item field="description" label="描述">
-          <a-input v-model="formData.description" placeholder="可选描述" />
+          <a-input
+            v-model="formData.description"
+            placeholder="可选描述"
+            @focus="setReferenceTarget('formData.description', '描述')"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
+    <DataFactoryReferencePicker
+      v-model="referencePickerVisible"
+      :project-id="props.pageStep.project"
+      mode="ui"
+      @select="handleReferenceSelect"
+    />
   </div>
 </template>
 
@@ -236,6 +273,7 @@ import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconEdit, IconDelete, IconDragDotVertical, IconPlayArrow } from '@arco-design/web-vue/es/icon'
 import draggable from 'vuedraggable'
+import DataFactoryReferencePicker from '@/features/data-factory/components/DataFactoryReferencePicker.vue'
 import { pageStepsDetailedApi, elementApi, actuatorApi, envConfigApi, type ActuatorInfo } from '../api'
 import type { UiPageStepsDetailed, UiPageSteps, UiElement, StepType, UiEnvironmentConfig } from '../types'
 import { STEP_TYPE_LABELS, extractListData, extractResponseData } from '../types'
@@ -330,6 +368,78 @@ const opeParams = reactive<Record<string, any>>({})
 const sqlExecuteStr = ref('{}')
 const customStr = ref('{}')
 const conditionValueStr = ref('{}')
+const referencePickerVisible = ref(false)
+const referenceTargetPath = ref('')
+const referenceTargetLabel = ref('')
+
+const setReferenceTarget = (path: string, label: string) => {
+  referenceTargetPath.value = path
+  referenceTargetLabel.value = label
+}
+
+const openReferencePicker = () => {
+  if (!props.pageStep.project) {
+    Message.warning('请先选择项目')
+    return
+  }
+  if (!referenceTargetPath.value) {
+    Message.warning('请先点击一个文本输入框')
+    return
+  }
+  referencePickerVisible.value = true
+}
+
+const appendReferenceValue = (path: string, placeholder: string) => {
+  if (!path) return
+
+  if (path === 'sqlExecuteStr') {
+    sqlExecuteStr.value = `${sqlExecuteStr.value}${placeholder}`
+    return
+  }
+  if (path === 'customStr') {
+    customStr.value = `${customStr.value}${placeholder}`
+    return
+  }
+  if (path === 'conditionValueStr') {
+    conditionValueStr.value = `${conditionValueStr.value}${placeholder}`
+    return
+  }
+
+  const segments = path.split('.').map(segment => (/^\d+$/.test(segment) ? Number(segment) : segment))
+  const root = segments.shift()
+  if (!root) return
+
+  let target: any
+  if (root === 'formData') {
+    target = formData
+  } else if (root === 'opeParams') {
+    target = opeParams
+  } else {
+    return
+  }
+
+  while (segments.length > 1) {
+    const segment = segments.shift()
+    target = target?.[segment as keyof typeof target]
+  }
+
+  const lastKey = segments[0]
+  if (lastKey === undefined || target === null || target === undefined) return
+
+  const currentValue = target[lastKey as keyof typeof target]
+  if (typeof currentValue === 'string') {
+    target[lastKey as keyof typeof target] = `${currentValue}${placeholder}`
+  } else if (currentValue === null || currentValue === undefined) {
+    target[lastKey as keyof typeof target] = placeholder
+  } else {
+    target[lastKey as keyof typeof target] = placeholder
+  }
+}
+
+const handleReferenceSelect = (placeholder: string) => {
+  appendReferenceValue(referenceTargetPath.value, placeholder)
+  Message.success('数据工厂引用已插入')
+}
 
 /** 当前操作方法的参数定义 */
 const currentOpeParams = computed(() => {
@@ -681,6 +791,27 @@ onUnmounted(() => {
 .step-detail-list :deep(.arco-spin) {
   width: 100%;
 }
+
+.reference-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(var(--primary-6), 0.06);
+}
+
+.reference-toolbar__hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
 .step-header {
   display: flex;
   justify-content: space-between;
@@ -794,5 +925,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .reference-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 </style>

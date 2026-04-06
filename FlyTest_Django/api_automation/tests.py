@@ -15,6 +15,8 @@ from requirements.models import RequirementDocument, RequirementModule
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from data_factory.models import DataFactoryRecord
+from data_factory.reference import build_reference_tree
 from projects.models import Project
 
 from .ai_parser import (
@@ -38,7 +40,7 @@ from .execution import build_effective_request_spec, evaluate_structured_asserti
 from .ai_report_summarizer import _get_report_summary_prompt
 from .import_service import _build_environment_suggestions
 from .models import ApiCaseGenerationJob, ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
-from .services import build_request_url
+from .services import VariableResolver, build_request_url, find_missing_variables
 from .specs import apply_request_spec_payload, serialize_assertion_specs, serialize_extractor_specs, serialize_test_case_override
 from .views import _apply_case_generation_job, _run_case_generation_job
 
@@ -4140,3 +4142,71 @@ class ApiAutomationExecutionTests(TestCase):
         self.assertEqual(case_group["latest_status_code"], 401)
         self.assertEqual(case_group["latest_error_message"], "用户名或密码错误")
         self.assertEqual(case_group["failed_records"][0]["error_message"], "用户名或密码错误")
+
+
+class ApiAutomationDataFactoryReferenceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="api_df_admin",
+            email="api_df_admin@example.com",
+            password="testpass123",
+        )
+        self.project = Project.objects.create(
+            name="API Data Factory Project",
+            description="project for api data factory reference tests",
+            creator=self.user,
+        )
+
+    def test_variable_resolver_resolves_data_factory_tag_and_record_paths(self):
+        record = DataFactoryRecord.objects.create(
+            project=self.project,
+            creator=self.user,
+            tool_name="json_format",
+            tool_category="json",
+            tool_scenario="format_conversion",
+            input_data={"text": '{"token":"abc123"}'},
+            output_data={
+                "success": True,
+                "tool_name": "json_format",
+                "result": {"text": '{\n  "token": "abc123"\n}', "parsed": {"token": "abc123", "profile": {"name": "FlyTest"}}},
+                "summary": "JSON 格式化完成",
+                "metadata": {},
+            },
+            is_saved=True,
+        )
+        tag = self.project.data_factory_tags.create(name="登录凭证", code="login_payload", creator=self.user)
+        record.tags.add(tag)
+
+        resolver = VariableResolver({"df": build_reference_tree(self.project.id)})
+
+        self.assertEqual(resolver.resolve("{{df.tag.login_payload.token}}"), "abc123")
+        self.assertEqual(resolver.resolve("Bearer {{df.record.%s.token}}" % record.id), "Bearer abc123")
+        self.assertEqual(resolver.resolve({"name": "{{df.record.%s.profile.name}}" % record.id}), {"name": "FlyTest"})
+
+    def test_find_missing_variables_ignores_existing_data_factory_references(self):
+        record = DataFactoryRecord.objects.create(
+            project=self.project,
+            creator=self.user,
+            tool_name="random_string",
+            tool_category="random",
+            tool_scenario="data_generation",
+            input_data={"length": 8},
+            output_data={
+                "success": True,
+                "tool_name": "random_string",
+                "result": "demo-user",
+                "summary": "ok",
+                "metadata": {},
+            },
+            is_saved=True,
+        )
+        tag = self.project.data_factory_tags.create(name="用户名", code="login_name", creator=self.user)
+        record.tags.add(tag)
+        variables = {"df": build_reference_tree(self.project.id)}
+
+        missing = find_missing_variables(
+            variables,
+            {"username": "{{df.tag.login_name}}", "missing": "{{df.tag.not_exists}}"},
+        )
+
+        self.assertEqual(missing, ["df.tag.not_exists"])

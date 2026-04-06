@@ -7,7 +7,30 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
-PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}")
+PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
+_MISSING = object()
+
+
+def lookup_variable(variables: dict[str, Any], key: str) -> Any:
+    if key in variables:
+        return variables[key]
+
+    current: Any = variables
+    for part in key.split("."):
+        if isinstance(current, list):
+            if not part.isdigit():
+                return _MISSING
+            index = int(part)
+            if index >= len(current):
+                return _MISSING
+            current = current[index]
+        elif isinstance(current, dict):
+            if part not in current:
+                return _MISSING
+            current = current[part]
+        else:
+            return _MISSING
+    return current
 
 
 class VariableResolver:
@@ -31,11 +54,14 @@ class VariableResolver:
     def resolve_string(self, value: str) -> Any:
         matched = PLACEHOLDER_PATTERN.fullmatch(value.strip())
         if matched:
-            return self.variables.get(matched.group(1), value)
+            resolved = lookup_variable(self.variables, matched.group(1).strip())
+            return value if resolved is _MISSING else resolved
 
         def replace(match: re.Match[str]) -> str:
-            key = match.group(1)
-            replacement = self.variables.get(key, match.group(0))
+            key = match.group(1).strip()
+            replacement = lookup_variable(self.variables, key)
+            if replacement is _MISSING:
+                replacement = match.group(0)
             if isinstance(replacement, (dict, list)):
                 return json.dumps(replacement, ensure_ascii=False)
             return str(replacement)
@@ -94,7 +120,10 @@ def find_missing_variables(variables: dict[str, Any], *values: Any) -> list[str]
     missing: set[str] = set()
     for value in values:
         for key in collect_placeholders(value):
-            resolved = variables.get(key)
+            resolved = lookup_variable(variables, key)
+            if resolved is _MISSING:
+                missing.add(key)
+                continue
             if resolved in (None, ""):
                 missing.add(key)
     return sorted(missing)

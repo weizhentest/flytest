@@ -10,6 +10,7 @@ from django.db.models.deletion import ProtectedError
 from django.db import transaction
 from django.utils import timezone
 
+from data_factory.reference import build_reference_tree
 from projects.models import Project
 
 from .ai_mode import build_ai_execution_report, request_stop_ai_execution, start_ai_execution
@@ -455,12 +456,19 @@ class UiPublicDataViewSet(viewsets.ModelViewSet):
         返回格式（经 UnifiedResponseRenderer 包装后）:
         {"status": "success", "code": 200, "data": [{"key": "username", "value": "admin", "type": 0}, ...]}
         """
-        public_data = UiPublicData.objects.filter(
-            project_id=project_id,
-            is_enabled=True
-        ).values('key', 'value', 'type')
+        public_data = list(
+            UiPublicData.objects.filter(
+                project_id=project_id,
+                is_enabled=True
+            ).values('key', 'value', 'type')
+        )
+        public_data.append({
+            'key': 'df',
+            'value': build_reference_tree(int(project_id)),
+            'type': 3,
+        })
         # 直接返回列表，由 UnifiedResponseRenderer 统一包装为标准格式
-        return Response(list(public_data))
+        return Response(public_data)
 
 
 class UiEnvironmentConfigViewSet(viewsets.ModelViewSet):

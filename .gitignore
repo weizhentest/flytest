@@ -75,3 +75,6 @@ FlyTest_Django/chat_history.sqlite-wal
 .gemini/settings.json
 FlyTest_Actuator/browsers/
 FlyTest_Django/celerybeat-schedule
+runtime-logs/
+service_logs/
+_upstream/

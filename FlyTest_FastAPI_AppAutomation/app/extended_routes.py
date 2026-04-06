@@ -433,9 +433,15 @@ def create_execution(
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def execute_case_background(execution_id: int) -> None:
+    from .main import run_execution
+
+    run_execution(execution_id)
+
+
 def run_suite_background(suite_id: int, execution_ids: list[int]) -> None:
     for execution_id in execution_ids:
-        simulate_case_execution(execution_id)
+        execute_case_background(execution_id)
     with connection() as conn:
         refresh_suite_stats(conn, suite_id)
 
@@ -796,7 +802,7 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 }
             else:
                 execution_id = create_execution(conn, task["project_id"], task["test_case_id"], task["device_id"], triggered_by, None)
-                Thread(target=simulate_case_execution, args=(execution_id,), daemon=True).start()
+                Thread(target=execute_case_background, args=(execution_id,), daemon=True).start()
                 payload = {"task_id": task_id, "execution_id": execution_id}
                 last_result = {"task_id": task_id, "task_type": task["task_type"], "execution_id": execution_id}
 
