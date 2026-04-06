@@ -266,7 +266,7 @@ class UiAIExecutionRecordListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'project', 'ai_case', 'ai_case_name', 'case_name', 'task_description',
             'execution_mode', 'execution_backend', 'status', 'start_time', 'end_time',
-            'duration', 'model_config_name', 'executed_by', 'executed_by_name',
+            'duration', 'enable_gif', 'model_config_name', 'executed_by', 'executed_by_name',
             'planned_task_count', 'completed_task_count',
         ]
 

@@ -3,41 +3,50 @@
     <ModulePanel ref="modulePanelRef" @select="onModuleSelect" @updated="onModuleUpdated" />
     <div class="layout-content">
       <PageList
+        v-if="isTabReady('pages')"
         v-show="activeTab === 'pages'"
         ref="pageListRef"
         :selected-module-id="selectedModuleId"
       />
       <PageStepList
+        v-if="isTabReady('page-steps')"
         v-show="activeTab === 'page-steps'"
         ref="pageStepListRef"
         :selected-module-id="selectedModuleId"
       />
       <TestCaseList
+        v-if="isTabReady('testcases')"
         v-show="activeTab === 'testcases'"
         ref="testCaseListRef"
         :selected-module-id="selectedModuleId"
       />
       <AiIntelligentModeView
+        v-if="isTabReady('ai-intelligent')"
         v-show="activeTab === 'ai-intelligent'"
         ref="aiIntelligentModeRef"
       />
       <ExecutionRecordList
+        v-if="isTabReady('execution-records')"
         v-show="activeTab === 'execution-records'"
         ref="executionRecordListRef"
       />
       <BatchRecordList
+        v-if="isTabReady('batch-records')"
         v-show="activeTab === 'batch-records'"
         ref="batchRecordListRef"
       />
       <PublicDataList
+        v-if="isTabReady('public-data')"
         v-show="activeTab === 'public-data'"
         ref="publicDataListRef"
       />
       <EnvConfigList
+        v-if="isTabReady('env-config')"
         v-show="activeTab === 'env-config'"
         ref="envConfigListRef"
       />
       <ActuatorList
+        v-if="isTabReady('actuators')"
         v-show="activeTab === 'actuators'"
         ref="actuatorListRef"
       />
@@ -107,6 +116,9 @@ const normalizeTab = (value: unknown): UiAutomationTab => {
 }
 
 const activeTab = computed<UiAutomationTab>(() => normalizeTab(route.query.tab))
+const visitedTabs = ref<Set<UiAutomationTab>>(new Set([activeTab.value]))
+
+const isTabReady = (tab: UiAutomationTab) => visitedTabs.value.has(tab)
 
 watch(
   () => route.query.tab,
@@ -126,37 +138,17 @@ watch(
   { immediate: true }
 )
 
-watch(activeTab, newTab => {
-  switch (newTab) {
-    case 'pages':
-      pageListRef.value?.refresh?.()
-      break
-    case 'page-steps':
-      pageStepListRef.value?.refresh?.()
-      break
-    case 'testcases':
-      testCaseListRef.value?.refresh?.()
-      break
-    case 'ai-intelligent':
-      aiIntelligentModeRef.value?.refresh?.()
-      break
-    case 'execution-records':
-      executionRecordListRef.value?.refresh?.()
-      break
-    case 'batch-records':
-      batchRecordListRef.value?.refresh?.()
-      break
-    case 'public-data':
-      publicDataListRef.value?.refresh?.()
-      break
-    case 'env-config':
-      envConfigListRef.value?.refresh?.()
-      break
-    case 'actuators':
-      actuatorListRef.value?.refresh?.()
-      break
-  }
-})
+watch(
+  activeTab,
+  newTab => {
+    if (visitedTabs.value.has(newTab)) {
+      return
+    }
+
+    visitedTabs.value = new Set([...visitedTabs.value, newTab])
+  },
+  { immediate: true }
+)
 
 const onModuleSelect = (module: UiModule | null) => {
   selectedModuleId.value = module?.id

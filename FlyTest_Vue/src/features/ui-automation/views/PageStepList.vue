@@ -238,8 +238,10 @@ const fetchPageSteps = async () => {
     const res = await pageStepsApi.list({
       project: projectId.value,
       page: filters.page,
+      page_number: pagination.current,
       module: filters.module,
       search: filters.search || undefined,
+      page_size: pagination.pageSize,
     })
     const { items, count } = extractPaginationData(res)
     pageStepData.value = items

@@ -2,7 +2,9 @@
  * UI 自动化 API 服务
  */
 
+import axios from 'axios'
 import request from '@/utils/request'
+import { useAuthStore } from '@/store/authStore'
 import type {
   UiModule,
   UiPage,
@@ -27,6 +29,9 @@ import type {
   UiTestCaseForm,
   UiAICaseForm,
   UiAIAdhocRunForm,
+  UiAIExecutionReport,
+  UiAIRuntimeCapabilities,
+  UiAIReportType,
   UiPublicDataForm,
   UiEnvironmentConfigForm,
   PaginatedResponse,
@@ -56,7 +61,7 @@ export const moduleApi = {
 
 // ==================== 页面管理 ====================
 export const pageApi = {
-  list: (params?: { project?: number; module?: number; search?: string }) =>
+  list: (params?: { project?: number; module?: number; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiPage>>(`${BASE_URL}/pages/`, { params }),
 
   get: (id: number) => request.get<UiPageDetail>(`${BASE_URL}/pages/${id}/`),
@@ -71,7 +76,7 @@ export const pageApi = {
 
 // ==================== 元素管理 ====================
 export const elementApi = {
-  list: (params?: { page?: number; locator_type?: string; search?: string }) =>
+  list: (params?: { page?: number; page_number?: number; page_size?: number; locator_type?: string; search?: string }) =>
     request.get<PaginatedResponse<UiElement>>(`${BASE_URL}/elements/`, { params }),
 
   get: (id: number) => request.get<UiElement>(`${BASE_URL}/elements/${id}/`),
@@ -86,7 +91,7 @@ export const elementApi = {
 
 // ==================== 页面步骤管理 ====================
 export const pageStepsApi = {
-  list: (params?: { project?: number; page?: number; module?: number; search?: string }) =>
+  list: (params?: { project?: number; page?: number; page_number?: number; page_size?: number; module?: number; search?: string }) =>
     request.get<PaginatedResponse<UiPageSteps>>(`${BASE_URL}/page-steps/`, { params }),
 
   get: (id: number) => request.get<UiPageStepsDetail>(`${BASE_URL}/page-steps/${id}/`),
@@ -120,7 +125,7 @@ export const pageStepsDetailedApi = {
 
 // ==================== 测试用例管理 ====================
 export const testCaseApi = {
-  list: (params?: { project?: number; module?: number; level?: string; status?: number; search?: string }) =>
+  list: (params?: { project?: number; module?: number; level?: string; status?: number; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiTestCase>>(`${BASE_URL}/testcases/`, { params }),
 
   get: (id: number) => request.get<UiTestCaseDetail>(`${BASE_URL}/testcases/${id}/`),
@@ -156,7 +161,7 @@ export const caseStepsApi = {
 
 // ==================== 执行记录管理 ====================
 export const executionRecordApi = {
-  list: (params?: { project?: number; test_case?: number; status?: number; trigger_type?: string }) =>
+  list: (params?: { project?: number; test_case?: number; status?: number; trigger_type?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiExecutionRecord>>(`${BASE_URL}/execution-records/`, { params }),
 
   get: (id: number) => request.get<UiExecutionRecord>(`${BASE_URL}/execution-records/${id}/`),
@@ -173,7 +178,7 @@ export const executionRecordApi = {
 
 // ==================== AI 智能模式用例 ====================
 export const aiCaseApi = {
-  list: (params?: { project?: number; default_execution_mode?: string; search?: string; page?: number; page_size?: number }) =>
+  list: (params?: { project?: number; default_execution_mode?: string; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiAICase>>(`${BASE_URL}/ai-cases/`, { params }),
 
   get: (id: number) => request.get<UiAICase>(`${BASE_URL}/ai-cases/${id}/`),
@@ -185,30 +190,50 @@ export const aiCaseApi = {
 
   delete: (id: number) => request.delete(`${BASE_URL}/ai-cases/${id}/`),
 
+  batchDelete: (ids: number[]) => request.post(`${BASE_URL}/ai-cases/batch-delete/`, { ids }),
+
   run: (id: number, execution_mode?: string) =>
     request.post<UiAIExecutionRecord>(`${BASE_URL}/ai-cases/${id}/run/`, execution_mode ? { execution_mode } : {}),
 }
 
 // ==================== AI 智能模式执行记录 ====================
 export const aiExecutionApi = {
-  list: (params?: { project?: number; ai_case?: number; status?: string; execution_mode?: string; execution_backend?: string; search?: string; page?: number; page_size?: number }) =>
+  list: (params?: { project?: number; ai_case?: number; status?: string; execution_mode?: string; execution_backend?: string; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiAIExecutionRecord>>(`${BASE_URL}/ai-execution-records/`, { params }),
 
   get: (id: number) => request.get<UiAIExecutionRecord>(`${BASE_URL}/ai-execution-records/${id}/`),
 
+  capabilities: (project?: number) =>
+    request.get<UiAIRuntimeCapabilities>(`${BASE_URL}/ai-execution-records/capabilities/`, { params: project ? { project } : {} }),
+
   delete: (id: number) => request.delete(`${BASE_URL}/ai-execution-records/${id}/`),
+
+  batchStop: (ids: number[]) => request.post(`${BASE_URL}/ai-execution-records/batch-stop/`, { ids }),
+
+  batchDelete: (ids: number[]) => request.post(`${BASE_URL}/ai-execution-records/batch-delete/`, { ids }),
 
   runAdhoc: (data: UiAIAdhocRunForm) =>
     request.post<UiAIExecutionRecord>(`${BASE_URL}/ai-execution-records/run-adhoc/`, data),
 
   stop: (id: number) => request.post(`${BASE_URL}/ai-execution-records/${id}/stop/`),
 
-  report: (id: number) => request.get(`${BASE_URL}/ai-execution-records/${id}/report/`),
+  report: (id: number, reportType: UiAIReportType = 'summary') =>
+    request.get<UiAIExecutionReport>(`${BASE_URL}/ai-execution-records/${id}/report/`, { params: { report_type: reportType } }),
+
+  exportPdf: (id: number, reportType: UiAIReportType = 'summary') => {
+    const authStore = useAuthStore()
+    const accessToken = authStore.getAccessToken
+    return axios.get(`${request.defaults.baseURL || ''}${BASE_URL}/ai-execution-records/${id}/export-pdf/`, {
+      params: { report_type: reportType },
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      responseType: 'blob',
+    })
+  },
 }
 
 // ==================== 批量执行记录管理 ====================
 export const batchRecordApi = {
-  list: (params?: { project?: number; status?: number; trigger_type?: string }) =>
+  list: (params?: { project?: number; status?: number; trigger_type?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiBatchExecutionRecord>>(`${BASE_URL}/batch-records/`, { params }),
 
   get: (id: number) => request.get<UiBatchExecutionRecord>(`${BASE_URL}/batch-records/${id}/`),
@@ -218,7 +243,7 @@ export const batchRecordApi = {
 
 // ==================== 公共数据管理 ====================
 export const publicDataApi = {
-  list: (params?: { project?: number; type?: number; is_enabled?: boolean; search?: string }) =>
+  list: (params?: { project?: number; type?: number; is_enabled?: boolean; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiPublicData>>(`${BASE_URL}/public-data/`, { params }),
 
   get: (id: number) => request.get<UiPublicData>(`${BASE_URL}/public-data/${id}/`),
@@ -233,7 +258,7 @@ export const publicDataApi = {
 
 // ==================== 环境配置管理 ====================
 export const envConfigApi = {
-  list: (params?: { project?: number; browser?: string; is_default?: boolean; search?: string }) =>
+  list: (params?: { project?: number; browser?: string; is_default?: boolean; search?: string; page_number?: number; page_size?: number }) =>
     request.get<PaginatedResponse<UiEnvironmentConfig>>(`${BASE_URL}/env-configs/`, { params }),
 
   get: (id: number) => request.get<UiEnvironmentConfig>(`${BASE_URL}/env-configs/${id}/`),

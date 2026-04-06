@@ -4,16 +4,23 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models.deletion import ProtectedError
 from django.db import transaction
+from django.http import HttpResponse
 from django.utils import timezone
 
 from data_factory.reference import build_reference_tree
 from projects.models import Project
 
-from .ai_mode import build_ai_execution_report, request_stop_ai_execution, start_ai_execution
+from .ai_mode import (
+    build_ai_execution_report,
+    get_ai_runtime_capabilities,
+    request_stop_ai_execution,
+    start_ai_execution,
+)
 from .models import (
     UiModule, UiPage, UiElement, UiPageSteps, UiPageStepsDetailed,
     UiTestCase, UiCaseStepsDetailed, UiExecutionRecord, UiAICase, UiAIExecutionRecord,
@@ -65,7 +72,68 @@ class UiModuleViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class UiPageViewSet(viewsets.ModelViewSet):
+class UiAutomationOptionalPagination(PageNumberPagination):
+    page_size = 10
+    page_query_param = 'page_number'
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
+class OptionalPaginationMixin:
+    """
+    Only enable DRF pagination when the client explicitly sends page or page_size.
+    This keeps existing full-list consumers working while allowing large list pages
+    to move to server-side pagination incrementally.
+    """
+
+    pagination_class = UiAutomationOptionalPagination
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        if 'page_number' in request.query_params or 'page_size' in request.query_params:
+            page = self.paginate_queryset(queryset)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+def _coerce_bool(value, default=True):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off'}:
+        return False
+    return default
+
+
+def _validate_ai_execution_request(project_id: int, execution_mode: str) -> str | None:
+    capabilities = get_ai_runtime_capabilities(project_id)
+
+    if execution_mode == 'vision':
+        if not capabilities.get('llm_configured'):
+            return '视觉模式需要先启用一个支持图片输入的 LLM 配置。'
+        if not capabilities.get('supports_vision'):
+            return '当前激活的 LLM 配置不支持视觉模式，请切换到支持图片输入的模型。'
+        if not capabilities.get('vision_mode_ready'):
+            return '视觉模式需要可用的 browser-use / Playwright 环境以及支持视觉能力的模型配置。'
+
+    if execution_mode == 'text' and not capabilities.get('text_mode_ready'):
+        return '文本模式当前缺少可用的执行能力，请先检查 LLM 配置和运行环境。'
+
+    return None
+
+
+class UiPageViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """页面管理视图"""
     queryset = UiPage.objects.select_related('project', 'module', 'creator')
     serializer_class = UiPageSerializer
@@ -95,7 +163,7 @@ class UiPageViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class UiElementViewSet(viewsets.ModelViewSet):
+class UiElementViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """元素管理视图"""
     queryset = UiElement.objects.select_related('page', 'creator')
     serializer_class = UiElementSerializer
@@ -109,7 +177,7 @@ class UiElementViewSet(viewsets.ModelViewSet):
         serializer.save(creator=self.request.user)
 
 
-class UiPageStepsViewSet(viewsets.ModelViewSet):
+class UiPageStepsViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """页面步骤管理视图"""
     queryset = UiPageSteps.objects.select_related('project', 'page', 'module', 'creator')
     serializer_class = UiPageStepsSerializer
@@ -187,7 +255,7 @@ class UiPageStepsDetailedViewSet(viewsets.ModelViewSet):
         return Response({'message': '批量更新成功'})
 
 
-class UiTestCaseViewSet(viewsets.ModelViewSet):
+class UiTestCaseViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """测试用例管理视图"""
     queryset = UiTestCase.objects.select_related('project', 'module', 'creator')
     serializer_class = UiTestCaseSerializer
@@ -331,7 +399,7 @@ class UiCaseStepsDetailedViewSet(viewsets.ModelViewSet):
         return Response({'message': '批量更新成功'})
 
 
-class UiExecutionRecordViewSet(viewsets.ModelViewSet):
+class UiExecutionRecordViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """执行记录管理视图"""
     queryset = UiExecutionRecord.objects.select_related('test_case', 'executor')
     serializer_class = UiExecutionRecordSerializer
@@ -436,7 +504,7 @@ class UiExecutionRecordViewSet(viewsets.ModelViewSet):
         })
 
 
-class UiPublicDataViewSet(viewsets.ModelViewSet):
+class UiPublicDataViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """公共数据管理视图"""
     queryset = UiPublicData.objects.select_related('project', 'creator')
     serializer_class = UiPublicDataSerializer
@@ -471,7 +539,7 @@ class UiPublicDataViewSet(viewsets.ModelViewSet):
         return Response(public_data)
 
 
-class UiEnvironmentConfigViewSet(viewsets.ModelViewSet):
+class UiEnvironmentConfigViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """环境配置管理视图"""
     queryset = UiEnvironmentConfig.objects.select_related('project', 'creator')
     serializer_class = UiEnvironmentConfigSerializer
@@ -532,7 +600,7 @@ class ActuatorViewSet(viewsets.ViewSet):
         })
 
 
-class UiBatchExecutionRecordViewSet(viewsets.ModelViewSet):
+class UiBatchExecutionRecordViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """批量执行记录管理视图"""
     queryset = UiBatchExecutionRecord.objects.select_related('executor')
     serializer_class = UiBatchExecutionRecordSerializer
@@ -563,7 +631,7 @@ class UiBatchExecutionRecordViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class UiAICaseViewSet(viewsets.ModelViewSet):
+class UiAICaseViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """AI 智能模式用例管理"""
 
     queryset = UiAICase.objects.select_related('project', 'creator')
@@ -577,6 +645,39 @@ class UiAICaseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)
 
+    @action(detail=False, methods=['post'], url_path='batch-delete')
+    def batch_delete(self, request):
+        ids_data = request.data.get('ids', [])
+        if not isinstance(ids_data, list) or not ids_data:
+            return Response({'error': '请提供要删除的 AI 用例 ID 列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            case_ids = [int(item) for item in ids_data]
+        except (TypeError, ValueError):
+            return Response({'error': 'ids 参数格式错误，应为数字列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = self.get_queryset().filter(id__in=case_ids)
+        found_ids = list(queryset.values_list('id', flat=True))
+        missing_ids = [case_id for case_id in case_ids if case_id not in found_ids]
+        if missing_ids:
+            return Response(
+                {'error': f'以下 AI 用例不存在: {missing_ids}', 'missing_ids': missing_ids},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        deleted_cases = list(queryset.values('id', 'name', 'default_execution_mode'))
+        with transaction.atomic():
+            deleted_count, _ = queryset.delete()
+
+        return Response(
+            {
+                'message': f'成功删除 {deleted_count} 条 AI 用例',
+                'deleted_count': deleted_count,
+                'deleted_cases': deleted_cases,
+            },
+            status=status.HTTP_200_OK
+        )
+
     @action(detail=True, methods=['post'])
     def run(self, request, pk=None):
         ai_case = self.get_object()
@@ -585,12 +686,23 @@ class UiAICaseViewSet(viewsets.ModelViewSet):
         if execution_mode not in dict(UiAICase.EXECUTION_MODE_CHOICES):
             return Response({'error': '不支持的执行模式'}, status=status.HTTP_400_BAD_REQUEST)
 
+        validation_error = _validate_ai_execution_request(ai_case.project_id, execution_mode)
+        if validation_error:
+            return Response(
+                {
+                    'error': validation_error,
+                    'runtime_capabilities': get_ai_runtime_capabilities(ai_case.project_id),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         execution_record = UiAIExecutionRecord.objects.create(
             project=ai_case.project,
             ai_case=ai_case,
             case_name=ai_case.name,
             task_description=ai_case.task_description,
             execution_mode=execution_mode,
+            enable_gif=_coerce_bool(request.data.get('enable_gif'), ai_case.enable_gif),
             status='running',
             executed_by=request.user,
             logs='',
@@ -601,7 +713,7 @@ class UiAICaseViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
+class UiAIExecutionRecordViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
     """AI 智能模式执行记录管理"""
 
     queryset = UiAIExecutionRecord.objects.select_related('project', 'ai_case', 'executed_by')
@@ -611,6 +723,7 @@ class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
     search_fields = ['case_name', 'task_description']
     ordering_fields = ['start_time', 'end_time', 'duration']
     ordering = ['-start_time']
+    active_delete_statuses = {'pending', 'running'}
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -622,6 +735,27 @@ class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return UiAIExecutionRecordListSerializer
         return UiAIExecutionRecordSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        record = self.get_object()
+        if record.status in self.active_delete_statuses:
+            return Response({'error': '执行中的任务请先停止后再删除'}, status=status.HTTP_400_BAD_REQUEST)
+        self.perform_destroy(record)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['get'], url_path='capabilities')
+    def capabilities(self, request):
+        project_id = request.query_params.get('project')
+
+        if project_id not in (None, ''):
+            project = Project.objects.filter(id=project_id).only('id').first()
+            if project is None:
+                return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
+            capability_data = get_ai_runtime_capabilities(project.id)
+        else:
+            capability_data = get_ai_runtime_capabilities()
+
+        return Response(capability_data)
 
     @action(detail=False, methods=['post'], url_path='run-adhoc')
     def run_adhoc(self, request):
@@ -641,11 +775,22 @@ class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
         if project is None:
             return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
 
+        validation_error = _validate_ai_execution_request(project.id, execution_mode)
+        if validation_error:
+            return Response(
+                {
+                    'error': validation_error,
+                    'runtime_capabilities': get_ai_runtime_capabilities(project.id),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         execution_record = UiAIExecutionRecord.objects.create(
             project=project,
             case_name=case_name or f"临时任务 {timezone.now().strftime('%m-%d %H:%M')}",
             task_description=task_description,
             execution_mode=execution_mode,
+            enable_gif=_coerce_bool(request.data.get('enable_gif'), True),
             status='running',
             executed_by=request.user,
             logs='',
@@ -670,10 +815,151 @@ class UiAIExecutionRecordViewSet(viewsets.ModelViewSet):
             'data': UiAIExecutionRecordSerializer(record).data,
         })
 
+    @action(detail=False, methods=['post'], url_path='batch-stop')
+    def batch_stop(self, request):
+        ids_data = request.data.get('ids', [])
+        if not isinstance(ids_data, list) or not ids_data:
+            return Response({'error': '请提供要停止的执行记录 ID 列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record_ids = [int(item) for item in ids_data]
+        except (TypeError, ValueError):
+            return Response({'error': 'ids 参数格式错误，应为数字列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = self.get_queryset().filter(id__in=record_ids)
+        found_ids = list(queryset.values_list('id', flat=True))
+        missing_ids = [record_id for record_id in record_ids if record_id not in found_ids]
+        if missing_ids:
+            return Response(
+                {'error': f'以下执行记录不存在: {missing_ids}', 'missing_ids': missing_ids},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        runnable_records = list(queryset.filter(status__in=self.active_delete_statuses))
+        skipped_records = list(
+            queryset.exclude(status__in=self.active_delete_statuses).values('id', 'case_name', 'status')
+        )
+
+        stopped_ids: list[int] = []
+        for record in runnable_records:
+            if request_stop_ai_execution(record.id):
+                stopped_ids.append(record.id)
+
+        stopped_records = list(
+            self.get_queryset()
+            .filter(id__in=stopped_ids)
+            .values('id', 'case_name', 'status', 'end_time', 'duration')
+        )
+
+        return Response(
+            {
+                'message': f'成功停止 {len(stopped_records)} 条 AI 执行记录',
+                'stopped_count': len(stopped_records),
+                'stopped_records': stopped_records,
+                'skipped_records': skipped_records,
+            },
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['post'], url_path='batch-delete')
+    def batch_delete(self, request):
+        ids_data = request.data.get('ids', [])
+        if not isinstance(ids_data, list) or not ids_data:
+            return Response({'error': '请提供要删除的执行记录 ID 列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record_ids = [int(item) for item in ids_data]
+        except (TypeError, ValueError):
+            return Response({'error': 'ids 参数格式错误，应为数字列表'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = self.get_queryset().filter(id__in=record_ids)
+        found_ids = list(queryset.values_list('id', flat=True))
+        missing_ids = [record_id for record_id in record_ids if record_id not in found_ids]
+        if missing_ids:
+            return Response(
+                {'error': f'以下执行记录不存在: {missing_ids}', 'missing_ids': missing_ids},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        active_records = list(
+            queryset.filter(status__in=self.active_delete_statuses).values('id', 'case_name', 'status')
+        )
+        if active_records:
+            return Response(
+                {
+                    'error': '存在执行中的任务，请先停止后再删除',
+                    'active_records': active_records,
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        deleted_records = list(queryset.values('id', 'case_name', 'status'))
+        with transaction.atomic():
+            deleted_count, _ = queryset.delete()
+
+        return Response(
+            {
+                'message': f'成功删除 {deleted_count} 条 AI 执行记录',
+                'deleted_count': deleted_count,
+                'deleted_records': deleted_records,
+            },
+            status=status.HTTP_200_OK
+        )
+
     @action(detail=True, methods=['get'], url_path='report')
     def report(self, request, pk=None):
         record = self.get_object()
-        return Response(build_ai_execution_report(record))
+        report_type = (request.query_params.get('report_type') or 'summary').strip().lower()
+        if report_type not in {'summary', 'detailed', 'performance'}:
+            return Response(
+                {'error': 'report_type 仅支持 summary、detailed、performance'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(build_ai_execution_report(record, report_type=report_type))
+
+    @action(detail=True, methods=['get'], url_path='export-pdf')
+    def export_pdf(self, request, pk=None):
+        record = self.get_object()
+        report_type = (request.query_params.get('report_type') or 'summary').strip().lower()
+        if report_type not in {'summary', 'detailed', 'performance'}:
+            return Response(
+                {'error': 'report_type 仅支持 summary、detailed、performance'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            from .pdf_generator import AIReportPDFGenerator
+        except ImportError as exc:
+            return Response(
+                {'error': f'PDF 导出依赖不可用: {exc}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        try:
+            report_data = build_ai_execution_report(record, report_type=report_type)
+            pdf_buffer = AIReportPDFGenerator(report_data, report_type=report_type).generate()
+        except ImportError as exc:
+            return Response(
+                {'error': f'PDF 导出依赖不可用: {exc}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as exc:
+            return Response(
+                {'error': f'生成 PDF 失败: {exc}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        safe_case_name = ''.join(
+            char if char.isalnum() or char in (' ', '_', '-') else '_'
+            for char in record.case_name
+        ).strip() or 'ai_report'
+        filename = f'FlyTest_AI_Report_{safe_case_name}_{report_type}_{timestamp}.pdf'
+
+        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Length'] = len(pdf_buffer.getvalue())
+        return response
 
 
 # ---------- 截图上传 ----------

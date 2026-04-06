@@ -243,6 +243,8 @@ const fetchData = async () => {
       project: projectId.value,
       browser: filters.browser,
       search: filters.search || undefined,
+      page_number: pagination.current,
+      page_size: pagination.pageSize,
     })
     const { items, count } = extractPaginationData(res)
     envConfigData.value = items

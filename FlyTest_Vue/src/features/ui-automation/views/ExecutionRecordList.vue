@@ -278,6 +278,8 @@ const fetchRecords = async () => {
       project: projectId.value,
       status: filters.status,
       trigger_type: filters.trigger_type,
+      page_number: pagination.current,
+      page_size: pagination.pageSize,
     })
     const { items, count } = extractPaginationData(res)
     recordData.value = items

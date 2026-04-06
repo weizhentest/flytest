@@ -251,7 +251,12 @@ const fetchRecords = async () => {
   if (!projectId.value) return
   loading.value = true
   try {
-    const res = await batchRecordApi.list({ project: projectId.value, status: filters.status })
+    const res = await batchRecordApi.list({
+      project: projectId.value,
+      status: filters.status,
+      page_number: pagination.current,
+      page_size: pagination.pageSize,
+    })
     const { items, count } = extractPaginationData(res)
     recordData.value = items
     pagination.total = count

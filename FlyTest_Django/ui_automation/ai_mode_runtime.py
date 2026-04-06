@@ -1,3 +1,4 @@
+import base64
 import asyncio
 import importlib.util
 import json
@@ -27,11 +28,16 @@ os.environ.setdefault("ANONYMIZED_TELEMETRY", "false")
 
 AI_STOP_SIGNALS: dict[int, bool] = {}
 ACTION_CALL_RE = re.compile(r"^(?P<name>\w+)\((?P<params>.*)\)$")
+PLACEHOLDER_SCREENSHOT_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+_BROWSER_USE_RUNTIME_PATCHES_APPLIED = False
 
 __all__ = [
     "AI_STOP_SIGNALS",
     "AIExecutionStopped",
     "build_ai_execution_report",
+    "get_ai_runtime_capabilities",
     "request_stop_ai_execution",
     "run_ai_execution",
     "start_ai_execution",
@@ -208,6 +214,70 @@ class BrowserUseLangChainAdapter:
         return _validate_structured_output(payload, output_format)
 
 
+def _apply_browser_use_runtime_patches() -> None:
+    global _BROWSER_USE_RUNTIME_PATCHES_APPLIED
+
+    if _BROWSER_USE_RUNTIME_PATCHES_APPLIED:
+        return
+
+    try:
+        from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
+        from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
+
+        original_on_screenshot_event = getattr(ScreenshotWatchdog, "on_ScreenshotEvent", None)
+        if callable(original_on_screenshot_event) and not getattr(original_on_screenshot_event, "_flytest_patched", False):
+
+            async def on_screenshot_event(self: Any, event: Any) -> Any:
+                try:
+                    return await asyncio.wait_for(original_on_screenshot_event(self, event), timeout=3.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Screenshot watchdog timed out, trying direct CDP screenshot fallback.")
+                    try:
+                        cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=None)
+                        if not cdp_session:
+                            raise RuntimeError("No CDP session available for screenshot fallback.")
+
+                        params = {
+                            "format": "png",
+                            "quality": 50,
+                            "from_surface": True,
+                            "capture_beyond_viewport": False,
+                        }
+                        return await asyncio.wait_for(
+                            cdp_session.cdp_client.send.Page.captureScreenshot(
+                                params=params,
+                                session_id=cdp_session.session_id,
+                            ),
+                            timeout=3.0,
+                        )
+                    except Exception as exc:
+                        logger.warning("Screenshot fallback failed, returning placeholder image: %s", exc)
+                        return {"data": PLACEHOLDER_SCREENSHOT_BYTES}
+                except Exception as exc:
+                    logger.warning("Screenshot watchdog failed unexpectedly, returning placeholder image: %s", exc)
+                    return {"data": PLACEHOLDER_SCREENSHOT_BYTES}
+
+            on_screenshot_event._flytest_patched = True  # type: ignore[attr-defined]
+            ScreenshotWatchdog.on_ScreenshotEvent = on_screenshot_event
+
+        original_capture_clean_screenshot = getattr(DOMWatchdog, "_capture_clean_screenshot", None)
+        if callable(original_capture_clean_screenshot) and not getattr(original_capture_clean_screenshot, "_flytest_patched", False):
+
+            async def capture_clean_screenshot(self: Any) -> Any:
+                try:
+                    return await asyncio.wait_for(original_capture_clean_screenshot(self), timeout=3.0)
+                except Exception as exc:
+                    logger.warning("DOM watchdog clean screenshot failed or timed out, continuing: %s", exc)
+                    return None
+
+            capture_clean_screenshot._flytest_patched = True  # type: ignore[attr-defined]
+            DOMWatchdog._capture_clean_screenshot = capture_clean_screenshot
+
+        _BROWSER_USE_RUNTIME_PATCHES_APPLIED = True
+    except Exception as exc:
+        logger.warning("Unable to apply browser-use runtime patches: %s", exc)
+
+
 def start_ai_execution(record_id: int) -> None:
     thread = threading.Thread(
         target=run_ai_execution,
@@ -220,37 +290,472 @@ def start_ai_execution(record_id: int) -> None:
 
 def request_stop_ai_execution(record_id: int) -> bool:
     AI_STOP_SIGNALS[record_id] = True
-    updated = UiAIExecutionRecord.objects.filter(
+    record = UiAIExecutionRecord.objects.filter(
         id=record_id,
         status__in=["pending", "running"],
-    ).update(status="stopped", end_time=timezone.now())
-    return updated > 0
+    ).first()
+    if record is None:
+        AI_STOP_SIGNALS.pop(record_id, None)
+        return False
+
+    record.status = "stopped"
+    record.end_time = timezone.now()
+    if record.start_time:
+        record.duration = round((record.end_time - record.start_time).total_seconds(), 2)
+    stop_message = "[System] 已发送停止信号，等待当前步骤安全结束。"
+    current_logs = (record.logs or "").rstrip()
+    if stop_message not in current_logs:
+        record.logs = f"{current_logs}\n{stop_message}".strip()
+    record.save(update_fields=["status", "end_time", "duration", "logs"])
+    return True
 
 
-def build_ai_execution_report(record: UiAIExecutionRecord) -> dict[str, Any]:
-    planned_tasks = record.planned_tasks or []
-    completed_tasks = [task for task in planned_tasks if task.get("status") == "completed"]
-    failed_tasks = [task for task in planned_tasks if task.get("status") == "failed"]
+def _coerce_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    return round(number, 2)
+
+
+def _format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+
+    minutes, remain = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m {remain}s"
+
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m {remain}s"
+
+
+def _normalize_task_status(status: Any) -> str:
+    value = str(status or "pending").strip().lower()
+    aliases = {
+        "passed": "completed",
+        "success": "completed",
+        "done": "completed",
+        "running": "in_progress",
+        "processing": "in_progress",
+        "cancelled": "stopped",
+    }
+    normalized = aliases.get(value, value)
+    return normalized if normalized in {"completed", "pending", "failed", "skipped", "in_progress", "stopped"} else "pending"
+
+
+def _normalize_step_status(status: Any) -> str:
+    value = str(status or "pending").strip().lower()
+    aliases = {
+        "success": "passed",
+        "completed": "passed",
+        "done": "passed",
+        "error": "failed",
+        "cancelled": "stopped",
+    }
+    normalized = aliases.get(value, value)
+    return normalized if normalized in {"passed", "failed", "stopped", "pending", "running"} else "pending"
+
+
+def _task_status_label(status: str) -> str:
+    return {
+        "completed": "已完成",
+        "pending": "待执行",
+        "failed": "失败",
+        "skipped": "已跳过",
+        "in_progress": "执行中",
+        "stopped": "已停止",
+    }.get(status, status)
+
+
+def _calculate_task_statistics(planned_tasks: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    statistics = {
+        "total": len(planned_tasks),
+        "completed": 0,
+        "pending": 0,
+        "failed": 0,
+        "skipped": 0,
+        "in_progress": 0,
+        "stopped": 0,
+        "completion_rate": 0.0,
+        "success_rate": 0.0,
+    }
+
+    for task in planned_tasks:
+        status = _normalize_task_status(task.get("status"))
+        statistics[status] = statistics.get(status, 0) + 1
+
+    total = statistics["total"]
+    attempted = statistics["completed"] + statistics["failed"]
+    statistics["completion_rate"] = round((statistics["completed"] / total) * 100, 2) if total else 0.0
+    statistics["success_rate"] = round((statistics["completed"] / attempted) * 100, 2) if attempted else 0.0
+    return statistics
+
+
+def _build_detailed_steps(steps_completed: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    detailed_steps: list[dict[str, Any]] = []
+    for index, step in enumerate(steps_completed, start=1):
+        step_number = step.get("step") or step.get("step_number") or index
+        title = step.get("title") or step.get("action") or f"步骤 {step_number}"
+        description = step.get("description") or step.get("message") or ""
+        duration = (
+            _coerce_float(step.get("duration"))
+            or _coerce_float(step.get("elapsed_seconds"))
+            or _coerce_float(step.get("cost"))
+            or _coerce_float(step.get("estimated_duration"))
+        )
+        detailed_steps.append(
+            {
+                "step_number": step_number,
+                "title": title,
+                "status": _normalize_step_status(step.get("status")),
+                "action": step.get("action") or title,
+                "description": description,
+                "expected_result": step.get("expected_result") or "",
+                "thinking": step.get("thinking") or step.get("reasoning") or "",
+                "element": step.get("element") or step.get("selector") or step.get("locator") or "",
+                "message": step.get("message") or "",
+                "completed_at": step.get("completed_at"),
+                "duration": duration,
+                "browser_step_count": step.get("browser_step_count"),
+                "screenshots": list(step.get("screenshots") or []),
+            }
+        )
+    return detailed_steps
+
+
+def _resolve_runtime_terminal_status(runtime_state: ExecutionRuntimeState) -> str:
+    task_statuses = {
+        _normalize_task_status(task.get("status"))
+        for task in runtime_state.planned_tasks
+    }
+    step_statuses = {
+        _normalize_step_status(step.get("status"))
+        for step in runtime_state.steps_completed
+    }
+
+    if "failed" in task_statuses or "failed" in step_statuses:
+        return "failed"
+    if "stopped" in task_statuses or "stopped" in step_statuses:
+        return "stopped"
+    if any(status in {"pending", "in_progress"} for status in task_statuses):
+        return "failed"
+    return "passed"
+
+
+def _derive_runtime_error_message(runtime_state: ExecutionRuntimeState) -> str | None:
+    for step in runtime_state.steps_completed:
+        if _normalize_step_status(step.get("status")) != "failed":
+            continue
+        message = step.get("message") or step.get("description") or step.get("title")
+        if message:
+            return str(message)
+
+    for task in runtime_state.planned_tasks:
+        if _normalize_task_status(task.get("status")) != "failed":
+            continue
+        message = (
+            task.get("error_message")
+            or task.get("result")
+            or task.get("message")
+            or task.get("description")
+            or task.get("title")
+        )
+        if message:
+            return str(message)
+
+    return None
+
+
+def _build_timeline(planned_tasks: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    timeline: list[dict[str, Any]] = []
+    for index, task in enumerate(planned_tasks, start=1):
+        status = _normalize_task_status(task.get("status"))
+        timeline.append(
+            {
+                "id": task.get("id") or index,
+                "title": task.get("title") or f"任务 {index}",
+                "description": task.get("description") or task.get("title") or "",
+                "status": status,
+                "status_display": _task_status_label(status),
+                "expected_result": task.get("expected_result") or "",
+            }
+        )
+    return timeline
+
+
+def _analyze_action_distribution(
+    planned_tasks: Sequence[dict[str, Any]],
+    detailed_steps: Sequence[dict[str, Any]],
+    logs: str,
+) -> list[dict[str, Any]]:
+    action_keywords = {
+        "导航": ("open", "navigate", "visit", "goto", "打开", "访问", "进入", "跳转"),
+        "点击": ("click", "tap", "press", "点击", "单击", "提交"),
+        "输入": ("input", "fill", "type", "enter", "输入", "填写"),
+        "断言": ("assert", "verify", "check", "expect", "校验", "断言", "检查"),
+        "等待": ("wait", "sleep", "等待"),
+        "截图": ("screenshot", "capture", "截图", "拍照"),
+    }
+    counters = {name: 0 for name in action_keywords}
+    counters["其他"] = 0
+
+    texts: list[str] = []
+    texts.extend(
+        f"{task.get('title', '')} {task.get('description', '')} {task.get('expected_result', '')}".strip()
+        for task in planned_tasks
+    )
+    texts.extend(
+        f"{step.get('title', '')} {step.get('action', '')} {step.get('description', '')} {step.get('message', '')}".strip()
+        for step in detailed_steps
+    )
+
+    if not texts and logs:
+        texts.append(logs)
+
+    for text in texts:
+        normalized = text.lower()
+        matched = False
+        for name, keywords in action_keywords.items():
+            if any(keyword in normalized for keyword in keywords):
+                counters[name] += 1
+                matched = True
+        if not matched and text:
+            counters["其他"] += 1
+
+    return [{"action": name, "count": count} for name, count in counters.items() if count > 0]
+
+
+def _build_step_performance(
+    detailed_steps: Sequence[dict[str, Any]],
+    total_duration: float | None,
+) -> list[dict[str, Any]]:
+    durations = [step["duration"] for step in detailed_steps if step.get("duration") is not None]
+    fallback_duration = None
+    if not durations and detailed_steps and total_duration:
+        fallback_duration = round(total_duration / len(detailed_steps), 2)
+
+    performance: list[dict[str, Any]] = []
+    for step in detailed_steps:
+        duration = step.get("duration")
+        if duration is None:
+            duration = fallback_duration
+        performance.append(
+            {
+                "step_number": step["step_number"],
+                "title": step.get("title") or step.get("action") or f"步骤 {step['step_number']}",
+                "action": step.get("action") or step.get("title") or "",
+                "status": step.get("status") or "pending",
+                "duration": duration,
+            }
+        )
+    return performance
+
+
+def _calculate_performance_metrics(step_performance: Sequence[dict[str, Any]], total_duration: float | None) -> dict[str, Any]:
+    durations = [step["duration"] for step in step_performance if step.get("duration") is not None]
+    measured_total = round(sum(durations), 2) if durations else round(total_duration or 0, 2)
+    avg_duration = round(sum(durations) / len(durations), 2) if durations else 0.0
 
     return {
+        "total_steps": len(step_performance),
+        "passed_steps": sum(1 for step in step_performance if step.get("status") == "passed"),
+        "failed_steps": sum(1 for step in step_performance if step.get("status") == "failed"),
+        "pass_rate": round(
+            (
+                sum(1 for step in step_performance if step.get("status") == "passed")
+                / len(step_performance)
+            ) * 100,
+            2,
+        ) if step_performance else 0.0,
+        "total_duration": measured_total,
+        "avg_step_duration": avg_duration,
+        "max_step_duration": round(max(durations), 2) if durations else 0.0,
+        "min_step_duration": round(min(durations), 2) if durations else 0.0,
+    }
+
+
+def _identify_bottlenecks(step_performance: Sequence[dict[str, Any]], metrics: dict[str, Any]) -> list[dict[str, Any]]:
+    avg_duration = metrics.get("avg_step_duration") or 0
+    if avg_duration <= 0:
+        return []
+
+    bottlenecks: list[dict[str, Any]] = []
+    for step in step_performance:
+        duration = step.get("duration")
+        if duration is None or duration <= avg_duration * 1.2:
+            continue
+        bottlenecks.append(
+            {
+                "step_number": step["step_number"],
+                "action": step.get("action") or step.get("title") or f"步骤 {step['step_number']}",
+                "duration": round(duration, 2),
+                "slower_than_avg_by": round(((duration - avg_duration) / avg_duration) * 100, 2),
+            }
+        )
+
+    return sorted(bottlenecks, key=lambda item: item["duration"], reverse=True)[:5]
+
+
+def _collect_report_errors(
+    record: UiAIExecutionRecord,
+    planned_tasks: Sequence[dict[str, Any]],
+    detailed_steps: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+
+    if record.error_message:
+        errors.append({"type": "error", "message": record.error_message})
+
+    for task in planned_tasks:
+        if _normalize_task_status(task.get("status")) != "failed":
+            continue
+        message = task.get("message") or task.get("description") or task.get("title") or "任务执行失败"
+        errors.append({"type": "error", "message": message})
+
+    for step in detailed_steps:
+        if step.get("status") != "failed":
+            continue
+        message = step.get("message") or step.get("description") or step.get("title") or "步骤执行失败"
+        errors.append(
+            {
+                "type": "error",
+                "message": message,
+                "step_number": step.get("step_number"),
+            }
+        )
+
+    deduplicated: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for item in errors:
+        key = (item.get("type"), item.get("message"), item.get("step_number"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduplicated.append(item)
+    return deduplicated
+
+
+def _build_recommendations(
+    record: UiAIExecutionRecord,
+    metrics: dict[str, Any],
+    bottlenecks: Sequence[dict[str, Any]],
+    errors: Sequence[dict[str, Any]],
+) -> list[str]:
+    recommendations: list[str] = []
+
+    if errors:
+        recommendations.append("存在失败任务或失败步骤，建议优先检查页面元素定位、断言条件以及测试数据准备。")
+    if bottlenecks:
+        recommendations.append("检测到慢步骤，建议减少不必要等待、复用登录态，并检查目标页面网络或接口响应时间。")
+    if metrics.get("avg_step_duration", 0) > 5:
+        recommendations.append("平均步骤耗时偏高，建议拆分大步骤并为关键节点补充更细粒度的步骤记录。")
+    if record.execution_mode == "vision":
+        recommendations.append("视觉模式下建议保持页面分辨率稳定，并尽量减少动画、弹层和长时间过渡效果。")
+    if record.execution_backend == "planning":
+        recommendations.append("当前记录使用规划回退模式，如需真实浏览器自动化，请补齐 browser-use、Playwright 和可用的 LLM 配置。")
+    if not recommendations:
+        recommendations.append("本次执行未发现明显异常，可继续扩大回归范围并沉淀为稳定回归场景。")
+
+    return recommendations
+
+
+def build_ai_execution_report(record: UiAIExecutionRecord, report_type: str = "summary") -> dict[str, Any]:
+    report_type = (report_type or "summary").strip().lower()
+    if report_type not in {"summary", "detailed", "performance"}:
+        report_type = "summary"
+
+    planned_tasks = record.planned_tasks or []
+    steps_completed = record.steps_completed or []
+    detailed_steps = _build_detailed_steps(steps_completed)
+    task_statistics = _calculate_task_statistics(planned_tasks)
+    action_distribution = _analyze_action_distribution(planned_tasks, detailed_steps, record.logs or "")
+    step_performance = _build_step_performance(detailed_steps, record.duration)
+    performance_metrics = _calculate_performance_metrics(step_performance, record.duration)
+    bottlenecks = _identify_bottlenecks(step_performance, performance_metrics)
+    errors = _collect_report_errors(record, planned_tasks, detailed_steps)
+
+    completed_tasks = [task for task in planned_tasks if _normalize_task_status(task.get("status")) == "completed"]
+    failed_tasks = [task for task in planned_tasks if _normalize_task_status(task.get("status")) == "failed"]
+    passed_steps = [step for step in detailed_steps if step.get("status") == "passed"]
+    failed_steps = [step for step in detailed_steps if step.get("status") == "failed"]
+
+    report = {
         "id": record.id,
+        "report_type": report_type,
         "case_name": record.case_name,
         "status": record.status,
+        "status_display": record.get_status_display(),
         "execution_mode": record.execution_mode,
+        "execution_mode_display": record.get_execution_mode_display(),
         "execution_backend": record.execution_backend,
+        "execution_backend_display": record.get_execution_backend_display(),
         "model_config_name": record.model_config_name,
         "task_description": record.task_description,
         "planned_task_count": len(planned_tasks),
         "completed_task_count": len(completed_tasks),
         "failed_task_count": len(failed_tasks),
-        "steps_completed": record.steps_completed or [],
+        "step_count": len(detailed_steps),
+        "passed_step_count": len(passed_steps),
+        "failed_step_count": len(failed_steps),
+        "steps_completed": steps_completed,
         "planned_tasks": planned_tasks,
+        "screenshots_sequence": record.screenshots_sequence or [],
+        "gif_path": record.gif_path,
         "logs": record.logs or "",
         "error_message": record.error_message,
         "start_time": record.start_time,
         "end_time": record.end_time,
         "duration": record.duration,
+        "statistics": task_statistics,
     }
+
+    if report_type == "summary":
+        report.update(
+            {
+                "overview": {
+                    "status": record.get_status_display(),
+                    "status_color": {
+                        "passed": "success",
+                        "failed": "danger",
+                        "running": "warning",
+                        "pending": "info",
+                        "stopped": "warning",
+                    }.get(record.status, "info"),
+                    "duration": record.duration or 0,
+                    "duration_formatted": _format_duration(record.duration),
+                    "avg_step_time": performance_metrics["avg_step_duration"],
+                    "total_steps": len(detailed_steps),
+                    "total_actions": sum(item["count"] for item in action_distribution),
+                    "completion_rate": task_statistics["completion_rate"],
+                },
+                "timeline": _build_timeline(planned_tasks),
+                "metrics": performance_metrics,
+                "action_distribution": action_distribution,
+            }
+        )
+    elif report_type == "detailed":
+        report.update(
+            {
+                "detailed_steps": detailed_steps,
+                "errors": errors,
+            }
+        )
+    else:
+        report.update(
+            {
+                "metrics": performance_metrics,
+                "action_distribution": action_distribution,
+                "bottlenecks": bottlenecks,
+                "recommendations": _build_recommendations(record, performance_metrics, bottlenecks, errors),
+            }
+        )
+
+    return report
 
 
 def run_ai_execution(record_id: int) -> None:
@@ -289,6 +794,8 @@ def run_ai_execution(record_id: int) -> None:
             runtime_state.append_log("当前环境缺少 browser-use 或 Playwright，已切换到规划回退模式。")
         else:
             runtime_state.append_log("已检测到 browser-use 执行环境，将使用真实浏览器智能执行。")
+        if not record.enable_gif:
+            runtime_state.append_log("当前任务已关闭 GIF 录制，将只保留必要日志和截图。")
 
         if runtime_state.execution_backend == "browser_use" and not active_config:
             raise ValueError("AI 智能模式需要先启用一个 LLM 配置。")
@@ -323,33 +830,49 @@ def run_ai_execution(record_id: int) -> None:
         else:
             _run_planning_fallback(record, runtime_state, plan_result)
 
-        record.status = "passed"
+        final_status = _resolve_runtime_terminal_status(runtime_state)
+        record.status = final_status
         record.end_time = timezone.now()
         record.duration = round(time.time() - started_at, 2)
+        if final_status == "failed":
+            record.error_message = _derive_runtime_error_message(runtime_state) or "执行完成，但检测到失败任务。"
+            _finalize_tasks_for_terminal_status(runtime_state, "failed", record.error_message)
+        elif final_status == "stopped":
+            _finalize_tasks_for_terminal_status(runtime_state, "stopped", "任务已由用户停止")
         _apply_runtime_state(record, runtime_state)
-        runtime_state.append_log("AI 智能模式执行完成。")
+        if final_status == "failed":
+            runtime_state.append_log(f"任务执行失败：{record.error_message}")
+            _append_task_summary_log(runtime_state, prefix="失败总结")
+        elif final_status == "stopped":
+            runtime_state.append_log("任务已停止。")
+            _append_task_summary_log(runtime_state, prefix="停止总结")
+        else:
+            runtime_state.append_log("AI 智能模式执行完成。")
+            _append_task_summary_log(runtime_state, prefix="执行总结")
         record.logs = runtime_state.logs
-        _save_record(
-            record,
-            [
-                "status",
-                "end_time",
-                "duration",
-                "logs",
-                "planned_tasks",
-                "steps_completed",
-                "screenshots_sequence",
-                "gif_path",
-                "model_config_name",
-                "execution_backend",
-            ],
-        )
+        update_fields = [
+            "status",
+            "end_time",
+            "duration",
+            "logs",
+            "planned_tasks",
+            "steps_completed",
+            "screenshots_sequence",
+            "gif_path",
+            "model_config_name",
+            "execution_backend",
+        ]
+        if final_status == "failed":
+            update_fields.append("error_message")
+        _save_record(record, update_fields)
     except AIExecutionStopped:
         record.status = "stopped"
         record.end_time = timezone.now()
         record.duration = round(time.time() - started_at, 2)
+        _finalize_tasks_for_terminal_status(runtime_state, "stopped", "任务已由用户停止")
         _apply_runtime_state(record, runtime_state)
         runtime_state.append_log("任务已停止。")
+        _append_task_summary_log(runtime_state, prefix="停止总结")
         record.logs = runtime_state.logs
         _save_record(
             record,
@@ -372,8 +895,10 @@ def run_ai_execution(record_id: int) -> None:
         record.error_message = str(exc)
         record.end_time = timezone.now()
         record.duration = round(time.time() - started_at, 2)
+        _finalize_tasks_for_terminal_status(runtime_state, "failed", str(exc))
         _apply_runtime_state(record, runtime_state)
         runtime_state.append_log(f"任务执行失败：{exc}")
+        _append_task_summary_log(runtime_state, prefix="失败总结")
         record.logs = runtime_state.logs
         _save_record(
             record,
@@ -437,6 +962,8 @@ async def _run_browser_use_execution(
     if active_config is None:
         raise ValueError("AI 智能模式需要先启用一个 LLM 配置。")
 
+    _apply_browser_use_runtime_patches()
+
     from browser_use import Agent
     from browser_use.browser.session import BrowserSession
 
@@ -463,6 +990,7 @@ async def _run_browser_use_execution(
             gif_target = task_artifact_dir / "agent-history.gif"
             conversation_target = task_artifact_dir / "conversation.json"
             per_task_screenshots: list[str] = []
+            auth_failure_tracker = {"count": 0, "message": None}
 
             async def register_new_step_callback(browser_state: Any, model_output: Any, step_number: int) -> None:
                 runtime_state.append_log(
@@ -473,9 +1001,24 @@ async def _run_browser_use_execution(
                         model_output=model_output,
                     )
                 )
+
+                if _is_login_related_task(task):
+                    signal_text = _collect_browser_failure_signals(browser_state, model_output)
+                    if _contains_auth_failure_signal(signal_text):
+                        auth_failure_tracker["count"] += 1
+                        if auth_failure_tracker["count"] >= 3 and auth_failure_tracker["message"] is None:
+                            auth_failure_tracker["message"] = (
+                                "检测到登录或认证连续失败 3 次，已停止当前浏览器任务，请检查账号、密码或目标环境权限配置。"
+                            )
+                            runtime_state.append_log(auth_failure_tracker["message"])
+                    elif auth_failure_tracker["count"]:
+                        auth_failure_tracker["count"] = 0
+
                 await _persist_runtime_state(runtime_state)
 
             async def should_stop_callback() -> bool:
+                if auth_failure_tracker["message"]:
+                    return True
                 return await _should_stop_async(record.id)
 
             agent = Agent(
@@ -487,16 +1030,20 @@ async def _run_browser_use_execution(
                     project_context=project_context,
                     env_config=env_config,
                     execution_mode=record.execution_mode,
+                    model_name=getattr(active_config, "name", "") if active_config else "",
                 ),
                 llm=llm,
                 browser_session=browser_session,
                 page_extraction_llm=llm,
                 use_vision=record.execution_mode == "vision",
                 use_judge=False,
-                max_actions_per_step=2,
+                max_actions_per_step=_resolve_max_actions_per_step(task, record.execution_mode),
+                max_failures=2,
+                llm_timeout=60,
                 step_timeout=_resolve_step_timeout(env_config),
-                generate_gif=str(gif_target),
+                generate_gif=str(gif_target) if record.enable_gif else False,
                 save_conversation_path=conversation_target,
+                include_recent_events=True,
                 register_new_step_callback=register_new_step_callback,
                 register_should_stop_callback=should_stop_callback,
             )
@@ -513,12 +1060,30 @@ async def _run_browser_use_execution(
                     runtime_state.screenshots_sequence.append(screenshot_path)
                     per_task_screenshots.append(screenshot_path)
 
-            if gif_target.exists():
+            if record.enable_gif and gif_target.exists():
                 runtime_state.gif_path = _to_media_relative_path(gif_target)
 
             errors = [error for error in history.errors() if error]
             success = history.is_successful()
             final_result = (history.final_result() or "").strip()
+
+            if auth_failure_tracker["message"]:
+                error_message = auth_failure_tracker["message"]
+                _mark_task_failed(runtime_state, index, error_message)
+                runtime_state.steps_completed.append(
+                    _build_browser_step_result(
+                        index=index,
+                        task=task,
+                        execution_mode=record.execution_mode,
+                        execution_backend=runtime_state.execution_backend,
+                        status="failed",
+                        message=error_message,
+                        browser_steps=history.number_of_steps(),
+                        screenshots=per_task_screenshots,
+                    )
+                )
+                await _persist_runtime_state(runtime_state, force=True)
+                raise RuntimeError(error_message)
 
             if success is False:
                 error_message = errors[-1] if errors else (final_result or "智能浏览器任务未成功完成。")
@@ -595,6 +1160,91 @@ def _detect_execution_backend() -> str:
     has_browser_use = importlib.util.find_spec("browser_use") is not None
     has_playwright = importlib.util.find_spec("playwright") is not None
     return "browser_use" if has_browser_use and has_playwright else "planning"
+
+
+def get_ai_runtime_capabilities(project_id: int | None = None) -> dict[str, Any]:
+    active_config = _get_active_llm_config()
+    env_config = _get_default_env_config(project_id) if project_id else None
+    has_browser_use = importlib.util.find_spec("browser_use") is not None
+    has_playwright = importlib.util.find_spec("playwright") is not None
+    browser_executable = _find_browser_executable()
+    execution_backend = "browser_use" if has_browser_use and has_playwright else "planning"
+    llm_configured = active_config is not None
+    supports_vision = bool(getattr(active_config, "supports_vision", False))
+    browser_mode_ready = execution_backend == "browser_use" and llm_configured
+    text_mode_ready = execution_backend == "planning" or browser_mode_ready
+    vision_mode_ready = browser_mode_ready and supports_vision
+
+    issues: list[str] = []
+    recommendations: list[str] = []
+
+    if execution_backend != "browser_use":
+        issues.append("未检测到完整的 browser-use / Playwright 环境，当前会回退到 AI 规划执行模式。")
+        recommendations.append("如需真实浏览器智能执行，请补齐 browser-use 与 Playwright 依赖。")
+    elif not browser_executable:
+        issues.append("已检测到 browser-use 与 Playwright，但未找到本机浏览器可执行文件。")
+        recommendations.append("请安装 Chrome 或 Edge，确保真实浏览器执行链路可用。")
+
+    if not llm_configured:
+        issues.append("当前没有激活的 LLM 配置。")
+        recommendations.append("请先在大模型配置中启用一个可用模型，避免真实浏览器模式直接失败。")
+    elif not supports_vision:
+        issues.append("当前激活模型不支持视觉模式。")
+        recommendations.append("如需视觉模式，请切换到支持图片输入的模型配置。")
+
+    if project_id and env_config is None:
+        issues.append("当前项目未配置默认环境。")
+        recommendations.append("建议为项目配置默认环境，补齐基础 URL、浏览器和超时设置。")
+
+    if not recommendations:
+        recommendations.append("当前 AI 智能模式核心能力已就绪，可直接发起真实浏览器任务。")
+
+    if execution_backend == "browser_use":
+        if browser_mode_ready:
+            summary = "已启用真实浏览器智能执行链路。"
+        else:
+            summary = "已检测到真实浏览器执行链路，但缺少可用模型配置。"
+    else:
+        summary = "当前将使用 AI 规划回退模式执行。"
+
+    capability_payload = {
+        "execution_backend": execution_backend,
+        "browser_use_available": has_browser_use,
+        "playwright_available": has_playwright,
+        "browser_executable_found": bool(browser_executable),
+        "llm_configured": llm_configured,
+        "text_mode_ready": text_mode_ready,
+        "vision_mode_ready": vision_mode_ready,
+        "supports_vision": supports_vision,
+        "summary": summary,
+        "issues": issues,
+        "recommendations": recommendations,
+        "default_environment": None,
+        "model_config_name": None,
+        "model_provider": None,
+        "model_name": None,
+    }
+
+    if active_config is not None:
+        capability_payload.update(
+            {
+                "model_config_name": active_config.config_name,
+                "model_provider": active_config.get_provider_display(),
+                "model_name": active_config.name,
+            }
+        )
+
+    if env_config is not None:
+        capability_payload["default_environment"] = {
+            "id": env_config.id,
+            "name": env_config.name,
+            "base_url": env_config.base_url,
+            "browser": env_config.browser,
+            "headless": env_config.headless,
+            "is_default": env_config.is_default,
+        }
+
+    return capability_payload
 
 
 def _build_task_plan(
@@ -902,6 +1552,58 @@ def _mark_task_failed(runtime_state: ExecutionRuntimeState, index: int, error_me
     task["error_message"] = error_message
 
 
+def _finalize_tasks_for_terminal_status(
+    runtime_state: ExecutionRuntimeState,
+    final_status: str,
+    message: str | None = None,
+) -> None:
+    terminal_status = str(final_status or "").strip().lower()
+    if terminal_status not in {"failed", "stopped"}:
+        return
+
+    timestamp = timezone.now().isoformat()
+    for task in runtime_state.planned_tasks:
+        normalized_status = _normalize_task_status(task.get("status"))
+
+        if terminal_status == "stopped" and normalized_status in {"pending", "in_progress"}:
+            task["status"] = "stopped"
+            task["completed_at"] = task.get("completed_at") or timestamp
+            task["result"] = task.get("result") or (message or "任务已停止")
+            if normalized_status == "in_progress":
+                task["error_message"] = task.get("error_message") or (message or "任务已停止")
+            continue
+
+        if terminal_status == "failed":
+            if normalized_status == "in_progress":
+                task["status"] = "failed"
+                task["completed_at"] = task.get("completed_at") or timestamp
+                task["result"] = task.get("result") or (message or "任务执行失败")
+                task["error_message"] = task.get("error_message") or (message or "任务执行失败")
+            elif normalized_status == "pending":
+                task["status"] = "skipped"
+                task["completed_at"] = task.get("completed_at") or timestamp
+                task["result"] = task.get("result") or "因前置任务失败，后续任务已跳过"
+
+
+def _append_task_summary_log(runtime_state: ExecutionRuntimeState, prefix: str = "任务总结") -> None:
+    statistics = _calculate_task_statistics(runtime_state.planned_tasks)
+    total = statistics.get("total", 0)
+    if not total:
+        return
+
+    summary_parts = [f"共 {total} 项", f"完成 {statistics.get('completed', 0)} 项"]
+    if statistics.get("failed"):
+        summary_parts.append(f"失败 {statistics['failed']} 项")
+    if statistics.get("skipped"):
+        summary_parts.append(f"跳过 {statistics['skipped']} 项")
+    pending_count = statistics.get("pending", 0) + statistics.get("in_progress", 0)
+    if pending_count:
+        summary_parts.append(f"未完成 {pending_count} 项")
+    if statistics.get("stopped"):
+        summary_parts.append(f"停止 {statistics['stopped']} 项")
+    runtime_state.append_log(f"{prefix}：{'，'.join(summary_parts)}。")
+
+
 def _ensure_not_stopped(record_id: int) -> None:
     if AI_STOP_SIGNALS.get(record_id):
         raise AIExecutionStopped()
@@ -1020,6 +1722,74 @@ def _resolve_max_steps(task: dict[str, Any]) -> int:
     return 20 if len(description) < 120 else 28
 
 
+def _resolve_max_actions_per_step(task: dict[str, Any], execution_mode: str) -> int:
+    description = str(task.get("description") or task.get("title") or "")
+    base_limit = 4 if execution_mode == "vision" else 5
+    if len(description) > 160:
+        return min(base_limit + 1, 6)
+    return base_limit
+
+
+def _sanitize_browser_prompt_text(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"(https?://[^\s\u4e00-\u9fa5]+?)(?=[，。；：！？、])", r"\1 ", text)
+
+
+def _contains_auth_failure_signal(text: str) -> bool:
+    if not text:
+        return False
+
+    normalized = str(text).lower()
+    keywords = [
+        "登录失败",
+        "login failed",
+        "invalid credentials",
+        "incorrect password",
+        "用户名或密码",
+        "账号或密码",
+        "authentication failed",
+        "auth failed",
+        "bad credentials",
+        "unauthorized",
+        "401",
+        "403",
+        "access denied",
+    ]
+    return any(keyword in normalized for keyword in keywords)
+
+
+def _is_login_related_task(task: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(task.get(key) or "")
+        for key in ("title", "description", "expected_result")
+    ).lower()
+    return any(keyword in haystack for keyword in ("登录", "login", "sign in", "signin", "authenticate", "认证"))
+
+
+def _collect_browser_failure_signals(browser_state: Any, model_output: Any) -> str:
+    parts: list[str] = []
+
+    for field_name in ("thinking", "evaluation_previous_goal", "memory", "next_goal"):
+        value = getattr(model_output, field_name, None)
+        if value:
+            parts.append(str(value))
+
+    recent_events = getattr(browser_state, "recent_events", None)
+    if recent_events:
+        parts.append(str(recent_events))
+
+    for item in getattr(browser_state, "browser_errors", []) or []:
+        if item:
+            parts.append(str(item))
+
+    for item in getattr(browser_state, "closed_popup_messages", []) or []:
+        if item:
+            parts.append(str(item))
+
+    return " ".join(parts)
+
+
 def _build_browser_task_prompt(
     full_task: str,
     current_task: dict[str, Any],
@@ -1028,6 +1798,7 @@ def _build_browser_task_prompt(
     project_context: dict[str, Any],
     env_config: UiEnvironmentConfig | None,
     execution_mode: str,
+    model_name: str = "",
 ) -> str:
     completed_tasks = [
         task.get("title") or task.get("description")
@@ -1048,9 +1819,19 @@ def _build_browser_task_prompt(
         f"Sub-task detail: {current_task.get('description') or ''}",
         f"Expected result: {current_task.get('expected_result') or 'Complete the current sub-task successfully.'}",
         f"Execution mode: {execution_mode}.",
+        f"Current time: {timezone.localtime().strftime('%Y-%m-%d %H:%M:%S')}.",
         "Reuse the existing browser/session state whenever possible.",
         "Focus only on the current sub-task. Do not proactively execute later sub-tasks.",
+        "If the current sub-task is already satisfied by the current page state, finish it immediately without redundant actions.",
         "If the current sub-task is finished, end the agent run clearly.",
+        "When a click opens a dropdown, popup, tab, or modal, stop after the opening action and use the next step to interact with newly visible elements.",
+        "If a link opens a new tab, switch to the newest tab and continue there. Do not click the same link again unless you verified the first click failed.",
+        "Before save or submit, inspect the page for validation errors or missing required fields.",
+        "If save or submit fails, stay on the current page, inspect the error, complete missing fields, and retry instead of closing the dialog.",
+        "Avoid repeated clicks or repeated searches when the page state has already changed.",
+        "Use browser-use native action parameters: use 'index' for click/input/select actions and 'text' for typed content.",
+        "Never invent, replace, or guess credentials. Only use credentials explicitly provided in the task.",
+        "Keep thinking concise and action-oriented.",
     ]
 
     if base_url:
@@ -1062,8 +1843,11 @@ def _build_browser_task_prompt(
     if future_tasks:
         instructions.append(f"Future sub-tasks (do not execute yet): {json.dumps(future_tasks, ensure_ascii=False)}")
 
+    if model_name and any(keyword in model_name.lower() for keyword in ("qwen", "deepseek")):
+        instructions.append("Minimize output tokens. Keep reasoning extremely short while preserving accuracy.")
+
     instructions.append(f"Project context: {json.dumps(project_context, ensure_ascii=False)}")
-    return "\n".join(instructions)
+    return _sanitize_browser_prompt_text("\n".join(instructions))
 
 
 def _format_browser_step_log(task_title: str, step_number: int, browser_state: Any, model_output: Any) -> str:
@@ -1072,11 +1856,21 @@ def _format_browser_step_log(task_title: str, step_number: int, browser_state: A
     current_url = getattr(browser_state, "url", "") or "-"
     next_goal = getattr(model_output, "next_goal", "") or "-"
     evaluation = getattr(model_output, "evaluation_previous_goal", "") or "-"
+    recent_events = getattr(browser_state, "recent_events", "") or ""
+    browser_errors = " | ".join(str(item) for item in (getattr(browser_state, "browser_errors", []) or []) if item)
+    popup_messages = " | ".join(str(item) for item in (getattr(browser_state, "closed_popup_messages", []) or []) if item)
     action_text = ", ".join(actions) if actions else "无动作"
-    return (
+    log_message = (
         f"[{task_title}] 浏览器步骤 {step_number}: {action_text} | "
         f"下一目标：{next_goal} | 评估：{evaluation} | 页面：{page_title} | URL：{current_url}"
     )
+    if recent_events:
+        log_message += f" | 最近事件：{recent_events}"
+    if browser_errors:
+        log_message += f" | 浏览器错误：{browser_errors}"
+    if popup_messages:
+        log_message += f" | 弹窗信息：{popup_messages}"
+    return log_message
 
 
 def _extract_action_descriptions(actions: Sequence[Any]) -> list[str]:

@@ -413,6 +413,7 @@ class UiAICase(models.Model):
         choices=EXECUTION_MODE_CHOICES,
         default='text'
     )
+    enable_gif = models.BooleanField(_('启用 GIF 录制'), default=True)
     creator = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True,
         related_name='created_ui_ai_cases', verbose_name=_('创建人')
@@ -476,6 +477,7 @@ class UiAIExecutionRecord(models.Model):
     steps_completed = models.JSONField(_('已完成步骤'), default=list, blank=True)
     planned_tasks = models.JSONField(_('规划任务'), default=list, blank=True)
     screenshots_sequence = models.JSONField(_('截图序列'), default=list, blank=True)
+    enable_gif = models.BooleanField(_('启用 GIF 录制'), default=True)
     gif_path = models.CharField(_('GIF 路径'), max_length=500, null=True, blank=True)
     error_message = models.TextField(_('错误信息'), null=True, blank=True)
     model_config_name = models.CharField(_('模型配置名称'), max_length=255, null=True, blank=True)

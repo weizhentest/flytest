@@ -317,6 +317,8 @@ const fetchTestCases = async () => {
       module: filters.module,
       level: filters.level,
       search: filters.search || undefined,
+      page_number: pagination.current,
+      page_size: pagination.pageSize,
     })
     const { items, count } = extractPaginationData(res)
     testcaseData.value = items

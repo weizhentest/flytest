@@ -213,6 +213,9 @@ export type UiAIExecutionStatus = 'pending' | 'running' | 'passed' | 'failed' | 
 /** AI 执行后端 */
 export type UiAIExecutionBackend = 'planning' | 'browser_use'
 
+/** AI 报告类型 */
+export type UiAIReportType = 'summary' | 'detailed' | 'performance'
+
 export const AI_MODE_LABELS: Record<UiAIExecutionMode, string> = {
   text: '文本模式',
   vision: '视觉模式',
@@ -239,6 +242,7 @@ export interface UiAICase extends TimeStampFields {
   description?: string
   task_description: string
   default_execution_mode: UiAIExecutionMode
+  enable_gif: boolean
   creator: number | null
   creator_name?: string
 }
@@ -249,10 +253,11 @@ export interface UiAITaskPlan {
   title: string
   description: string
   expected_result?: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'in_progress' | 'skipped' | 'stopped'
   started_at?: string
   completed_at?: string
   result?: string
+  error_message?: string
 }
 
 /** AI 已完成步骤 */
@@ -267,6 +272,8 @@ export interface UiAIExecutionStep {
   execution_backend: UiAIExecutionBackend
   completed_at: string
   duration?: number
+  browser_step_count?: number
+  screenshots?: string[]
 }
 
 /** AI 执行记录 */
@@ -280,6 +287,7 @@ export interface UiAIExecutionRecord {
   execution_mode: UiAIExecutionMode
   execution_backend: UiAIExecutionBackend
   status: UiAIExecutionStatus
+  enable_gif: boolean
   start_time: string
   end_time?: string
   duration?: number
@@ -294,6 +302,148 @@ export interface UiAIExecutionRecord {
   executed_by_name?: string
   planned_task_count?: number
   completed_task_count?: number
+}
+
+export interface UiAIReportOverview {
+  status: string
+  status_color: string
+  duration: number
+  duration_formatted: string
+  avg_step_time: number
+  total_steps: number
+  total_actions: number
+  completion_rate: number
+}
+
+export interface UiAIReportStatistics {
+  total: number
+  completed: number
+  pending: number
+  failed: number
+  skipped: number
+  in_progress: number
+  stopped: number
+  completion_rate: number
+  success_rate: number
+}
+
+export interface UiAIReportTimelineItem {
+  id: number
+  title: string
+  description: string
+  status: string
+  status_display: string
+  expected_result?: string
+}
+
+export interface UiAIReportDetailedStep {
+  step_number: number
+  title: string
+  status: string
+  action: string
+  description: string
+  expected_result?: string
+  thinking?: string
+  element?: string
+  message?: string
+  completed_at?: string
+  duration?: number
+  browser_step_count?: number
+  screenshots?: string[]
+}
+
+export interface UiAIReportError {
+  type: 'error' | 'warning'
+  message: string
+  step_number?: number
+}
+
+export interface UiAIReportMetrics {
+  total_steps: number
+  passed_steps: number
+  failed_steps: number
+  pass_rate: number
+  total_duration: number
+  avg_step_duration: number
+  max_step_duration: number
+  min_step_duration: number
+}
+
+export interface UiAIReportActionDistributionItem {
+  action: string
+  count: number
+}
+
+export interface UiAIReportBottleneck {
+  step_number: number
+  action: string
+  duration: number
+  slower_than_avg_by: number
+}
+
+export interface UiAIExecutionReport {
+  id: number
+  report_type: UiAIReportType
+  case_name: string
+  status: UiAIExecutionStatus
+  status_display?: string
+  execution_mode: UiAIExecutionMode
+  execution_mode_display?: string
+  execution_backend: UiAIExecutionBackend
+  execution_backend_display?: string
+  model_config_name?: string
+  task_description: string
+  planned_task_count: number
+  completed_task_count: number
+  failed_task_count: number
+  step_count: number
+  passed_step_count: number
+  failed_step_count: number
+  steps_completed: UiAIExecutionStep[]
+  planned_tasks: UiAITaskPlan[]
+  screenshots_sequence: string[]
+  gif_path?: string
+  logs: string
+  error_message?: string
+  start_time: string
+  end_time?: string
+  duration?: number
+  overview?: UiAIReportOverview
+  statistics?: UiAIReportStatistics
+  timeline?: UiAIReportTimelineItem[]
+  detailed_steps?: UiAIReportDetailedStep[]
+  errors?: UiAIReportError[]
+  metrics?: UiAIReportMetrics
+  action_distribution?: UiAIReportActionDistributionItem[]
+  bottlenecks?: UiAIReportBottleneck[]
+  recommendations?: string[]
+}
+
+export interface UiAIRuntimeEnvironment {
+  id: number
+  name: string
+  base_url?: string
+  browser: BrowserType
+  headless: boolean
+  is_default: boolean
+}
+
+export interface UiAIRuntimeCapabilities {
+  execution_backend: UiAIExecutionBackend
+  browser_use_available: boolean
+  playwright_available: boolean
+  browser_executable_found: boolean
+  llm_configured: boolean
+  text_mode_ready: boolean
+  vision_mode_ready: boolean
+  supports_vision: boolean
+  summary: string
+  issues: string[]
+  recommendations: string[]
+  default_environment?: UiAIRuntimeEnvironment | null
+  model_config_name?: string | null
+  model_provider?: string | null
+  model_name?: string | null
 }
 
 /** 批量执行记录状态 */
@@ -521,4 +671,5 @@ export interface UiAIAdhocRunForm {
   case_name?: string
   task_description: string
   execution_mode: UiAIExecutionMode
+  enable_gif: boolean
 }

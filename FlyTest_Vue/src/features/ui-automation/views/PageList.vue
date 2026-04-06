@@ -209,6 +209,8 @@ const fetchPages = async () => {
       project: projectId.value,
       module: filters.module,
       search: filters.search || undefined,
+      page_number: pagination.current,
+      page_size: pagination.pageSize,
     })
     const { items, count } = extractPaginationData(res)
     pageData.value = items
