@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
+from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -355,7 +356,16 @@ def _attach_runtime_meta(result: AIEnhancementResult, *, cache_hit: bool, cache_
     )
 
 
-def _build_ai_failure_note(exc: Exception) -> str:
+def _build_ai_failure_note(exc: Exception, active_config: LLMConfig | None = None) -> str:
+    exc_text = _exception_text(exc)
+    config_label = ""
+    if active_config:
+        endpoint = (getattr(active_config, "api_url", "") or "").strip()
+        if endpoint:
+            config_label = f"当前激活模型 {active_config.name}（{endpoint}）"
+        else:
+            config_label = f"当前激活模型 {active_config.name}"
+
     if _is_concurrent_request_limit_error(exc):
         return (
             f"{DEFAULT_AI_NOTE} 失败原因: AI 网关触发并发限流"
@@ -376,7 +386,111 @@ def _build_ai_failure_note(exc: Exception) -> str:
             f"{DEFAULT_AI_NOTE} 失败原因: AI 网关连接异常（{exc}）。"
             "系统已自动重试并尝试缩小文档分片，但仍未成功，已回退到规则解析。"
         )
+    if "LLM returned empty content" in exc_text:
+        if config_label:
+            return (
+                f"{DEFAULT_AI_NOTE} 失败原因: {config_label} 调用成功但未返回可解析正文。"
+                f" 原始信息: {exc_text}。这通常说明当前网关的 OpenAI 兼容性不足，"
+                "请切换到能正常返回 message.content 的模型或网关后重试。"
+            )
+        return (
+            f"{DEFAULT_AI_NOTE} 失败原因: AI 模型调用成功但未返回可解析正文。"
+            f" 原始信息: {exc_text}。这通常说明当前网关的 OpenAI 兼容性不足，"
+            "请切换到能正常返回 message.content 的模型或网关后重试。"
+        )
     return f"{DEFAULT_AI_NOTE} 失败原因: {exc}"
+
+
+def _extract_text_from_content(content: Any) -> str:
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                text = item.strip()
+            elif isinstance(item, dict):
+                text = str(item.get("text") or item.get("content") or "").strip()
+            else:
+                text = str(
+                    getattr(item, "text", "") or getattr(item, "content", "")
+                ).strip()
+            if text:
+                chunks.append(text)
+        return "\n".join(chunks).strip()
+
+    if isinstance(content, dict):
+        direct_text = str(content.get("text") or content.get("content") or "").strip()
+        if direct_text:
+            return direct_text
+        nested_parts = content.get("parts") or content.get("items")
+        if isinstance(nested_parts, list):
+            return _extract_text_from_content(nested_parts)
+        return ""
+
+    return str(
+        getattr(content, "text", "") or getattr(content, "content", "") or ""
+    ).strip()
+
+
+def _extract_llm_response_text(response) -> str:
+    if response is None:
+        return ""
+
+    response_text = _extract_text_from_content(getattr(response, "content", None))
+    if response_text:
+        return response_text
+
+    additional_kwargs = getattr(response, "additional_kwargs", {}) or {}
+    for key in ("content", "text", "output_text", "reasoning_content"):
+        response_text = _extract_text_from_content(additional_kwargs.get(key))
+        if response_text:
+            return response_text
+
+    return _extract_text_from_content(getattr(response, "text", None))
+
+
+def _extract_llm_token_usage(response) -> dict[str, Any]:
+    response_metadata = getattr(response, "response_metadata", {}) or {}
+    token_usage = response_metadata.get("token_usage", {}) or {}
+    usage_metadata = getattr(response, "usage_metadata", {}) or {}
+    return {
+        "prompt_tokens": (
+            token_usage.get("prompt_tokens")
+            or usage_metadata.get("input_tokens")
+            or 0
+        ),
+        "completion_tokens": (
+            token_usage.get("completion_tokens")
+            or usage_metadata.get("output_tokens")
+            or 0
+        ),
+        "total_tokens": (
+            token_usage.get("total_tokens")
+            or usage_metadata.get("total_tokens")
+            or 0
+        ),
+        "finish_reason": response_metadata.get("finish_reason") or "",
+    }
+
+
+def _build_empty_llm_response_error(response) -> RuntimeError:
+    usage = _extract_llm_token_usage(response)
+    detail_parts = []
+    if usage.get("finish_reason"):
+        detail_parts.append(f"finish_reason={usage['finish_reason']}")
+    if usage.get("completion_tokens"):
+        detail_parts.append(f"completion_tokens={usage['completion_tokens']}")
+    if usage.get("total_tokens"):
+        detail_parts.append(f"total_tokens={usage['total_tokens']}")
+
+    if detail_parts:
+        return RuntimeError(f"LLM returned empty content ({', '.join(detail_parts)})")
+    return RuntimeError("LLM returned empty content")
 
 
 def safe_llm_invoke(llm, messages, max_retries: int = 4):
@@ -384,9 +498,16 @@ def safe_llm_invoke(llm, messages, max_retries: int = 4):
     for attempt in range(max_retries):
         try:
             response = llm.invoke(messages)
-            if response and getattr(response, "content", None):
-                return response
-            last_error = RuntimeError("LLM returned empty content")
+            response_text = _extract_llm_response_text(response)
+            if response_text:
+                return SimpleNamespace(
+                    content=response_text,
+                    response_metadata=getattr(response, "response_metadata", {}) or {},
+                    usage_metadata=getattr(response, "usage_metadata", {}) or {},
+                    additional_kwargs=getattr(response, "additional_kwargs", {}) or {},
+                    raw_response=response,
+                )
+            last_error = _build_empty_llm_response_error(response)
             logger.warning("API automation AI invoke returned empty content (%s/%s)", attempt + 1, max_retries)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -986,7 +1107,7 @@ def enhance_import_result_with_ai(
         return AIEnhancementResult(
             requested=True,
             used=False,
-            note=_build_ai_failure_note(exc),
+            note=_build_ai_failure_note(exc, active_config=active_config),
             prompt_source=prompt_source,
             prompt_name=prompt_name,
             model_name=active_config.name,

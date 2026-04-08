@@ -80,6 +80,35 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertEqual(llm.invoke.call_count, 2)
         mock_sleep.assert_called_once()
 
+    def test_safe_llm_invoke_accepts_structured_content_list(self):
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content=[{"text": '{"requests": []}'}],
+            response_metadata={"finish_reason": "stop", "token_usage": {"completion_tokens": 12}},
+            usage_metadata={"input_tokens": 8, "output_tokens": 12, "total_tokens": 20},
+            additional_kwargs={},
+        )
+
+        response = safe_llm_invoke(llm, [])
+
+        self.assertEqual(response.content, '{"requests": []}')
+        self.assertEqual(response.response_metadata["finish_reason"], "stop")
+
+    def test_safe_llm_invoke_includes_usage_details_for_empty_response(self):
+        llm = Mock()
+        llm.invoke.return_value = SimpleNamespace(
+            content="",
+            response_metadata={"finish_reason": "stop", "token_usage": {"completion_tokens": 5}},
+            usage_metadata={"total_tokens": 19},
+            additional_kwargs={},
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            safe_llm_invoke(llm, [], max_retries=1)
+
+        self.assertIn("finish_reason=stop", str(ctx.exception))
+        self.assertIn("completion_tokens=5", str(ctx.exception))
+
     def test_chunk_worker_limit_defaults_to_single_worker(self):
         with patch.dict(os.environ, {}, clear=False):
             self.assertEqual(_get_chunk_max_workers(5), 1)
