@@ -12,6 +12,7 @@ from string import Template
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -401,6 +402,21 @@ def _build_ai_failure_note(exc: Exception, active_config: LLMConfig | None = Non
     return f"{DEFAULT_AI_NOTE} 失败原因: {exc}"
 
 
+def _build_openai_compatible_headers(api_key: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _extract_chat_completion_text(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices") or []
+    if not choices:
+        return ""
+    message = choices[0].get("message") or {}
+    return _extract_text_from_content(message.get("content"))
+
+
 def _extract_text_from_content(content: Any) -> str:
     if content is None:
         return ""
@@ -488,6 +504,58 @@ def _build_empty_llm_response_error(response) -> RuntimeError:
     if usage.get("total_tokens"):
         detail_parts.append(f"total_tokens={usage['total_tokens']}")
 
+    if detail_parts:
+        return RuntimeError(f"LLM returned empty content ({', '.join(detail_parts)})")
+    return RuntimeError("LLM returned empty content")
+
+
+def _probe_openai_compatible_text_response(active_config: LLMConfig) -> RuntimeError | None:
+    provider = (getattr(active_config, "provider", None) or "openai_compatible").strip()
+    if provider != "openai_compatible":
+        return None
+
+    api_url = (getattr(active_config, "api_url", "") or "").rstrip("/")
+    api_key = (getattr(active_config, "api_key", "") or "").strip()
+    model_name = getattr(active_config, "name", "") or "gpt-3.5-turbo"
+    if not api_url:
+        return None
+
+    headers = _build_openai_compatible_headers(api_key)
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "你是一个有帮助的助手。"},
+            {"role": "user", "content": "请只回答：你好"},
+        ],
+        "temperature": 0.1,
+    }
+
+    try:
+        response = httpx.post(
+            f"{api_url}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("API automation AI compatibility probe failed: %s", exc)
+        return None
+
+    response_text = _extract_chat_completion_text(data)
+    if response_text:
+        return None
+
+    usage = data.get("usage", {}) or {}
+    finish_reason = ((data.get("choices") or [{}])[0].get("finish_reason") or "")
+    detail_parts = []
+    if finish_reason:
+        detail_parts.append(f"finish_reason={finish_reason}")
+    if usage.get("completion_tokens"):
+        detail_parts.append(f"completion_tokens={usage.get('completion_tokens')}")
+    if usage.get("total_tokens"):
+        detail_parts.append(f"total_tokens={usage.get('total_tokens')}")
     if detail_parts:
         return RuntimeError(f"LLM returned empty content ({', '.join(detail_parts)})")
     return RuntimeError("LLM returned empty content")
@@ -883,6 +951,18 @@ def enhance_import_result_with_ai(
             requested=True,
             used=False,
             note="未找到 API 自动化解析提示词，已回退到规则解析结果。",
+            prompt_source=prompt_source,
+            prompt_name=prompt_name,
+            model_name=active_config.name,
+            requests=base_requests,
+        )
+
+    compatibility_error = _probe_openai_compatible_text_response(active_config)
+    if compatibility_error is not None:
+        return AIEnhancementResult(
+            requested=True,
+            used=False,
+            note=_build_ai_failure_note(compatibility_error, active_config=active_config),
             prompt_source=prompt_source,
             prompt_name=prompt_name,
             model_name=active_config.name,

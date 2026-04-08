@@ -98,6 +98,53 @@ ENVIRONMENT_PRIORITY = {
 }
 
 
+def _build_ai_feedback(*, enable_ai_parse: bool, ai_result) -> dict[str, str | None]:
+    if not enable_ai_parse:
+        return {
+            "issue_code": "disabled",
+            "user_message": "本次未启用 AI 增强解析。",
+            "action_hint": None,
+        }
+
+    if ai_result and ai_result.used:
+        return {
+            "issue_code": "applied",
+            "user_message": "AI 增强解析已生效，并用于补全接口定义。",
+            "action_hint": None,
+        }
+
+    ai_note = str(getattr(ai_result, "note", "") or "").strip()
+    ai_model_name = str(getattr(ai_result, "model_name", "") or "").strip()
+    model_prefix = f"当前激活模型 {ai_model_name}" if ai_model_name else "当前激活模型"
+
+    if "未返回可解析正文" in ai_note or "LLM returned empty content" in ai_note:
+        return {
+            "issue_code": "gateway_incompatible_empty_content",
+            "user_message": f"{model_prefix} 调用成功但未返回可解析正文，已自动回退到规则解析。",
+            "action_hint": "请在“系统设置 > AI大模型配置”中切换到能正常返回正文的模型或网关后再试。",
+        }
+
+    if "未检测到系统设置中的激活 LLM 配置" in ai_note:
+        return {
+            "issue_code": "llm_not_configured",
+            "user_message": "系统未检测到激活的大模型配置，已自动回退到规则解析。",
+            "action_hint": "请先到“系统设置 > AI大模型配置”中激活一套可用模型。",
+        }
+
+    if "未找到 API 自动化解析提示词" in ai_note:
+        return {
+            "issue_code": "prompt_missing",
+            "user_message": "未找到 API 自动化解析提示词，已自动回退到规则解析。",
+            "action_hint": "请到“提示词管理”中检查 API 自动化解析提示词是否存在。",
+        }
+
+    return {
+        "issue_code": "fallback_rule_parse",
+        "user_message": "AI 增强解析未生效，已自动回退到规则解析。",
+        "action_hint": None,
+    }
+
+
 def _report(progress_callback: ProgressCallback, percent: int, stage: str, message: str):
     if progress_callback:
         progress_callback(percent, stage, message)
@@ -993,6 +1040,7 @@ def process_document_import(
         for item in serialized_requests
     ]
     testcase_serializer = ApiTestCaseSerializer(created_test_cases, many=True)
+    ai_feedback = _build_ai_feedback(enable_ai_parse=enable_ai_parse, ai_result=ai_result)
 
     payload = {
         "created_count": len({request.id for request in created_requests}),
@@ -1011,6 +1059,9 @@ def process_document_import(
         "ai_cache_key": ai_result.cache_key if ai_result else None,
         "ai_duration_ms": ai_result.duration_ms if ai_result else None,
         "ai_lock_wait_ms": ai_result.lock_wait_ms if ai_result else None,
+        "ai_issue_code": ai_feedback["issue_code"],
+        "ai_user_message": ai_feedback["user_message"],
+        "ai_action_hint": ai_feedback["action_hint"],
         "environment_draft": primary_environment_draft,
         "environment_items": [
             {

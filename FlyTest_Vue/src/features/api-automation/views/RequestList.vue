@@ -419,15 +419,10 @@
           class="import-result-alert"
         >
           <template #title>
-            {{
-              importResult.ai_requested
-                ? importResult.ai_used
-                  ? 'AI增强解析已生效'
-                  : 'AI增强解析未生效，已回退到规则解析'
-                : '本次未启用 AI 增强解析'
-            }}
+            {{ importResultAlertTitle }}
           </template>
-          {{ importResult.ai_note || '本次导入未返回额外的 AI 解析说明。' }}
+          <div>{{ importResultAlertMessage }}</div>
+          <div v-if="importResultAlertActionHint" class="import-result-alert__hint">{{ importResultAlertActionHint }}</div>
         </a-alert>
 
         <a-descriptions :column="2" bordered size="small">
@@ -684,6 +679,28 @@ const documentFileSummary = computed(() => {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(2)} MB`
+})
+
+const importResultAlertTitle = computed(() => {
+  if (!importResult.value) return ''
+  if (importResult.value.ai_requested) {
+    if (importResult.value.ai_used) return 'AI增强解析已生效'
+    if (importResult.value.ai_issue_code === 'gateway_incompatible_empty_content') {
+      return '当前 AI 网关未返回正文，已回退到规则解析'
+    }
+    return 'AI增强解析未生效，已回退到规则解析'
+  }
+  return '本次未启用 AI 增强解析'
+})
+
+const importResultAlertMessage = computed(() => {
+  if (!importResult.value) return ''
+  return importResult.value.ai_user_message || importResult.value.ai_note || '本次导入未返回额外的 AI 解析说明。'
+})
+
+const importResultAlertActionHint = computed(() => {
+  if (!importResult.value) return ''
+  return importResult.value.ai_action_hint || ''
 })
 
 const importProgressRatio = computed(() => {
@@ -1103,10 +1120,14 @@ const submitManualRequest = async () => {
 
 const getErrorMessage = (error: any) => {
   const rawMessage = error?.error || error?.data?.error || error?.message || '处理接口失败'
+  const rawText = String(rawMessage)
+  if (rawText.includes('未返回可解析正文') || rawText.includes('LLM returned empty content')) {
+    return '当前激活的 AI 网关调用成功但未返回正文，请切换到能正常返回正文的模型或网关后再试。'
+  }
   if (error?.status === 408 || /timeout/i.test(String(rawMessage))) {
     return '接口文档解析超时，请稍后重试；如果文档较大，建议先关闭 AI 增强解析后再导入。'
   }
-  if (String(rawMessage).includes('服务器无响应')) {
+  if (rawText.includes('服务器无响应')) {
     return '接口文档解析等待时间过长，请稍后重试；如果文档较大，建议先关闭 AI 增强解析后再导入。'
   }
   return rawMessage
@@ -2188,6 +2209,13 @@ defineExpose({
 
 .import-result-alert {
   margin-bottom: 4px;
+}
+
+.import-result-alert__hint {
+  margin-top: 8px;
+  color: #7c2d12;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .import-task-drawer {

@@ -703,6 +703,9 @@ export interface ApiImportResult {
   ai_cache_key?: string | null
   ai_duration_ms?: number | null
   ai_lock_wait_ms?: number | null
+  ai_issue_code?: string | null
+  ai_user_message?: string | null
+  ai_action_hint?: string | null
   environment_draft?: Partial<ApiEnvironmentForm> | null
   environment_items?: Partial<ApiEnvironmentForm>[]
   environment_auto_saved?: boolean

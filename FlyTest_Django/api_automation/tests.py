@@ -273,6 +273,54 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertEqual(result_second.requests[0].name, "List users")
         cache.clear()
 
+    @patch("api_automation.ai_parser.httpx.post")
+    @patch("api_automation.ai_parser.load_document_content_for_ai")
+    @patch("api_automation.ai_parser.get_api_automation_prompt")
+    @patch("api_automation.ai_parser.LLMConfig.objects.filter")
+    def test_enhance_import_result_short_circuits_when_gateway_returns_empty_content(
+        self,
+        mock_filter,
+        mock_get_prompt,
+        mock_load_document,
+        mock_httpx_post,
+    ):
+        cache.clear()
+        mock_filter.return_value.first.return_value = SimpleNamespace(
+            name="gpt-5.4",
+            provider="openai_compatible",
+            api_url="https://example.com/v1",
+            api_key="test-key",
+        )
+        mock_get_prompt.return_value = ("prompt-template", "builtin_default", "API自动化解析")
+
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {"role": "assistant"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "completion_tokens": 7,
+                "total_tokens": 19,
+            },
+        }
+        mock_httpx_post.return_value = response
+
+        result = enhance_import_result_with_ai(
+            file_path="demo.md",
+            user=SimpleNamespace(pk=1001),
+            source_type="text_document",
+            base_requests=[],
+        )
+
+        self.assertFalse(result.used)
+        self.assertIn("未返回可解析正文", result.note)
+        mock_load_document.assert_not_called()
+        cache.clear()
+
 
 class ApiAutomationAICaseGeneratorTests(TestCase):
     def setUp(self):
@@ -2048,6 +2096,8 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertTrue(payload["ai_requested"])
         self.assertFalse(payload["ai_used"])
         self.assertIn("回退", payload["ai_note"])
+        self.assertEqual(payload["ai_issue_code"], "llm_not_configured")
+        self.assertIn("未检测到激活的大模型配置", payload["ai_user_message"])
         self.assertIn("generated_script", payload["items"][0])
         self.assertEqual(ApiRequest.objects.count(), 2)
         self.assertEqual(ApiTestCase.objects.count(), 2)
@@ -2079,6 +2129,7 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["created_testcase_count"], 0)
         self.assertTrue(payload["ai_requested"])
         self.assertFalse(payload["ai_used"])
+        self.assertEqual(payload["ai_issue_code"], "llm_not_configured")
         self.assertEqual(ApiRequest.objects.count(), 1)
         self.assertEqual(ApiTestCase.objects.count(), 0)
 
