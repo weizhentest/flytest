@@ -33,6 +33,7 @@ from .ai_case_generator import (
     generate_test_case_drafts_with_ai,
     summarize_persisted_test_cases,
 )
+from .ai_parser import get_import_ai_compatibility_status
 from .ai_report_summarizer import summarize_execution_report
 from .execution import ExecutionRunContext, execute_api_request
 from .import_service import process_document_import
@@ -2322,6 +2323,18 @@ class ApiRequestViewSet(BaseModelViewSet):
                     serializer = self.get_serializer(existing)
                     return Response(serializer.data, status=status.HTTP_200_OK)
         return super().create(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get"], url_path="ai-import-compatibility")
+    def ai_import_compatibility(self, request):
+        result = get_import_ai_compatibility_status(user=request.user)
+        return Response(
+            {
+                "status": "success",
+                "code": status.HTTP_200_OK,
+                "message": "API 导入 AI 兼容性检测完成。",
+                "data": result,
+            }
+        )
 
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser], url_path="import-document")
     def import_document(self, request):

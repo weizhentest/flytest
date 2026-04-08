@@ -58,6 +58,89 @@ class AIEnhancementResult:
     lock_wait_ms: float | None = None
 
 
+def get_import_ai_compatibility_status(*, user) -> dict[str, Any]:
+    active_config = LLMConfig.objects.filter(is_active=True).first()
+    if not active_config:
+        return {
+            "compatible": False,
+            "issue_code": "llm_not_configured",
+            "level": "warning",
+            "title": "未检测到激活模型配置",
+            "message": "当前未检测到激活的大模型配置，API 文档导入将回退到规则解析。",
+            "action_hint": "请先到“系统设置 > AI大模型配置”中激活一套可用模型。",
+            "model_name": None,
+            "prompt_source": None,
+            "prompt_name": None,
+        }
+
+    prompt_template, prompt_source, prompt_name = get_api_automation_prompt(user)
+    if not prompt_template:
+        return {
+            "compatible": False,
+            "issue_code": "prompt_missing",
+            "level": "warning",
+            "title": "未找到解析提示词",
+            "message": "当前未找到 API 自动化解析提示词，文档导入将回退到规则解析。",
+            "action_hint": "请到“提示词管理”中检查 API 自动化解析提示词是否存在。",
+            "model_name": active_config.name,
+            "prompt_source": prompt_source,
+            "prompt_name": prompt_name,
+        }
+
+    cache_key = build_ai_cache_key(
+        "document_import_compatibility",
+        {
+            "config_id": active_config.id,
+            "config_updated_at": getattr(active_config, "updated_at", None).isoformat()
+            if getattr(active_config, "updated_at", None)
+            else None,
+            "model_name": active_config.name,
+            "api_url": active_config.api_url,
+            "prompt_digest": stable_digest(prompt_template),
+        },
+    )
+
+    def _compute_status() -> dict[str, Any]:
+        compatibility_error = _probe_openai_compatible_text_response(active_config)
+        if compatibility_error is not None:
+            return {
+                "compatible": False,
+                "issue_code": "gateway_incompatible_empty_content",
+                "level": "warning",
+                "title": "当前 AI 网关未返回正文",
+                "message": f"当前激活模型 {active_config.name} 调用成功但未返回可解析正文，API 文档导入会回退到规则解析。",
+                "action_hint": "请在“系统设置 > AI大模型配置”中切换到能正常返回正文的模型或网关。",
+                "model_name": active_config.name,
+                "prompt_source": prompt_source,
+                "prompt_name": prompt_name,
+            }
+
+        return {
+            "compatible": True,
+            "issue_code": "compatible",
+            "level": "success",
+            "title": "当前 AI 增强解析可用",
+            "message": f"当前激活模型 {active_config.name} 可用于 API 文档导入的 AI 增强解析。",
+            "action_hint": None,
+            "model_name": active_config.name,
+            "prompt_source": prompt_source,
+            "prompt_name": prompt_name,
+        }
+
+    status_payload, runtime_meta = run_ai_operation(
+        user=user,
+        feature="document_import_compatibility",
+        cache_key=cache_key,
+        cache_ttl_seconds=300,
+        lock_timeout_seconds=15,
+        lock_error_message="当前账号已有 API 导入兼容性检测任务正在进行，请稍后重试。",
+        compute=_compute_status,
+    )
+    status_payload["cache_hit"] = runtime_meta.cache_hit
+    status_payload["duration_ms"] = runtime_meta.duration_ms
+    return status_payload
+
+
 def create_llm_instance(active_config: LLMConfig, temperature: float = 0.1):
     provider = (getattr(active_config, "provider", None) or "openai_compatible").strip()
     model_identifier = active_config.name or "gpt-3.5-turbo"

@@ -718,6 +718,20 @@ export interface ApiImportResult {
   test_cases: ApiTestCase[]
 }
 
+export interface ApiImportAiCompatibility {
+  compatible: boolean
+  issue_code: string
+  level: 'success' | 'warning' | 'info'
+  title: string
+  message: string
+  action_hint?: string | null
+  model_name?: string | null
+  prompt_source?: string | null
+  prompt_name?: string | null
+  cache_hit?: boolean
+  duration_ms?: number
+}
+
 export interface ApiEnvironmentSuggestionBaseUrl {
   name: string
   base_url: string

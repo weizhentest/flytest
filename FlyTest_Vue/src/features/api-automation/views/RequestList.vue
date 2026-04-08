@@ -338,8 +338,22 @@
               <div class="option-description">
                 使用系统设置中当前激活的 AI 接口，并读取“提示词管理”中的 API 自动化解析提示词；若 AI 不可用，会自动回退到规则解析。
               </div>
+              <a-alert
+                v-if="importAiCompatibility"
+                :type="importAiCompatibilityAlertType"
+                class="import-option-status"
+              >
+                <template #title>{{ importAiCompatibility.title }}</template>
+                <div>{{ importAiCompatibility.message }}</div>
+                <div v-if="importAiCompatibility.action_hint" class="import-option-status__hint">
+                  {{ importAiCompatibility.action_hint }}
+                </div>
+              </a-alert>
+              <div v-else-if="importAiCompatibilityLoading" class="import-option-status__loading">
+                正在检测当前 AI 配置与文档导入的兼容性...
+              </div>
             </div>
-            <a-switch v-model="enableAiParse" />
+            <a-switch v-model="enableAiParse" :disabled="importAiParseBlocked" />
           </div>
           <div class="import-option-card">
             <div class="option-copy">
@@ -524,6 +538,7 @@ import type {
   ApiExecutionBatchResult,
   ApiHttpEditorModel,
   ApiExecutionRecord,
+  ApiImportAiCompatibility,
   ApiImportJob,
   ApiImportResult,
   ApiRequest,
@@ -592,6 +607,8 @@ const importResultVisible = ref(false)
 const editingRequest = ref<ApiRequest | null>(null)
 const currentResult = ref<ApiExecutionRecord | null>(null)
 const importResult = ref<ApiImportResult | null>(null)
+const importAiCompatibility = ref<ApiImportAiCompatibility | null>(null)
+const importAiCompatibilityLoading = ref(false)
 const documentFile = ref<File | null>(null)
 const documentInputRef = ref<HTMLInputElement | null>(null)
 const documentDragging = ref(false)
@@ -680,6 +697,37 @@ const documentFileSummary = computed(() => {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(2)} MB`
 })
+
+const importAiCompatibilityAlertType = computed(() => {
+  if (!importAiCompatibility.value) return 'info'
+  return importAiCompatibility.value.compatible ? 'success' : 'warning'
+})
+
+const importAiParseBlocked = computed(() => {
+  if (!importAiCompatibility.value) return false
+  return !importAiCompatibility.value.compatible
+})
+
+const loadImportAiCompatibility = async () => {
+  if (importAiCompatibilityLoading.value) return
+  importAiCompatibilityLoading.value = true
+  try {
+    const res = await apiRequestApi.getImportAiCompatibility()
+    importAiCompatibility.value = res.data?.data || null
+  } catch (error: any) {
+    console.error('[RequestList] 获取导入 AI 兼容性失败:', error)
+    importAiCompatibility.value = {
+      compatible: false,
+      issue_code: 'probe_failed',
+      level: 'warning',
+      title: '兼容性检测失败',
+      message: error?.error || '暂时无法确认当前 AI 配置是否兼容文档导入。',
+      action_hint: '可先关闭 AI 增强解析继续导入，或稍后重试检测。',
+    }
+  } finally {
+    importAiCompatibilityLoading.value = false
+  }
+}
 
 const importResultAlertTitle = computed(() => {
   if (!importResult.value) return ''
@@ -1511,6 +1559,24 @@ const executeProjectRequests = async () => {
 }
 
 watch(
+  [editorVisible, createMode],
+  ([visible, mode]) => {
+    if (visible && mode === 'document') {
+      void loadImportAiCompatibility()
+    }
+  }
+)
+
+watch(
+  importAiCompatibility,
+  value => {
+    if (value && !value.compatible) {
+      enableAiParse.value = false
+    }
+  }
+)
+
+watch(
   () => projectId.value,
   value => {
     syncImportProject(value)
@@ -2191,6 +2257,18 @@ defineExpose({
   font-size: 12px;
   line-height: 1.7;
   color: #64748b;
+}
+
+.import-option-status {
+  margin-top: 12px;
+}
+
+.import-option-status__hint,
+.import-option-status__loading {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #7c2d12;
 }
 
 .empty-tip-card {

@@ -2037,6 +2037,28 @@ class ApiAutomationImportDocumentTests(TestCase):
             return response.data["data"]
         return response.data
 
+    @patch("api_automation.views.get_import_ai_compatibility_status")
+    def test_ai_import_compatibility_endpoint_returns_structured_status(self, mock_status):
+        mock_status.return_value = {
+            "compatible": False,
+            "issue_code": "gateway_incompatible_empty_content",
+            "level": "warning",
+            "title": "当前 AI 网关未返回正文",
+            "message": "当前激活模型 gpt-5.4 调用成功但未返回可解析正文，API 文档导入会回退到规则解析。",
+            "action_hint": "请在“系统设置 > AI大模型配置”中切换到能正常返回正文的模型或网关。",
+            "model_name": "gpt-5.4",
+            "prompt_source": "user_prompt",
+            "prompt_name": "API自动化解析",
+        }
+
+        response = self.client.get("/api/api-automation/requests/ai-import-compatibility/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertFalse(payload["compatible"])
+        self.assertEqual(payload["issue_code"], "gateway_incompatible_empty_content")
+        self.assertIn("未返回正文", payload["title"])
+
     def test_import_document_creates_requests_scripts_and_test_cases(self):
         openapi_document = {
             "openapi": "3.0.1",

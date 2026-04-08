@@ -11,6 +11,7 @@ import type {
   ApiExecutionRecord,
   ApiExecutionReport,
   ApiExecutionReportAISummary,
+  ApiImportAiCompatibility,
   ApiImportResult,
   ApiImportJob,
   ApiRequest,
@@ -71,6 +72,9 @@ export const apiRequestApi = {
       timeout: 10 * 60 * 1000,
     })
   },
+
+  getImportAiCompatibility: () =>
+    request.get<ApiResponse<ApiImportAiCompatibility>>(`${BASE_URL}/requests/ai-import-compatibility/`),
 
   update: (id: number, data: Partial<ApiRequestForm>) =>
     request.patch<ApiResponse<ApiRequest>>(`${BASE_URL}/requests/${id}/`, data),
