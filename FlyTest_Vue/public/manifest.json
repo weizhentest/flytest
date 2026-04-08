@@ -2,7 +2,7 @@
   "name": "FlyTest 智能测试平台",
   "short_name": "FlyTest",
   "description": "FlyTest 智能测试平台，提供 AI 生成用例、知识检索、自动化执行与智能编排能力。",
-  "theme_color": "#235CFF",
+  "theme_color": "#0089FF",
   "background_color": "#09111F",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -10,7 +10,7 @@
   "start_url": "/",
   "icons": [
     {
-      "src": "/app-icon.svg",
+      "src": "/app-icon.svg?v=20260408-2",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

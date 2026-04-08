@@ -1,31 +1,102 @@
 from unittest.mock import patch
 
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.db.utils import OperationalError
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIRequestFactory
 
-from accounts.views import MyTokenObtainPairView
+from accounts.serializers import ContentTypeSerializer
+from accounts.views import MyTokenObtainPairView, PermissionViewSet
 
 
 class MyTokenObtainPairViewTests(SimpleTestCase):
     def setUp(self):
-        # 构造 DRF 请求工厂，模拟 token 登录请求。
         self.factory = APIRequestFactory()
 
     def test_returns_503_when_database_not_ready(self):
-        # 模拟数据库尚未就绪时的登录请求，验证接口返回 503 而不是 500 traceback。
         request = self.factory.post(
-            '/api/token/',
-            {'username': 'tester', 'password': 'secret'},
-            format='json'
+            "/api/token/",
+            {"username": "tester", "password": "secret"},
+            format="json",
         )
 
-        # 条件：认证流程抛出 OperationalError；动作：调用视图；结果：返回友好错误提示。
         with patch(
-            'accounts.views.BaseTokenObtainPairView.post',
-            side_effect=OperationalError('database is not ready')
+            "accounts.views.BaseTokenObtainPairView.post",
+            side_effect=OperationalError("database is not ready"),
         ):
             response = MyTokenObtainPairView.as_view()(request)
 
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.data['detail'], '认证服务正在启动，请稍后重试。')
+        self.assertEqual(response.data["detail"], "认证服务正在启动，请稍后重试。")
+
+
+class PermissionMenuMappingTests(TestCase):
+    def test_app_automation_permissions_are_created(self):
+        self.assertTrue(
+            Permission.objects.filter(content_type__app_label="app_automation").exists()
+        )
+
+    def test_api_automation_permissions_map_to_api_menu(self):
+        content_type = ContentType.objects.get(
+            app_label="api_automation", model="apirequest"
+        )
+        serializer = ContentTypeSerializer()
+
+        self.assertEqual(serializer.get_app_label_cn(content_type), "API自动化")
+        self.assertEqual(serializer.get_app_label_subcategory(content_type), "请求管理")
+
+    def test_ui_automation_permissions_map_to_ui_submenus(self):
+        content_type = ContentType.objects.get(
+            app_label="ui_automation", model="uiactuator"
+        )
+        serializer = ContentTypeSerializer()
+
+        self.assertEqual(serializer.get_app_label_cn(content_type), "UI自动化")
+        self.assertEqual(serializer.get_app_label_subcategory(content_type), "执行器")
+
+    def test_ui_elements_are_grouped_under_page_management(self):
+        content_type = ContentType.objects.get(
+            app_label="ui_automation", model="uielement"
+        )
+        serializer = ContentTypeSerializer()
+
+        self.assertEqual(serializer.get_app_label_cn(content_type), "UI自动化")
+        self.assertEqual(serializer.get_app_label_subcategory(content_type), "页面管理")
+
+    def test_data_factory_permissions_map_to_visible_sections(self):
+        tag_content_type = ContentType.objects.get(
+            app_label="data_factory", model="datafactorytag"
+        )
+        record_content_type = ContentType.objects.get(
+            app_label="data_factory", model="datafactoryrecord"
+        )
+        serializer = ContentTypeSerializer()
+
+        self.assertEqual(serializer.get_app_label_cn(tag_content_type), "数据工厂")
+        self.assertEqual(serializer.get_app_label_subcategory(tag_content_type), "标签管理")
+        self.assertEqual(serializer.get_app_label_cn(record_content_type), "数据工厂")
+        self.assertEqual(serializer.get_app_label_subcategory(record_content_type), "使用记录")
+
+    def test_app_automation_model_sort_matches_menu_order(self):
+        overview_content_type = ContentType.objects.get(
+            app_label="app_automation", model="appautomationoverview"
+        )
+        report_content_type = ContentType.objects.get(
+            app_label="app_automation", model="appautomationreport"
+        )
+        serializer = ContentTypeSerializer()
+
+        self.assertLess(
+            serializer.get_model_sort(overview_content_type),
+            serializer.get_model_sort(report_content_type),
+        )
+
+    def test_permission_viewset_excludes_removed_smart_diagram_permissions(self):
+        queryset = PermissionViewSet.queryset
+        self.assertFalse(
+            queryset.filter(content_type__app_label="orchestrator_integration").exists()
+        )
+        self.assertFalse(
+            queryset.filter(content_type__app_label="testcase_templates").exists()
+        )

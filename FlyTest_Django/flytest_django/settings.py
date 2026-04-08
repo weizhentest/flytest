@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     "ui_automation",
     "api_automation",
     "data_factory",
+    "app_automation_permissions.apps.AppAutomationPermissionsConfig",
 ]
 
 # ASGI / Channels
@@ -567,6 +568,5 @@ CELERY_WORKER_TASK_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s][%(
 # 内部服务调用基准地址
 # Docker 环境下可设置为 http://backend:8000
 BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
-
 
 

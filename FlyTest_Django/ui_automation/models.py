@@ -568,3 +568,11 @@ class UiEnvironmentConfig(models.Model):
         if self.is_default:
             UiEnvironmentConfig.objects.filter(project=self.project, is_default=True).exclude(pk=self.pk).update(is_default=False)
         super().save(*args, **kwargs)
+
+
+class UiActuator(models.Model):
+    class Meta:
+        managed = False
+        default_permissions = ("view",)
+        verbose_name = _("UI 执行器")
+        verbose_name_plural = _("UI 执行器")

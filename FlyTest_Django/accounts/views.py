@@ -333,7 +333,13 @@ class PermissionViewSet(
     """
 
     queryset = Permission.objects.exclude(
-        content_type__app_label__in=["admin", "contenttypes", "sessions"]
+        content_type__app_label__in=[
+            "admin",
+            "contenttypes",
+            "sessions",
+            "orchestrator_integration",
+            "testcase_templates",
+        ]
     ).order_by("content_type__app_label", "codename")
     serializer_class = PermissionSerializer
     permission_classes = [IsAuthenticated, HasModelPermission]

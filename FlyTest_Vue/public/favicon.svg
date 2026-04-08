@@ -1,55 +1,69 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="icon-bg" x1="16" y1="12" x2="114" y2="118" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#F8FBFF" />
-      <stop offset="0.52" stop-color="#E7F0FF" />
-      <stop offset="1" stop-color="#D8E6FF" />
+    <linearGradient id="plane-favicon-bg" x1="18" y1="14" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4BC2FF" />
+      <stop offset="0.5" stop-color="#1FA3FF" />
+      <stop offset="1" stop-color="#0089FF" />
     </linearGradient>
-    <linearGradient id="icon-main" x1="26" y1="36" x2="100" y2="94" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1A7CFF" />
-      <stop offset="0.48" stop-color="#0E67F2" />
-      <stop offset="1" stop-color="#0047C8" />
-    </linearGradient>
-    <linearGradient id="icon-accent" x1="56" y1="44" x2="92" y2="76" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#73B7FF" />
-      <stop offset="1" stop-color="#1D7BFF" />
-    </linearGradient>
-    <radialGradient
-      id="icon-glow"
-      cx="0"
-      cy="0"
-      r="1"
-      gradientUnits="userSpaceOnUse"
-      gradientTransform="translate(92 28) rotate(132) scale(36)"
-    >
-      <stop stop-color="#6AAEFF" stop-opacity="0.34" />
-      <stop offset="1" stop-color="#6AAEFF" stop-opacity="0" />
+    <radialGradient id="plane-favicon-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(92 30) rotate(140) scale(36)">
+      <stop stop-color="#9BDDFF" stop-opacity="0.52" />
+      <stop offset="1" stop-color="#9BDDFF" stop-opacity="0" />
     </radialGradient>
-    <filter
-      id="icon-shadow"
-      x="8"
-      y="18"
-      width="112"
-      height="92"
-      filterUnits="userSpaceOnUse"
-      color-interpolation-filters="sRGB"
-    >
-      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#0047C8" flood-opacity="0.2" />
+    <filter id="plane-favicon-shadow" x="6" y="6" width="116" height="116" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0064C8" flood-opacity="0.24" />
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#FFFFFF" flood-opacity="0.14" />
     </filter>
+    <linearGradient id="plane-favicon-route" x1="30" y1="84" x2="62" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B8F4FF" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#F4FDFF" stop-opacity="0.48" />
+    </linearGradient>
   </defs>
 
-  <rect x="8" y="8" width="112" height="112" rx="30" fill="url(#icon-bg)" />
-  <rect x="8.75" y="8.75" width="110.5" height="110.5" rx="29.25" stroke="#BFD5FF" stroke-opacity="0.68" stroke-width="1.5" />
-  <circle cx="92" cy="28" r="30" fill="url(#icon-glow)" />
+  <g filter="url(#plane-favicon-shadow)">
+    <circle cx="64" cy="64" r="56" fill="url(#plane-favicon-bg)" />
+    <circle cx="64" cy="64" r="55" stroke="#C9EAFF" stroke-opacity="0.28" stroke-width="2" />
+    <circle cx="92" cy="30" r="30" fill="url(#plane-favicon-glow)" />
 
-  <g filter="url(#icon-shadow)">
     <path
-      d="M16 78C28 50 56 28 98 30C85 37 73 48 64 60C78 59 92 65 108 78C92 75 79 77 69 83C58 91 43 98 24 100C33 92 40 85 44 76C34 78 25 79 16 78Z"
-      fill="url(#icon-main)"
+      d="M28 84C36 82 43 79.5 49 76C53 73.7 56.8 71.3 61 69.8"
+      stroke="url(#plane-favicon-route)"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-dasharray="1 12"
+    />
+    <rect x="24.5" y="79.6" width="8.5" height="6.2" rx="2.1" fill="#F4FDFF" fill-opacity="0.62" />
+    <rect x="24.5" y="79.6" width="8.5" height="6.2" rx="2.1" stroke="#B9E9FF" stroke-opacity="0.22" stroke-width="0.9" />
+
+    <rect x="37.8" y="74.8" width="7.6" height="5.7" rx="1.9" fill="#E8FAFF" fill-opacity="0.5" />
+    <rect x="37.8" y="74.8" width="7.6" height="5.7" rx="1.9" stroke="#A9DFFF" stroke-opacity="0.18" stroke-width="0.8" />
+
+    <rect x="49.6" y="70.2" width="6.8" height="5.1" rx="1.7" fill="#DDF5FF" fill-opacity="0.38" />
+    <rect x="49.6" y="70.2" width="6.8" height="5.1" rx="1.7" stroke="#9FD5FF" stroke-opacity="0.14" stroke-width="0.75" />
+
+    <path
+      d="M33 63.5L91.5 40.5C95.5 39 99.2 42.8 97.6 46.7L74.6 101.3C73 105.1 67.7 105.2 65.9 101.5L55.4 79.7L33 63.5Z"
+      fill="#F9FDFF"
     />
     <path
-      d="M52 63C61 49 76 40 92 40C82 46 73 54 67 63C76 63 84 66 92 72C82 71 73 73 65 76C60 73 56 68 52 63Z"
-      fill="url(#icon-accent)"
+      d="M55.2 79.4L91.7 40.9"
+      stroke="#BEDFFF"
+      stroke-width="5.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M33 63.5L58.8 67.2C61.6 67.6 64.4 66.7 66.4 64.8L91.5 40.5"
+      stroke="#FFFFFF"
+      stroke-width="6.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M55.6 79.6L63.6 93.7"
+      stroke="#BEDFFF"
+      stroke-width="5.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
     />
   </g>
 </svg>

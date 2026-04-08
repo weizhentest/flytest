@@ -5,7 +5,10 @@
       <div class="left-section">
         <div class="logo" unselectable="on">
           <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
-          <span class="logo-text">FlyTest</span>
+          <div class="logo-copy">
+            <span class="logo-text">FlyTest</span>
+            <span class="logo-subtitle">智能测试平台</span>
+          </div>
         </div>
         <div class="project-selector" v-if="showProjectSelector">
           <a-select
@@ -155,117 +158,117 @@
           <a-sub-menu key="api-automation" v-if="hasApiAutomationMenuItems">
             <template #icon><icon-code-block /></template>
             <template #title>API自动化</template>
-            <a-menu-item key="api-automation-requests" v-if="hasApiAutomationPermission">
+            <a-menu-item key="api-automation-requests" v-if="hasApiAutomationRequestsPermission">
               <template #icon><icon-code-block /></template>
               <span class="menu-link">请求管理</span>
             </a-menu-item>
-            <a-menu-item key="api-automation-test-cases" v-if="hasApiAutomationPermission">
+            <a-menu-item key="api-automation-test-cases" v-if="hasApiAutomationTestCasesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link">测试用例</span>
             </a-menu-item>
-            <a-menu-item key="api-automation-environments" v-if="hasApiAutomationPermission">
+            <a-menu-item key="api-automation-environments" v-if="hasApiAutomationEnvironmentsPermission">
               <template #icon><icon-tool /></template>
               <span class="menu-link">环境配置</span>
             </a-menu-item>
-            <a-menu-item key="api-automation-execution-records" v-if="hasApiAutomationPermission">
+            <a-menu-item key="api-automation-execution-records" v-if="hasApiAutomationExecutionRecordsPermission">
               <template #icon><icon-history /></template>
               <span class="menu-link">执行记录</span>
             </a-menu-item>
-            <a-menu-item key="api-automation-execution-report" v-if="hasApiAutomationPermission">
+            <a-menu-item key="api-automation-execution-report" v-if="hasApiAutomationExecutionReportPermission">
               <template #icon><icon-bar-chart /></template>
               <span class="menu-link">测试报告</span>
             </a-menu-item>
           </a-sub-menu>
 
-          <a-sub-menu key="app-automation" v-if="hasAppAutomationPermission">
+          <a-sub-menu key="app-automation" v-if="hasAppAutomationMenuItems">
             <template #icon><icon-apps /></template>
             <template #title>APP自动化</template>
-            <a-menu-item key="app-automation-overview">
+            <a-menu-item key="app-automation-overview" v-if="hasAppAutomationOverviewPermission">
               <template #icon><icon-home /></template>
               <span class="menu-link">概览</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-devices">
+            <a-menu-item key="app-automation-devices" v-if="hasAppAutomationDevicesPermission">
               <template #icon><icon-storage /></template>
               <span class="menu-link">设备管理</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-packages">
+            <a-menu-item key="app-automation-packages" v-if="hasAppAutomationPackagesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link">应用包</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-elements">
+            <a-menu-item key="app-automation-elements" v-if="hasAppAutomationElementsPermission">
               <template #icon><icon-code-block /></template>
               <span class="menu-link">元素管理</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-scene-builder">
+            <a-menu-item key="app-automation-scene-builder" v-if="hasAppAutomationSceneBuilderPermission">
               <template #icon><icon-code-block /></template>
               <span class="menu-link">场景编排</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-test-cases">
+            <a-menu-item key="app-automation-test-cases" v-if="hasAppAutomationTestCasesPermission">
               <template #icon><icon-experiment /></template>
               <span class="menu-link">测试用例</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-suites">
+            <a-menu-item key="app-automation-suites" v-if="hasAppAutomationSuitesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link">测试套件</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-executions">
+            <a-menu-item key="app-automation-executions" v-if="hasAppAutomationExecutionsPermission">
               <template #icon><icon-history /></template>
               <span class="menu-link">执行记录</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-scheduled-tasks">
+            <a-menu-item key="app-automation-scheduled-tasks" v-if="hasAppAutomationScheduledTasksPermission">
               <template #icon><icon-tool /></template>
               <span class="menu-link">定时任务</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-notifications">
+            <a-menu-item key="app-automation-notifications" v-if="hasAppAutomationNotificationsPermission">
               <template #icon><icon-message /></template>
               <span class="menu-link">通知日志</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-reports">
+            <a-menu-item key="app-automation-reports" v-if="hasAppAutomationReportsPermission">
               <template #icon><icon-bar-chart /></template>
               <span class="menu-link">执行报告</span>
             </a-menu-item>
-            <a-menu-item key="app-automation-settings">
+            <a-menu-item key="app-automation-settings" v-if="hasAppAutomationSettingsPermission">
               <template #icon><icon-tool /></template>
               <span class="menu-link">环境设置</span>
             </a-menu-item>
           </a-sub-menu>
 
-          <a-sub-menu key="ui-automation" v-if="hasUiAutomationPermission">
+          <a-sub-menu key="ui-automation" v-if="hasUiAutomationMenuItems">
             <template #icon><icon-computer /></template>
             <template #title>UI自动化</template>
-            <a-menu-item key="ui-automation-pages">
+            <a-menu-item key="ui-automation-pages" v-if="hasUiAutomationPagesPermission">
               <template #icon><icon-computer /></template>
               <span class="menu-link">页面管理</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-page-steps">
+            <a-menu-item key="ui-automation-page-steps" v-if="hasUiAutomationPageStepsPermission">
               <template #icon><icon-code-block /></template>
               <span class="menu-link">页面步骤</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-testcases">
+            <a-menu-item key="ui-automation-testcases" v-if="hasUiAutomationTestCasesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link">测试用例</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-ai-intelligent">
+            <a-menu-item key="ui-automation-ai-intelligent" v-if="hasUiAutomationAiIntelligentPermission">
               <template #icon><icon-message /></template>
               <span class="menu-link">AI智能模式</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-execution-records">
+            <a-menu-item key="ui-automation-execution-records" v-if="hasUiAutomationExecutionRecordsPermission">
               <template #icon><icon-history /></template>
               <span class="menu-link">执行记录</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-batch-records">
+            <a-menu-item key="ui-automation-batch-records" v-if="hasUiAutomationBatchRecordsPermission">
               <template #icon><icon-bar-chart /></template>
               <span class="menu-link">批量执行</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-public-data">
+            <a-menu-item key="ui-automation-public-data" v-if="hasUiAutomationPublicDataPermission">
               <template #icon><icon-book /></template>
               <span class="menu-link">公共数据</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-env-config">
+            <a-menu-item key="ui-automation-env-config" v-if="hasUiAutomationEnvConfigPermission">
               <template #icon><icon-tool /></template>
               <span class="menu-link">环境配置</span>
             </a-menu-item>
-            <a-menu-item key="ui-automation-actuators">
+            <a-menu-item key="ui-automation-actuators" v-if="hasUiAutomationActuatorsPermission">
               <template #icon><icon-apps /></template>
               <span class="menu-link">执行器</span>
             </a-menu-item>
@@ -280,10 +283,42 @@
             <template #icon><icon-book /></template>
             <span class="menu-link">知识库管理</span>
           </a-menu-item>
-          <a-menu-item key="data-factory" v-if="hasDataFactoryPermission">
+          <a-sub-menu key="data-factory" v-if="hasDataFactoryMenuItems">
             <template #icon><icon-tool /></template>
-            <span class="menu-link">数据工厂</span>
-          </a-menu-item>
+            <template #title>数据工厂</template>
+            <a-menu-item key="data-factory-all" v-if="hasDataFactoryPermission">
+              <template #icon><icon-apps /></template>
+              <span class="menu-link">工具面板</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-string" v-if="hasDataFactoryPermission">
+              <template #icon><icon-font-colors /></template>
+              <span class="menu-link">字符工具</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-encoding" v-if="hasDataFactoryPermission">
+              <template #icon><icon-code-block /></template>
+              <span class="menu-link">编码工具</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-random" v-if="hasDataFactoryPermission">
+              <template #icon><icon-fire /></template>
+              <span class="menu-link">随机工具</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-encryption" v-if="hasDataFactoryPermission">
+              <template #icon><icon-lock /></template>
+              <span class="menu-link">加密工具</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-test-data" v-if="hasDataFactoryPermission">
+              <template #icon><icon-user-group /></template>
+              <span class="menu-link">测试数据</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-json" v-if="hasDataFactoryPermission">
+              <template #icon><icon-file /></template>
+              <span class="menu-link">JSON工具</span>
+            </a-menu-item>
+            <a-menu-item key="data-factory-crontab" v-if="hasDataFactoryPermission">
+              <template #icon><icon-clock-circle /></template>
+              <span class="menu-link">Crontab工具</span>
+            </a-menu-item>
+          </a-sub-menu>
 
 
           <a-sub-menu key="settings" v-if="hasSystemMenuItems">
@@ -397,8 +432,13 @@ import {
   IconHome,
   IconComputer,
   IconBarChart,
+  IconClockCircle,
+  IconFire,
+  IconFontColors,
+  IconLock,
   IconSunFill,
   IconMoonFill,
+  IconUserGroup,
 } from '@arco-design/web-vue/es/icon';
 import '@arco-design/web-vue/dist/arco.css'; // 引入 Arco Design 样式
 
@@ -631,7 +671,14 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   'test-executions': { route: '/test-executions', requiresProject: true },
   'langgraph-chat': { route: '/langgraph-chat', requiresProject: true },
   'knowledge-management': { route: '/knowledge-management', requiresProject: true },
-  'data-factory': { route: '/data-factory' },
+  'data-factory-all': { route: '/data-factory' },
+  'data-factory-string': { route: { path: '/data-factory', query: { category: 'string' } } },
+  'data-factory-encoding': { route: { path: '/data-factory', query: { category: 'encoding' } } },
+  'data-factory-random': { route: { path: '/data-factory', query: { category: 'random' } } },
+  'data-factory-encryption': { route: { path: '/data-factory', query: { category: 'encryption' } } },
+  'data-factory-test-data': { route: { path: '/data-factory', query: { category: 'test_data' } } },
+  'data-factory-json': { route: { path: '/data-factory', query: { category: 'json' } } },
+  'data-factory-crontab': { route: { path: '/data-factory', query: { category: 'crontab' } } },
   users: { route: '/users' },
   organizations: { route: '/organizations' },
   permissions: { route: '/permissions' },
@@ -656,7 +703,17 @@ const activeMenu = computed(() => {
   if (path.startsWith('/llm-configs')) return 'llm-configs';
   if (path.startsWith('/langgraph-chat')) return 'langgraph-chat';
   if (path.startsWith('/knowledge-management')) return 'knowledge-management';
-  if (path.startsWith('/data-factory')) return 'data-factory';
+  if (path.startsWith('/data-factory')) {
+    const category = String(route.query.category || 'all');
+    if (category === 'string') return 'data-factory-string';
+    if (category === 'encoding') return 'data-factory-encoding';
+    if (category === 'random') return 'data-factory-random';
+    if (category === 'encryption') return 'data-factory-encryption';
+    if (category === 'test_data') return 'data-factory-test-data';
+    if (category === 'json') return 'data-factory-json';
+    if (category === 'crontab') return 'data-factory-crontab';
+    return 'data-factory-all';
+  }
   if (path.startsWith('/api-keys')) return 'api-keys';
   if (path.startsWith('/remote-mcp-configs')) return 'remote-mcp-configs';
   if (path.startsWith('/skills')) return 'skills';
@@ -704,6 +761,7 @@ const activeGroupKey = computed(() => {
   if (activeMenu.value.startsWith('api-automation-')) return 'api-automation';
   if (activeMenu.value.startsWith('app-automation-')) return 'app-automation';
   if (activeMenu.value.startsWith('ui-automation-')) return 'ui-automation';
+  if (activeMenu.value.startsWith('data-factory-')) return 'data-factory';
   if (['testcases', 'testsuites', 'test-executions'].includes(activeMenu.value)) return 'test-management';
   if (['users', 'organizations', 'permissions', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
     return 'settings';
@@ -741,25 +799,121 @@ const hasLangGraphChatPermission = computed(() => {
          authStore.hasPermission('langgraph_integration.view_chatmessage');
 });
 
-const hasApiAutomationPermission = computed(() => {
+const hasApiAutomationRequestsPermission = computed(() => {
   return authStore.hasPermission('api_automation.view_apicollection') ||
          authStore.hasPermission('api_automation.view_apirequest') ||
-         authStore.hasPermission('api_automation.view_apienvironment');
+         authStore.hasPermission('api_automation.view_apiimportjob');
 });
 
-const hasApiAutomationMenuItems = computed(() => {
-  return hasApiAutomationPermission.value;
+const hasApiAutomationTestCasesPermission = computed(() => {
+  return authStore.hasPermission('api_automation.view_apitestcase') ||
+         authStore.hasPermission('api_automation.view_apicasegenerationjob');
 });
 
-const hasAppAutomationPermission = computed(() => {
-  return authStore.isAuthenticated;
+const hasApiAutomationEnvironmentsPermission = computed(() => {
+  return authStore.hasPermission('api_automation.view_apienvironment');
+});
+
+const hasApiAutomationExecutionRecordsPermission = computed(() => {
+  return authStore.hasPermission('api_automation.view_apiexecutionrecord');
+});
+
+const hasApiAutomationExecutionReportPermission = computed(() => {
+  return authStore.hasPermission('api_automation.view_apiexecutionreport') ||
+         authStore.hasPermission('api_automation.view_apiexecutionrecord');
+});
+
+const hasApiAutomationPermission = computed(() => {
+  return hasApiAutomationRequestsPermission.value ||
+         hasApiAutomationTestCasesPermission.value ||
+         hasApiAutomationEnvironmentsPermission.value ||
+         hasApiAutomationExecutionRecordsPermission.value ||
+         hasApiAutomationExecutionReportPermission.value;
+});
+
+const hasApiAutomationMenuItems = computed(() => hasApiAutomationPermission.value);
+
+const hasAppAutomationOverviewPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationoverview'));
+const hasAppAutomationDevicesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationdevice'));
+const hasAppAutomationPackagesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationpackage'));
+const hasAppAutomationElementsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationelement'));
+const hasAppAutomationSceneBuilderPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscenebuilder'));
+const hasAppAutomationTestCasesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationtestcase'));
+const hasAppAutomationSuitesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsuite'));
+const hasAppAutomationExecutionsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationexecution'));
+const hasAppAutomationScheduledTasksPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscheduledtask'));
+const hasAppAutomationNotificationsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationnotification'));
+const hasAppAutomationReportsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationreport'));
+const hasAppAutomationSettingsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsettings'));
+
+const hasAppAutomationMenuItems = computed(() => {
+  return hasAppAutomationOverviewPermission.value ||
+         hasAppAutomationDevicesPermission.value ||
+         hasAppAutomationPackagesPermission.value ||
+         hasAppAutomationElementsPermission.value ||
+         hasAppAutomationSceneBuilderPermission.value ||
+         hasAppAutomationTestCasesPermission.value ||
+         hasAppAutomationSuitesPermission.value ||
+         hasAppAutomationExecutionsPermission.value ||
+         hasAppAutomationScheduledTasksPermission.value ||
+         hasAppAutomationNotificationsPermission.value ||
+         hasAppAutomationReportsPermission.value ||
+         hasAppAutomationSettingsPermission.value;
+});
+
+const hasUiAutomationPagesPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uimodule') ||
+         authStore.hasPermission('ui_automation.view_uipage');
+});
+
+const hasUiAutomationPageStepsPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uipagesteps') ||
+         authStore.hasPermission('ui_automation.view_uipagestepsdetailed');
+});
+
+const hasUiAutomationTestCasesPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uitestcase') ||
+         authStore.hasPermission('ui_automation.view_uicasestepsdetailed');
+});
+
+const hasUiAutomationAiIntelligentPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uiaicase') ||
+         authStore.hasPermission('ui_automation.view_uiaiexecutionrecord');
+});
+
+const hasUiAutomationExecutionRecordsPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uiexecutionrecord');
+});
+
+const hasUiAutomationBatchRecordsPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uibatchexecutionrecord');
+});
+
+const hasUiAutomationPublicDataPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uipublicdata');
+});
+
+const hasUiAutomationEnvConfigPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uienvironmentconfig');
+});
+
+const hasUiAutomationActuatorsPermission = computed(() => {
+  return authStore.hasPermission('ui_automation.view_uiactuator');
 });
 
 const hasUiAutomationPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uimodule') ||
-         authStore.hasPermission('ui_automation.view_uipage') ||
-         authStore.hasPermission('ui_automation.view_uitestcase');
+  return hasUiAutomationPagesPermission.value ||
+         hasUiAutomationPageStepsPermission.value ||
+         hasUiAutomationTestCasesPermission.value ||
+         hasUiAutomationAiIntelligentPermission.value ||
+         hasUiAutomationExecutionRecordsPermission.value ||
+         hasUiAutomationBatchRecordsPermission.value ||
+         hasUiAutomationPublicDataPermission.value ||
+         hasUiAutomationEnvConfigPermission.value ||
+         hasUiAutomationActuatorsPermission.value;
 });
+
+const hasUiAutomationMenuItems = computed(() => hasUiAutomationPermission.value);
 
 const hasKnowledgePermission = computed(() => {
   return authStore.hasPermission('knowledge.view_knowledgebase');
@@ -769,6 +923,8 @@ const hasDataFactoryPermission = computed(() => {
   return authStore.hasPermission('data_factory.view_datafactoryrecord') ||
          authStore.hasPermission('data_factory.view_datafactorytag');
 });
+
+const hasDataFactoryMenuItems = computed(() => hasDataFactoryPermission.value);
 
 const hasUsersPermission = computed(() => {
   return authStore.hasPermission('auth.view_user');
@@ -972,6 +1128,15 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.logo-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  transform: translateY(-2px);
+}
+
 .logo-icon {
   width: 56px;
   height: 56px;
@@ -982,11 +1147,23 @@ onUnmounted(() => {
 .logo-text {
   flex-shrink: 0;
   font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  color: #000000;
+  font-family: "Segoe UI Variable Display", "Segoe UI", "Trebuchet MS", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  line-height: 0.96;
+  color: #1f2329;
   text-shadow: none;
+}
+
+.logo-subtitle {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.58);
+  white-space: nowrap;
 }
 
 .project-selector {
@@ -1433,6 +1610,11 @@ onUnmounted(() => {
   margin-right: 8px;
 }
 
+.logo-copy {
+  gap: 5px;
+  transform: translateY(-3px);
+}
+
 .logo-icon {
   width: 60px;
   height: 60px;
@@ -1444,10 +1626,17 @@ onUnmounted(() => {
   align-items: center;
   padding-top: 2px;
   font-size: 24px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: #000000;
+  font-family: "Segoe UI Variable Display", "Segoe UI", "Trebuchet MS", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #1f2329;
   text-shadow: none;
+}
+
+.logo-subtitle {
+  font-size: 11px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0.18em;
 }
 
 .project-selector :deep(.arco-select-view) {

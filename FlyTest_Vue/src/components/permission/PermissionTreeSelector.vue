@@ -171,6 +171,7 @@ const buildPermissionTree = (permissions: Permission[], userPerms: Permission[])
     const appLabelSort = permission.content_type.app_label_sort || 999;
     const appLabelSubcategory = permission.content_type.app_label_subcategory;
     const appLabelSubcategorySort = permission.content_type.app_label_subcategory_sort || 999;
+    const modelSort = permission.content_type.model_sort || 999;
     const appLabel = permission.content_type.app_label;
     const model = permission.content_type.model;
 
@@ -193,12 +194,13 @@ const buildPermissionTree = (permissions: Permission[], userPerms: Permission[])
     if (!categories[appLabelCn].subcategories[subcategoryKey].models[model]) {
       categories[appLabelCn].subcategories[subcategoryKey].models[model] = {
         model_cn: permission.content_type.model_cn || permission.content_type.model_verbose || model,
+        model_sort: modelSort,
         permissions: []
       };
     }
     categories[appLabelCn].subcategories[subcategoryKey].models[model].permissions.push(permission);
     return categories;
-  }, {} as Record<string, { sortOrder: number; subcategories: Record<string, { app_label: string; app_label_subcategory: string; app_label_subcategory_sort: number; models: Record<string, { model_cn: string; permissions: Permission[] }> }> }>);
+  }, {} as Record<string, { sortOrder: number; subcategories: Record<string, { app_label: string; app_label_subcategory: string; app_label_subcategory_sort: number; models: Record<string, { model_cn: string; model_sort: number; permissions: Permission[] }> }> }>);
 
   // 构建三层树形结构：第一层分类 -> 第二层子分类 -> 具体权限
   const sortedCategories = Object.entries(groupedByCategory).sort(([, categoryA], [, categoryB]) => {
@@ -214,7 +216,9 @@ const buildPermissionTree = (permissions: Permission[], userPerms: Permission[])
     const children: PermissionTreeNode[] = [];
 
     sortedSubcategories.forEach(([subcategoryKey, subcategoryData]) => {
-      const modelEntries = Object.entries(subcategoryData.models);
+      const modelEntries = Object.entries(subcategoryData.models).sort(([, modelA], [, modelB]) => {
+        return modelA.model_sort - modelB.model_sort || modelA.model_cn.localeCompare(modelB.model_cn, 'zh-CN');
+      });
 
       // 如果有 app_label_subcategory，创建子分类层
       if (subcategoryData.app_label_subcategory) {

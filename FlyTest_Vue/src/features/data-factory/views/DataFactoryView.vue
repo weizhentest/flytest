@@ -2,18 +2,18 @@
   <div class="data-factory-page">
     <section class="hero panel">
       <div>
-        <div class="hero__eyebrow">Knowledge / Data Factory</div>
-        <h1 class="hero__title">数据工厂</h1>
-        <p class="hero__desc">参考 testhub_platform 的数据工厂交互，保留 7 大类工具总览、场景筛选、工具执行、记录和标签管理能力。</p>
+        <div class="hero__eyebrow">知识 / 数据工厂</div>
+        <h1 class="hero__title">{{ pageTitle }}</h1>
+        <p class="hero__desc">{{ pageDescription }}</p>
         <div class="hero__meta">
           <span>{{ projectName }}</span>
-          <span>{{ catalog.tools.length }} 个工具</span>
+          <span>{{ heroToolCount }} 个工具</span>
           <span>{{ tags.length }} 个标签</span>
           <span>{{ statistics.total_records }} 条记录</span>
         </div>
       </div>
       <div class="hero__actions">
-        <a-radio-group v-model="viewMode" type="button" size="small">
+        <a-radio-group v-if="!isCategoryMenuView" v-model="viewMode" type="button" size="small">
           <a-radio value="category">分类导航</a-radio>
           <a-radio value="scenario">场景导航</a-radio>
         </a-radio-group>
@@ -32,124 +32,14 @@
       <span>{{ projectLockMessage }}</span>
     </section>
 
-    <section class="panel">
-      <div class="section-head">
-        <div>
-          <div class="section-title">{{ viewMode === 'category' ? '分类卡片总览' : '场景总览' }}</div>
-          <div class="section-desc">{{ viewMode === 'category' ? '点击分类卡片会立即切换下方工具工作台。' : '点击场景卡片会立即过滤下方工具模块。' }}</div>
-        </div>
-        <a-input-search v-model="toolKeyword" class="tool-search" allow-clear placeholder="搜索工具名称、标识或说明" />
-      </div>
-
-      <div v-if="viewMode === 'category'" class="overview-grid">
-        <button
-          v-for="category in categoryCards"
-          :key="category.category"
-          type="button"
-          class="overview-card"
-          :class="{ active: focusedCategory === category.category }"
-          @click="focusCategorySection(category.category)"
-        >
-          <div class="overview-card__top">
-            <div class="overview-card__icon"><component :is="categoryIcon(category.category)" /></div>
-            <div class="overview-card__count">{{ category.toolCount }}</div>
-          </div>
-          <div class="overview-card__title">{{ category.name }}</div>
-          <div class="overview-card__desc">{{ category.description }}</div>
-          <div class="overview-card__chips">
-            <span v-for="name in category.scenarioNames.slice(0, 2)" :key="name">{{ name }}</span>
-          </div>
-          <div class="overview-card__chips">
-            <span v-for="tool in category.previewTools" :key="tool.name">{{ tool.display_name }}</span>
-            <span v-if="category.toolCount > category.previewTools.length" class="is-primary">+{{ category.toolCount - category.previewTools.length }}</span>
-          </div>
-        </button>
-      </div>
-
-      <div v-else class="scenario-grid">
-        <button
-          v-for="scenario in catalog.scenarios"
-          :key="scenario.scenario"
-          type="button"
-          class="scenario-card"
-          :class="{ active: selectedScenario === scenario.scenario }"
-          @click="applyScenarioFilter(scenario.scenario)"
-        >
-          <div class="scenario-card__icon"><component :is="scenarioIcon(scenario.scenario)" /></div>
-          <div class="scenario-card__title">{{ scenario.name }}</div>
-          <div class="scenario-card__desc">{{ scenario.description }}</div>
-          <div class="scenario-card__footer">
-            <span>{{ scenario.tool_count }} 个工具</span>
-            <icon-arrow-right />
-          </div>
-        </button>
-      </div>
-    </section>
-
-    <section id="data-factory-tools" ref="toolWorkspaceSection" class="panel workspace-panel">
-      <div class="section-head workspace-head">
-        <div>
-          <div class="section-title">{{ workspaceTitle }}</div>
-          <div class="section-desc">{{ workspaceDescription }}</div>
-        </div>
-        <div class="workspace-actions">
-          <button type="button" class="pill" :class="{ active: focusedCategory === 'all' }" @click="clearCategoryFocus">全部分类</button>
-          <span class="pill active">{{ workspaceToolTotal }} 个工具</span>
-        </div>
-      </div>
-
-      <div class="workspace-summary">
-        <span class="pill active">场景：{{ activeScenarioLabel }}</span>
-        <span class="pill">{{ toolKeyword ? `关键词：${toolKeyword}` : '未设置关键词过滤' }}</span>
-      </div>
-
-      <div class="category-list">
-        <article
-          v-for="category in workspaceCategories"
-          :key="category.category"
-          class="panel category-panel"
-          :class="{ active: focusedCategory === category.category }"
-        >
-          <div class="category-panel__head">
-            <div class="category-panel__title">
-              <div class="category-panel__icon"><component :is="categoryIcon(category.category)" /></div>
-              <div>
-                <div class="section-title">{{ category.name }}</div>
-                <div class="section-desc">{{ category.description }}</div>
-              </div>
-            </div>
-            <span class="pill active">{{ category.visibleTools.length }} 个工具</span>
-          </div>
-
-          <div class="tool-grid">
-            <button v-for="tool in category.visibleTools" :key="tool.name" type="button" class="tool-card" @click="openToolDialog(tool)">
-              <div class="tool-card__icon"><component :is="categoryIcon(tool.category)" /></div>
-              <div class="tool-card__body">
-                <div class="tool-card__title">{{ tool.display_name }}</div>
-                <div class="tool-card__desc">{{ tool.description }}</div>
-                <div class="tool-card__footer">
-                  <span class="pill">{{ scenarioLabel(tool.scenario) }}</span>
-                  <icon-arrow-right />
-                </div>
-              </div>
-            </button>
-          </div>
-        </article>
-
-        <section v-if="!workspaceCategories.length" class="panel">
-          <div class="empty">当前筛选条件下暂无可显示的工具</div>
-        </section>
-      </div>
-    </section>
-
-    <section class="stats-grid">
+    <section v-if="!isCategoryMenuView" class="stats-grid">
       <div class="stat-card panel"><span>总使用记录</span><strong>{{ statistics.total_records }}</strong></div>
       <div class="stat-card panel"><span>已保存记录</span><strong>{{ statistics.saved_records }}</strong></div>
       <div class="stat-card panel"><span>标签数量</span><strong>{{ tags.length }}</strong></div>
       <div class="stat-card panel"><span>可用工具</span><strong>{{ catalog.tools.length }}</strong></div>
     </section>
 
-    <section class="panel">
+    <section v-if="!isCategoryMenuView" class="panel">
       <div class="section-title">场景筛选</div>
       <div class="section-desc">点击场景后会立即过滤下方分类模块与工具卡片。</div>
       <div class="pill-row">
@@ -167,7 +57,7 @@
       </div>
     </section>
 
-    <section class="insight-grid">
+    <section v-if="!isCategoryMenuView" class="insight-grid">
       <div class="panel" :class="{ locked: !projectReady }">
         <div class="section-title">分类使用统计</div>
         <div v-if="projectReady" class="metric-list">
@@ -203,7 +93,7 @@
       </div>
     </section>
 
-    <section class="reference-grid">
+    <section v-if="!isCategoryMenuView" class="reference-grid">
       <div class="panel" :class="{ locked: !projectReady }">
         <div class="section-head">
           <div>
@@ -265,6 +155,63 @@
       </div>
     </section>
 
+    <section v-if="isCategoryMenuView" id="data-factory-tools" ref="toolWorkspaceSection" class="panel workspace-panel">
+      <div class="section-head workspace-head">
+        <div v-if="workspaceTitle || workspaceDescription">
+          <div v-if="workspaceTitle" class="section-title">{{ workspaceTitle }}</div>
+          <div v-if="workspaceDescription" class="section-desc">{{ workspaceDescription }}</div>
+        </div>
+        <div class="workspace-actions">
+          <button type="button" class="pill" :class="{ active: focusedCategory === 'all' }" @click="clearCategoryFocus">{{ isCategoryMenuView ? '返回全部工具' : '全部分类' }}</button>
+          <span class="pill active">{{ workspaceToolTotal }} 个工具</span>
+        </div>
+      </div>
+
+      <div class="workspace-summary">
+        <span v-if="!isCategoryMenuView" class="pill active">场景：{{ activeScenarioLabel }}</span>
+        <span v-else class="pill active">分类：{{ activeCategoryLabel }}</span>
+        <span class="pill">{{ toolKeyword ? `关键词：${toolKeyword}` : '未设置关键词过滤' }}</span>
+      </div>
+
+      <div class="category-list">
+        <article
+          v-for="category in workspaceCategories"
+          :key="category.category"
+          class="panel category-panel"
+          :class="{ active: focusedCategory === category.category }"
+        >
+          <div class="category-panel__head">
+            <div class="category-panel__title">
+              <div class="category-panel__icon"><component :is="categoryIcon(category.category)" /></div>
+              <div>
+                <div class="section-title">{{ category.name }}</div>
+                <div class="section-desc">{{ category.description }}</div>
+              </div>
+            </div>
+            <span class="pill active">{{ category.visibleTools.length }} 个工具</span>
+          </div>
+
+          <div class="tool-grid">
+            <button v-for="tool in category.visibleTools" :key="tool.name" type="button" class="tool-card" @click="openToolDialog(tool)">
+              <div class="tool-card__icon"><component :is="categoryIcon(tool.category)" /></div>
+              <div class="tool-card__body">
+                <div class="tool-card__title">{{ tool.display_name }}</div>
+                <div class="tool-card__desc">{{ tool.description }}</div>
+                <div class="tool-card__footer">
+                  <span class="pill">{{ scenarioLabel(tool.scenario) }}</span>
+                  <icon-arrow-right />
+                </div>
+              </div>
+            </button>
+          </div>
+        </article>
+
+        <section v-if="!workspaceCategories.length" class="panel">
+          <div class="empty">当前筛选条件下暂无可显示的工具</div>
+        </section>
+      </div>
+    </section>
+
     <a-modal :visible="toolDialogVisible" :title="currentTool?.display_name || '工具执行'" width="1160px" :footer="false" @cancel="toolDialogVisible = false">
       <div v-if="currentTool" class="tool-modal">
         <div class="tool-modal__banner">
@@ -285,22 +232,11 @@
             <div v-if="toolHelperPresets.length" class="tool-helper">
               <div class="tool-helper__intro">
                 <div>
-                  <div class="section-title section-title--mini">Input Assistant</div>
+                  <div class="section-title section-title--mini">输入助手</div>
                   <div class="section-desc">{{ toolHelperDescription }}</div>
                 </div>
-                <span class="pill active">{{ toolHelperPresets.length }} shortcuts</span>
+                <span class="pill active">{{ toolHelperPresets.length }} 个快捷操作</span>
               </div>
-              <!-- legacy helper head hidden -->
-              <!--
-              <div class="tool-helper__head tool-helper__head--legacy">
-                <div>
-                  <div class="section-title section-title--mini">杈撳叆鍔╂墜</div>
-                  <div class="section-desc">{{ toolHelperDescription }}</div>
-                </div>
-                <span class="pill active">{{ toolHelperPresets.length }} 涓揩鎹锋搷浣?span>
-                </span>
-              </div>
-              -->
               <div class="tool-helper__actions">
                 <a-button v-for="preset in toolHelperPresets" :key="preset.key" size="small" @click="applyToolPreset(preset)">{{ preset.label }}</a-button>
               </div>
@@ -318,43 +254,43 @@
             <div v-if="cronExpressionPreview" class="tool-special-panel">
               <div class="tool-special-panel__head">
                 <div>
-                  <div class="section-title section-title--mini">Cron Preview</div>
+                  <div class="section-title section-title--mini">表达式预览</div>
                   <div class="section-desc">{{ cronPreviewStatus.help }}</div>
                 </div>
-                <a-button size="small" @click="copyText(cronExpressionPreview, 'Cron expression copied')">Copy</a-button>
+                <a-button size="small" @click="copyText(cronExpressionPreview, '已复制定时表达式')">复制</a-button>
               </div>
               <pre class="tool-special-panel__code">{{ cronExpressionPreview }}</pre>
               <div class="tool-special-panel__meta">
                 <span class="pill" :class="{ active: cronPreviewStatus.tone === 'success' }">{{ cronPreviewStatus.text }}</span>
-                <span class="pill">{{ currentTool?.name === 'cron_generate' ? 'Generated from fields' : 'Expression mode' }}</span>
+                <span class="pill">{{ currentTool?.name === 'cron_generate' ? '根据字段生成' : '表达式模式' }}</span>
               </div>
             </div>
 
             <div v-if="specializedLayoutKind === 'jsonpath'" class="special-form special-form--two-columns">
               <section class="special-form__panel special-form__panel--wide">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('text', 'JSON Content') }}</label>
+                  <label>{{ fieldLabel('text', 'JSON 内容') }}</label>
                   <div v-if="fieldActionItemsByName('text').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('text')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
-                <a-textarea v-model="toolForm.text" :placeholder="fieldPlaceholder('text', 'Paste JSON content here')" :auto-size="{ minRows: 14, maxRows: 22 }" />
+                <a-textarea v-model="toolForm.text" :placeholder="fieldPlaceholder('text', '请输入 JSON 内容')" :auto-size="{ minRows: 14, maxRows: 22 }" />
                 <div class="special-form__meta-row">
-                  <span class="pill" :class="{ active: currentJsonAnalysis?.status === 'valid' }">{{ currentJsonAnalysis?.summary || 'Empty' }}</span>
+                  <span class="pill" :class="{ active: currentJsonAnalysis?.status === 'valid' }">{{ currentJsonAnalysis?.summary || '暂无内容' }}</span>
                   <span class="field-help">{{ currentJsonAnalysis?.help }}</span>
                 </div>
               </section>
 
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('path', 'JSONPath') }}</label>
+                  <label>{{ fieldLabel('path', 'JSONPath 表达式') }}</label>
                   <div v-if="fieldActionItemsByName('path').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('path')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
                 <a-input v-model="toolForm.path" :placeholder="fieldPlaceholder('path', '$.items[*].id')" />
                 <div class="special-form__note">
-                  <strong>Common selectors</strong>
+                  <strong>常用选择器</strong>
                   <code v-for="example in jsonPathSyntaxExamples" :key="example">{{ example }}</code>
                 </div>
               </section>
@@ -363,28 +299,28 @@
             <div v-else-if="specializedLayoutKind === 'json-diff'" class="special-form special-form--compare">
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('left_text', 'JSON A') }}</label>
+                  <label>{{ fieldLabel('left_text', '左侧 JSON') }}</label>
                   <div v-if="fieldActionItemsByName('left_text').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('left_text')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
-                <a-textarea v-model="toolForm.left_text" :placeholder="fieldPlaceholder('left_text', 'Left JSON input')" :auto-size="{ minRows: 14, maxRows: 22 }" />
+                <a-textarea v-model="toolForm.left_text" :placeholder="fieldPlaceholder('left_text', '请输入左侧 JSON')" :auto-size="{ minRows: 14, maxRows: 22 }" />
                 <div class="special-form__meta-row">
-                  <span class="pill" :class="{ active: jsonDiffLeftAnalysis?.status === 'valid' }">{{ jsonDiffLeftAnalysis?.summary || 'Empty' }}</span>
+                  <span class="pill" :class="{ active: jsonDiffLeftAnalysis?.status === 'valid' }">{{ jsonDiffLeftAnalysis?.summary || '暂无内容' }}</span>
                   <span class="field-help">{{ jsonDiffLeftAnalysis?.help }}</span>
                 </div>
               </section>
 
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('right_text', 'JSON B') }}</label>
+                  <label>{{ fieldLabel('right_text', '右侧 JSON') }}</label>
                   <div v-if="fieldActionItemsByName('right_text').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('right_text')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
-                <a-textarea v-model="toolForm.right_text" :placeholder="fieldPlaceholder('right_text', 'Right JSON input')" :auto-size="{ minRows: 14, maxRows: 22 }" />
+                <a-textarea v-model="toolForm.right_text" :placeholder="fieldPlaceholder('right_text', '请输入右侧 JSON')" :auto-size="{ minRows: 14, maxRows: 22 }" />
                 <div class="special-form__meta-row">
-                  <span class="pill" :class="{ active: jsonDiffRightAnalysis?.status === 'valid' }">{{ jsonDiffRightAnalysis?.summary || 'Empty' }}</span>
+                  <span class="pill" :class="{ active: jsonDiffRightAnalysis?.status === 'valid' }">{{ jsonDiffRightAnalysis?.summary || '暂无内容' }}</span>
                   <span class="field-help">{{ jsonDiffRightAnalysis?.help }}</span>
                 </div>
               </section>
@@ -393,24 +329,24 @@
             <div v-else-if="specializedLayoutKind === 'text-diff'" class="special-form special-form--compare">
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('left_text', 'Text A') }}</label>
+                  <label>{{ fieldLabel('left_text', '文本 A') }}</label>
                   <div v-if="fieldActionItemsByName('left_text').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('left_text')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
-                <a-textarea v-model="toolForm.left_text" :placeholder="fieldPlaceholder('left_text', 'Left text block')" :auto-size="{ minRows: 12, maxRows: 20 }" />
-                <div class="field-help">Used as the baseline document in the diff result.</div>
+                <a-textarea v-model="toolForm.left_text" :placeholder="fieldPlaceholder('left_text', '请输入左侧文本内容')" :auto-size="{ minRows: 12, maxRows: 20 }" />
+                <div class="field-help">作为差异对比中的基准文本。</div>
               </section>
 
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('right_text', 'Text B') }}</label>
+                  <label>{{ fieldLabel('right_text', '文本 B') }}</label>
                   <div v-if="fieldActionItemsByName('right_text').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('right_text')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
-                <a-textarea v-model="toolForm.right_text" :placeholder="fieldPlaceholder('right_text', 'Right text block')" :auto-size="{ minRows: 12, maxRows: 20 }" />
-                <div class="field-help">Compared against Text A to produce similarity and unified diff lines.</div>
+                <a-textarea v-model="toolForm.right_text" :placeholder="fieldPlaceholder('right_text', '请输入右侧文本内容')" :auto-size="{ minRows: 12, maxRows: 20 }" />
+                <div class="field-help">与文本 A 进行比较，用于生成相似度和统一差异结果。</div>
               </section>
             </div>
 
@@ -427,7 +363,7 @@
             <div v-else-if="specializedLayoutKind === 'cron-expression'" class="special-form">
               <section class="special-form__panel special-form__panel--wide">
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('expression', 'Crontab Expression') }}</label>
+                  <label>{{ fieldLabel('expression', '定时表达式') }}</label>
                   <div v-if="fieldActionItemsByName('expression').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('expression')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
@@ -440,11 +376,11 @@
               </section>
               <div v-if="currentTool?.name === 'cron_next_runs'" class="special-form__inline-grid">
                 <section class="special-form__panel">
-                  <label>{{ fieldLabel('count', 'Count') }}</label>
+                  <label>{{ fieldLabel('count', '返回次数') }}</label>
                   <a-input-number v-model="toolForm.count" :min="fieldMin('count')" :max="fieldMax('count')" style="width: 100%" />
                 </section>
                 <section class="special-form__panel">
-                  <label>{{ fieldLabel('timezone', 'Timezone') }}</label>
+                  <label>{{ fieldLabel('timezone', '时区') }}</label>
                   <a-input v-model="toolForm.timezone" :placeholder="fieldPlaceholder('timezone', 'Asia/Shanghai')" />
                 </section>
               </div>
@@ -452,32 +388,32 @@
 
             <div v-else-if="specializedLayoutKind === 'image-base64'" class="special-form special-form--two-columns">
               <section class="special-form__panel">
-                <label>{{ fieldLabel('mode', 'Mode') }}</label>
+                <label>{{ fieldLabel('mode', '转换模式') }}</label>
                 <a-select v-model="toolForm.mode">
                   <a-option v-for="option in fieldOptions('mode')" :key="String(option.value)" :value="option.value" :label="option.label" />
                 </a-select>
 
                 <div class="special-form__label-row">
-                  <label>{{ fieldLabel('image_data', 'Image / Base64 Data') }}</label>
+                  <label>{{ fieldLabel('image_data', '图片 / Base64 数据') }}</label>
                   <div v-if="fieldActionItemsByName('image_data').length" class="field-actions">
                     <a-button v-for="action in fieldActionItemsByName('image_data')" :key="action.key" size="mini" @click="action.run()">{{ action.label }}</a-button>
                   </div>
                 </div>
                 <div class="upload-wrap">
-                  <a-textarea v-model="toolForm.image_data" :placeholder="fieldPlaceholder('image_data', 'Paste a data URL, raw Base64, or upload an image')" :auto-size="{ minRows: 10, maxRows: 18 }" />
+                  <a-textarea v-model="toolForm.image_data" :placeholder="fieldPlaceholder('image_data', '可粘贴 Data URL、原始 Base64，或直接上传图片')" :auto-size="{ minRows: 10, maxRows: 18 }" />
                   <input :ref="element => registerUploadInput('image_data', element as HTMLInputElement | null)" type="file" class="hidden-input" accept="image/*" @change="event => handleImagePicked('image_data', event)" />
-                  <a-button size="small" @click="triggerImagePicker('image_data')">Upload Image</a-button>
+                  <a-button size="small" @click="triggerImagePicker('image_data')">上传图片</a-button>
                 </div>
 
                 <div v-if="toolForm.mode === 'image_to_base64'" class="switch-row">
                   <a-switch v-model="toolForm.include_prefix" />
-                  <span>{{ toolForm.include_prefix ? 'Keep data URL prefix' : 'Return pure Base64' }}</span>
+                  <span>{{ toolForm.include_prefix ? '保留 Data URL 前缀' : '仅返回纯 Base64' }}</span>
                 </div>
               </section>
 
               <section class="special-form__panel">
                 <div class="special-form__label-row">
-                  <label>Input Preview</label>
+                  <label>输入预览</label>
                   <span class="pill" :class="{ active: Boolean(activeUploadPreviewUrl) }">{{ imageInputModeLabel }}</span>
                 </div>
                 <div v-if="activeUploadPreviewUrl" class="input-preview input-preview--static">
@@ -487,7 +423,7 @@
                     <span class="pill">{{ activeUploadDescription }}</span>
                   </div>
                 </div>
-                <div v-else class="empty">Upload an image, paste a data URL, or provide recognizable Base64 to render a preview here.</div>
+                <div v-else class="empty">请上传图片、粘贴 Data URL，或提供可识别的 Base64 内容以便在此处预览。</div>
               </section>
             </div>
 
@@ -523,10 +459,7 @@
                 </div>
                 </div>
                 <div v-if="field.help_text" class="field-help">{{ field.help_text }}</div>
-                <div v-else-if="field.type === 'upload-base64' && toolForm[field.name] && !fieldPreviewImageUrl(field.name)" class="field-help field-help--preview-tip">Preview works best when the value keeps a `data:image/...;base64,` prefix.</div>
-                <!--
-                <div v-else-if="field.type === 'upload-base64' && toolForm[field.name] && !fieldPreviewImageUrl(field.name)" class="field-help">璇ュ瓧娈靛凡鍐欏叆鍐呭锛屽鏋滄槸绾?Base64 锛屽缓璁繚鐣?data:image/...;base64, 鍓嶇紑浠ヨ幏寰楀嵆鏃堕瑙堛€?/div>
-                -->
+                <div v-else-if="field.type === 'upload-base64' && toolForm[field.name] && !fieldPreviewImageUrl(field.name)" class="field-help field-help--preview-tip">保留 `data:image/...;base64,` 前缀时，预览效果会更稳定。</div>
               </div>
             </div>
 
@@ -562,59 +495,59 @@
               <div v-if="resultSpecialLayout === 'jsonpath' && jsonPathResult" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Match Count</span>
+                    <span class="special-result__label">匹配数量</span>
                     <strong class="special-result__value">{{ jsonPathResult.count }}</strong>
-                    <span class="special-result__help">JSONPath returned {{ jsonPathResult.count }} matched value(s).</span>
+                    <span class="special-result__help">当前 JSONPath 共返回 {{ jsonPathResult.count }} 个匹配结果。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Expression</span>
-                    <strong class="special-result__value">{{ jsonPathResult.path || 'Not provided' }}</strong>
-                    <span class="special-result__help">Executed against the current JSON payload.</span>
+                    <span class="special-result__label">查询表达式</span>
+                    <strong class="special-result__value">{{ jsonPathResult.path || '未提供' }}</strong>
+                    <span class="special-result__help">基于当前 JSON 内容执行查询。</span>
                   </article>
                 </div>
                 <div v-if="jsonPathResult.matches.length" class="special-result__list">
                   <article v-for="(item, index) in jsonPathResult.matches" :key="`jsonpath-${index}`" class="special-result__list-item">
                     <div class="special-result__list-head">
-                      <strong>Match {{ index + 1 }}</strong>
+                      <strong>匹配结果 {{ index + 1 }}</strong>
                     </div>
                     <pre class="result-inline-block">{{ formatStructuredValue(item) }}</pre>
                   </article>
                 </div>
-                <div v-else class="empty">No values matched the current JSONPath expression.</div>
+                <div v-else class="empty">当前 JSONPath 表达式没有匹配到任何结果。</div>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'json-validate' && jsonValidateResult" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card" :class="{ 'is-success': jsonValidateResult.valid, 'is-warning': !jsonValidateResult.valid }">
-                    <span class="special-result__label">Validation</span>
-                    <strong class="special-result__value">{{ jsonValidateResult.valid ? 'Valid JSON' : 'Invalid JSON' }}</strong>
-                    <span class="special-result__help">{{ jsonValidateResult.valid ? 'The payload passed JSON parsing successfully.' : (jsonValidateResult.message || 'JSON validation failed.') }}</span>
+                    <span class="special-result__label">校验结果</span>
+                    <strong class="special-result__value">{{ jsonValidateResult.valid ? 'JSON 有效' : 'JSON 无效' }}</strong>
+                    <span class="special-result__help">{{ jsonValidateResult.valid ? '当前内容已通过 JSON 语法校验。' : (jsonValidateResult.message || 'JSON 校验失败。') }}</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">{{ jsonValidateResult.valid ? 'Detected Type' : 'Error Position' }}</span>
-                    <strong class="special-result__value">{{ jsonValidateResult.valid ? (jsonValidateResult.type || 'unknown') : `Line ${jsonValidateResult.line || '-'} / Column ${jsonValidateResult.column || '-'}` }}</strong>
-                    <span class="special-result__help">{{ jsonValidateResult.valid ? 'Returned from the backend JSON parser.' : 'Use the position to jump back to the malformed input.' }}</span>
+                    <span class="special-result__label">{{ jsonValidateResult.valid ? '识别类型' : '错误位置' }}</span>
+                    <strong class="special-result__value">{{ jsonValidateResult.valid ? (jsonValidateResult.type || '未知类型') : `第 ${jsonValidateResult.line || '-'} 行 / 第 ${jsonValidateResult.column || '-'} 列` }}</strong>
+                    <span class="special-result__help">{{ jsonValidateResult.valid ? '该结果由后端 JSON 解析器返回。' : '可根据位置回到输入内容中定位错误。' }}</span>
                   </article>
                 </div>
                 <article v-if="!jsonValidateResult.valid" class="special-result__list-item">
                   <div class="special-result__list-head">
-                    <strong>Error Message</strong>
+                    <strong>错误信息</strong>
                   </div>
-                  <pre class="result-inline-block">{{ jsonValidateResult.message || 'Unknown JSON validation error.' }}</pre>
+                  <pre class="result-inline-block">{{ jsonValidateResult.message || '未知 JSON 校验错误。' }}</pre>
                 </article>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'json-diff' && jsonDiffResult" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card" :class="{ 'is-success': !jsonDiffResult.different, 'is-warning': jsonDiffResult.different }">
-                    <span class="special-result__label">Compare Status</span>
-                    <strong class="special-result__value">{{ jsonDiffResult.different ? 'Differences Found' : 'No Differences' }}</strong>
-                    <span class="special-result__help">{{ jsonDiffResult.different ? `Detected ${jsonDiffResult.count} difference(s).` : 'Both JSON payloads are equivalent.' }}</span>
+                    <span class="special-result__label">对比结果</span>
+                    <strong class="special-result__value">{{ jsonDiffResult.different ? '发现差异' : '没有差异' }}</strong>
+                    <span class="special-result__help">{{ jsonDiffResult.different ? `共检测到 ${jsonDiffResult.count} 处差异。` : '左右两份 JSON 内容一致。' }}</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Difference Count</span>
+                    <span class="special-result__label">差异数量</span>
                     <strong class="special-result__value">{{ jsonDiffResult.count }}</strong>
-                    <span class="special-result__help">Paths are listed below in execution order.</span>
+                    <span class="special-result__help">下方按执行顺序列出所有差异路径。</span>
                   </article>
                 </div>
                 <div v-if="jsonDiffResult.diffs.length" class="diff-list">
@@ -625,56 +558,56 @@
                     </div>
                     <div class="diff-item__grid">
                       <div class="diff-item__value">
-                        <span>Left</span>
+                        <span>左侧</span>
                         <pre class="result-inline-block">{{ formatStructuredValue(diff.left) }}</pre>
                       </div>
                       <div class="diff-item__value">
-                        <span>Right</span>
+                        <span>右侧</span>
                         <pre class="result-inline-block">{{ formatStructuredValue(diff.right) }}</pre>
                       </div>
                     </div>
                   </article>
                 </div>
-                <div v-else class="empty">No structural or value differences were found.</div>
+                <div v-else class="empty">未发现结构或数值差异。</div>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'text-diff' && textDiffResult" class="special-result">
                 <div class="special-result__cards special-result__cards--three">
                   <article class="special-result__card" :class="{ 'is-success': textDiffResult.same, 'is-warning': !textDiffResult.same }">
-                    <span class="special-result__label">Compare Status</span>
-                    <strong class="special-result__value">{{ textDiffResult.same ? 'Texts Match' : 'Differences Found' }}</strong>
-                    <span class="special-result__help">{{ textDiffResult.same ? 'Both text blocks are identical.' : `Unified diff returned ${textDiffResult.diffLines.length} line(s).` }}</span>
+                    <span class="special-result__label">对比结果</span>
+                    <strong class="special-result__value">{{ textDiffResult.same ? '文本一致' : '发现差异' }}</strong>
+                    <span class="special-result__help">{{ textDiffResult.same ? '两段文本内容完全一致。' : `统一差异结果共返回 ${textDiffResult.diffLines.length} 行。` }}</span>
                   </article>
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Similarity</span>
+                    <span class="special-result__label">相似度</span>
                     <strong class="special-result__value">{{ textDiffResult.similarity }}%</strong>
-                    <span class="special-result__help">Calculated by the backend sequence matcher.</span>
+                    <span class="special-result__help">由后端文本序列匹配算法计算得到。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Line Counts</span>
+                    <span class="special-result__label">行数对比</span>
                     <strong class="special-result__value">{{ textDiffResult.leftLineCount }} / {{ textDiffResult.rightLineCount }}</strong>
-                    <span class="special-result__help">Text A lines on the left, Text B lines on the right.</span>
+                    <span class="special-result__help">左侧为文本 A 的行数，右侧为文本 B 的行数。</span>
                   </article>
                 </div>
-                <pre class="result-block">{{ textDiffResult.diffLines.length ? textDiffResult.diffLines.join('\n') : 'No unified diff output because the two texts are identical.' }}</pre>
+                <pre class="result-block">{{ textDiffResult.diffLines.length ? textDiffResult.diffLines.join('\n') : '两段文本完全一致，因此没有生成差异输出。' }}</pre>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'regex-test' && regexTestResult" class="special-result">
                 <div class="special-result__cards special-result__cards--three">
                   <article class="special-result__card" :class="{ 'is-success': regexTestResult.matched, 'is-warning': !regexTestResult.matched }">
-                    <span class="special-result__label">Match Status</span>
-                    <strong class="special-result__value">{{ regexTestResult.matched ? 'Matched' : 'No Match' }}</strong>
-                    <span class="special-result__help">{{ regexTestResult.matched ? 'At least one result matched the current pattern.' : 'No result matched the current regex expression.' }}</span>
+                    <span class="special-result__label">匹配状态</span>
+                    <strong class="special-result__value">{{ regexTestResult.matched ? '已匹配' : '未匹配' }}</strong>
+                    <span class="special-result__help">{{ regexTestResult.matched ? '当前正则表达式至少匹配到一条结果。' : '当前正则表达式没有匹配到任何结果。' }}</span>
                   </article>
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Match Count</span>
+                    <span class="special-result__label">匹配数量</span>
                     <strong class="special-result__value">{{ regexTestResult.count }}</strong>
-                    <span class="special-result__help">Total matches returned by the backend regex engine.</span>
+                    <span class="special-result__help">后端正则引擎返回的总匹配次数。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Pattern</span>
-                    <strong class="special-result__value">{{ activeResultInput.pattern || 'Not captured' }}</strong>
-                    <span class="special-result__help">Flags: {{ Array.isArray(activeResultInput.flags) && activeResultInput.flags.length ? activeResultInput.flags.join(', ') : 'none' }}</span>
+                    <span class="special-result__label">正则表达式</span>
+                    <strong class="special-result__value">{{ activeResultInput.pattern || '未记录' }}</strong>
+                    <span class="special-result__help">修饰符：{{ Array.isArray(activeResultInput.flags) && activeResultInput.flags.length ? activeResultInput.flags.join(', ') : '无' }}</span>
                   </article>
                 </div>
                 <div v-if="regexTestResult.matches.length" class="special-result__list">
@@ -685,35 +618,35 @@
                     </div>
                     <div class="diff-item__grid">
                       <div class="diff-item__value">
-                        <span>Capture Groups</span>
-                        <pre class="result-inline-block">{{ item.groups.length ? formatStructuredValue(item.groups) : 'No capture groups returned.' }}</pre>
+                        <span>捕获分组</span>
+                        <pre class="result-inline-block">{{ item.groups.length ? formatStructuredValue(item.groups) : '没有返回捕获分组。' }}</pre>
                       </div>
                       <div class="diff-item__value">
-                        <span>Named Groups</span>
-                        <pre class="result-inline-block">{{ Object.keys(item.groupDict).length ? formatStructuredValue(item.groupDict) : 'No named groups returned.' }}</pre>
+                        <span>命名分组</span>
+                        <pre class="result-inline-block">{{ Object.keys(item.groupDict).length ? formatStructuredValue(item.groupDict) : '没有返回命名分组。' }}</pre>
                       </div>
                     </div>
                   </article>
                 </div>
-                <div v-else class="empty">No matches were returned for the current regex and input text.</div>
+                <div v-else class="empty">当前正则表达式与输入文本没有返回任何匹配结果。</div>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'json-text' && jsonTextResult" class="special-result">
                 <div class="special-result__cards special-result__cards--three">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Output Format</span>
+                    <span class="special-result__label">输出格式</span>
                     <strong class="special-result__value">{{ jsonTextResultFormat }}</strong>
-                    <span class="special-result__help">Generated from the current JSON payload.</span>
+                    <span class="special-result__help">由当前 JSON 内容转换生成。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Line Count</span>
+                    <span class="special-result__label">行数</span>
                     <strong class="special-result__value">{{ jsonTextResultMetrics.lineCount }}</strong>
-                    <span class="special-result__help">Useful before copying into editors or configuration files.</span>
+                    <span class="special-result__help">复制到编辑器或配置文件前可先确认行数。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Characters</span>
+                    <span class="special-result__label">字符数</span>
                     <strong class="special-result__value">{{ jsonTextResultMetrics.charCount }}</strong>
-                    <span class="special-result__help">Total output size of the converted text.</span>
+                    <span class="special-result__help">转换后文本的总字符数。</span>
                   </article>
                 </div>
                 <pre class="result-block">{{ jsonTextResult }}</pre>
@@ -722,19 +655,19 @@
               <div v-else-if="resultSpecialLayout === 'json-to-csv' && csvResultText" class="special-result">
                 <div class="special-result__cards special-result__cards--three">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Columns</span>
+                    <span class="special-result__label">列数</span>
                     <strong class="special-result__value">{{ csvColumns.length }}</strong>
-                    <span class="special-result__help">Flattened keys collected from the JSON objects.</span>
+                    <span class="special-result__help">由 JSON 对象展开得到的字段列。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Rows</span>
+                    <span class="special-result__label">行数</span>
                     <strong class="special-result__value">{{ csvRowCount }}</strong>
-                    <span class="special-result__help">CSV data rows excluding the header line.</span>
+                    <span class="special-result__help">不包含表头的 CSV 数据行数。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Characters</span>
+                    <span class="special-result__label">字符数</span>
                     <strong class="special-result__value">{{ csvResultText.length }}</strong>
-                    <span class="special-result__help">Ready to copy into spreadsheets or fixtures.</span>
+                    <span class="special-result__help">可直接复制到表格或测试夹具中使用。</span>
                   </article>
                 </div>
                 <div v-if="csvColumns.length" class="result-meta">
@@ -746,9 +679,9 @@
               <div v-else-if="resultSpecialLayout === 'cron-generate' && cronGeneratedExpression" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Generated Expression</span>
+                    <span class="special-result__label">生成的表达式</span>
                     <strong class="special-result__value">{{ cronGeneratedExpression }}</strong>
-                    <span class="special-result__help">Ready to copy into scheduled jobs or parsers.</span>
+                    <span class="special-result__help">可直接复制到定时任务或解析器中使用。</span>
                   </article>
                 </div>
                 <pre class="tool-special-panel__code">{{ cronGeneratedExpression }}</pre>
@@ -757,11 +690,11 @@
               <div v-else-if="resultSpecialLayout === 'cron-parse' && cronParseResult" class="special-result">
                 <div class="special-result__cards special-result__cards--five">
                   <article v-for="item in [
-                    { label: 'Minute', value: cronParseResult.minute },
-                    { label: 'Hour', value: cronParseResult.hour },
-                    { label: 'Day', value: cronParseResult.day },
-                    { label: 'Month', value: cronParseResult.month },
-                    { label: 'Weekday', value: cronParseResult.weekday }
+                    { label: '分钟', value: cronParseResult.minute },
+                    { label: '小时', value: cronParseResult.hour },
+                    { label: '日期', value: cronParseResult.day },
+                    { label: '月份', value: cronParseResult.month },
+                    { label: '星期', value: cronParseResult.weekday }
                   ]" :key="item.label" class="special-result__card">
                     <span class="special-result__label">{{ item.label }}</span>
                     <strong class="special-result__value">{{ item.value }}</strong>
@@ -773,33 +706,33 @@
               <div v-else-if="resultSpecialLayout === 'cron-next-runs'" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Upcoming Runs</span>
+                    <span class="special-result__label">即将执行次数</span>
                     <strong class="special-result__value">{{ cronNextRunsResult.length }}</strong>
-                    <span class="special-result__help">Calculated using the selected timezone.</span>
+                    <span class="special-result__help">基于所选时区计算未来执行时间。</span>
                   </article>
                   <article v-if="resultMetadataEntries.length" class="special-result__card">
                     <span class="special-result__label">{{ resultMetadataEntries[0].label }}</span>
                     <strong class="special-result__value">{{ resultMetadataEntries[0].value }}</strong>
-                    <span class="special-result__help">Timezone used for the next-run calculation.</span>
+                    <span class="special-result__help">用于计算下次执行时间的时区。</span>
                   </article>
                 </div>
                 <div v-if="cronNextRunsResult.length" class="special-result__list">
                   <article v-for="(item, index) in cronNextRunsResult" :key="`${item}-${index}`" class="special-result__list-item">
                     <div class="special-result__list-head">
-                      <strong>Run {{ index + 1 }}</strong>
+                      <strong>第 {{ index + 1 }} 次执行</strong>
                     </div>
                     <pre class="result-inline-block">{{ item }}</pre>
                   </article>
                 </div>
-                <div v-else class="empty">No future run times were returned.</div>
+                <div v-else class="empty">未返回未来执行时间。</div>
               </div>
 
               <div v-else-if="resultSpecialLayout === 'cron-validate' && cronValidateResult" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card" :class="{ 'is-success': cronValidateResult.valid, 'is-warning': !cronValidateResult.valid }">
-                    <span class="special-result__label">Validation</span>
-                    <strong class="special-result__value">{{ cronValidateResult.valid ? 'Valid Expression' : 'Invalid Expression' }}</strong>
-                    <span class="special-result__help">{{ cronValidateResult.valid ? 'The expression passed cron validation.' : (cronValidateResult.message || 'Cron validation failed.') }}</span>
+                    <span class="special-result__label">校验结果</span>
+                    <strong class="special-result__value">{{ cronValidateResult.valid ? '表达式有效' : '表达式无效' }}</strong>
+                    <span class="special-result__help">{{ cronValidateResult.valid ? '当前表达式已通过定时表达式校验。' : (cronValidateResult.message || '定时表达式校验失败。') }}</span>
                   </article>
                 </div>
               </div>
@@ -807,19 +740,19 @@
               <div v-else-if="resultSpecialLayout === 'image-base64'" class="special-result">
                 <div class="special-result__cards">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Conversion Mode</span>
-                    <strong class="special-result__value">{{ imageBase64ResultObject ? 'Base64 -> Image' : 'Image -> Base64' }}</strong>
-                    <span class="special-result__help">{{ imageBase64ResultObject ? 'Binary output was reconstructed into an image preview.' : 'Text output is ready to copy or download.' }}</span>
+                    <span class="special-result__label">转换模式</span>
+                    <strong class="special-result__value">{{ imageBase64ResultObject ? 'Base64 转图片' : '图片转 Base64' }}</strong>
+                    <span class="special-result__help">{{ imageBase64ResultObject ? '二进制结果已还原为图片预览。' : '文本结果已可直接复制或下载。' }}</span>
                   </article>
                   <article v-if="imageBase64ResultObject" class="special-result__card">
-                    <span class="special-result__label">Image Info</span>
+                    <span class="special-result__label">图片信息</span>
                     <strong class="special-result__value">{{ imageBase64ResultObject.mime_type || 'image/png' }}</strong>
                     <span class="special-result__help">{{ formatBytes(imageBase64ResultObject.size) }}</span>
                   </article>
                   <article v-else class="special-result__card">
-                    <span class="special-result__label">Output Length</span>
+                    <span class="special-result__label">输出长度</span>
                     <strong class="special-result__value">{{ imageBase64ResultText.length }}</strong>
-                    <span class="special-result__help">Character count of the generated Base64 payload.</span>
+                    <span class="special-result__help">生成的 Base64 内容总字符数。</span>
                   </article>
                 </div>
                 <div v-if="imageBase64ResultPreviewUrl" class="image-result">
@@ -832,31 +765,31 @@
               <div v-else-if="resultSpecialLayout === 'aes-encrypt' && aesEncryptResult" class="special-result">
                 <div class="special-result__cards special-result__cards--three">
                   <article class="special-result__card is-success">
-                    <span class="special-result__label">Mode</span>
+                    <span class="special-result__label">模式</span>
                     <strong class="special-result__value">{{ aesEncryptResult.mode || 'AES' }}</strong>
-                    <span class="special-result__help">Encryption mode returned by the backend executor.</span>
+                    <span class="special-result__help">后端执行器返回的加密模式。</span>
                   </article>
                   <article class="special-result__card">
-                    <span class="special-result__label">Cipher Length</span>
+                    <span class="special-result__label">密文长度</span>
                     <strong class="special-result__value">{{ aesEncryptResult.cipherText.length }}</strong>
-                    <span class="special-result__help">Character count of the Base64 cipher text.</span>
+                    <span class="special-result__help">Base64 密文内容的总字符数。</span>
                   </article>
                   <article class="special-result__card">
                     <span class="special-result__label">IV</span>
-                    <strong class="special-result__value">{{ aesEncryptResult.iv ? 'Included' : 'Not used' }}</strong>
-                    <span class="special-result__help">{{ aesEncryptResult.iv ? 'CBC mode returns an initialization vector.' : 'ECB mode does not include an IV.' }}</span>
+                    <strong class="special-result__value">{{ aesEncryptResult.iv ? '已包含' : '未使用' }}</strong>
+                    <span class="special-result__help">{{ aesEncryptResult.iv ? 'CBC 模式会返回初始化向量。' : 'ECB 模式不会包含初始化向量。' }}</span>
                   </article>
                 </div>
                 <div class="special-result__list">
                   <article class="special-result__list-item">
                     <div class="special-result__list-head">
-                      <strong>Cipher Text</strong>
+                      <strong>密文内容</strong>
                     </div>
                     <pre class="result-inline-block">{{ aesEncryptResult.cipherText }}</pre>
                   </article>
                   <article v-if="aesEncryptResult.iv" class="special-result__list-item">
                     <div class="special-result__list-head">
-                      <strong>Initialization Vector</strong>
+                      <strong>初始化向量</strong>
                     </div>
                     <pre class="result-inline-block">{{ aesEncryptResult.iv }}</pre>
                   </article>
@@ -951,6 +884,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconArrowRight, IconCheckCircle, IconClockCircle, IconCodeBlock, IconCopy, IconDownload, IconFile, IconFire, IconFontColors, IconHistory, IconLock, IconPlayArrow, IconRefresh, IconTags, IconTool, IconUserGroup } from '@arco-design/web-vue/es/icon'
 import { useProjectStore } from '@/store/projectStore'
@@ -994,6 +928,8 @@ type JsonInputAnalysis = {
 }
 
 const emptyStatistics = (): DataFactoryStatistics => ({ total_records: 0, saved_records: 0, category_stats: [], scenario_stats: [], tag_stats: [], recent_records: [] })
+const route = useRoute()
+const router = useRouter()
 const projectStore = useProjectStore()
 const projectId = computed(() => projectStore.currentProject?.id ?? null)
 const projectName = computed(() => projectStore.currentProject?.name || '未选择项目')
@@ -1002,6 +938,7 @@ const projectLockMessage = '未选择项目时可浏览全部工具，执行、�
 
 const categoryIcons: Record<DataFactoryCategoryKey, any> = { string: IconFontColors, encoding: IconCodeBlock, random: IconFire, encryption: IconLock, test_data: IconUserGroup, json: IconFile, crontab: IconClockCircle }
 const scenarioIcons: Record<DataFactoryScenarioKey, any> = { data_generation: IconFire, format_conversion: IconTool, data_validation: IconCheckCircle, encryption_decryption: IconLock }
+const dataFactoryCategoryKeys: DataFactoryCategoryKey[] = ['string', 'encoding', 'random', 'encryption', 'test_data', 'json', 'crontab']
 
 const viewMode = ref<ViewMode>('category')
 const historyVisible = ref(false)
@@ -1039,6 +976,7 @@ const scenarioIcon = (scenario: DataFactoryScenarioKey) => scenarioIcons[scenari
 const normalizeErrorMessage = (error: any, fallback: string) => error?.error || error?.response?.data?.message || error?.message || fallback
 const formatDate = (value?: string) => value ? new Date(value).toLocaleString('zh-CN') : '-'
 const cloneValue = <T,>(value: T): T => Array.isArray(value) ? ([...value] as T) : value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value
+const normalizeCategoryFilter = (value: unknown): CategoryFilter => dataFactoryCategoryKeys.includes(value as DataFactoryCategoryKey) ? value as DataFactoryCategoryKey : 'all'
 
 const sampleJsonObjectText = JSON.stringify(
   {
@@ -1125,17 +1063,17 @@ const sampleRegexEmailText = [
 ].join('\n')
 
 const cronGeneratePresets = [
-  { key: 'cron-generate-every-5m', label: 'Every 5 min', values: { minute: '*/5', hour: '*', day: '*', month: '*', weekday: '*' } },
-  { key: 'cron-generate-daily-9', label: 'Daily 09:00', values: { minute: '0', hour: '9', day: '*', month: '*', weekday: '*' } },
-  { key: 'cron-generate-weekday-10', label: 'Weekdays 10:00', values: { minute: '0', hour: '10', day: '*', month: '*', weekday: '1-5' } },
-  { key: 'cron-generate-nightly', label: 'Nightly 23:30', values: { minute: '30', hour: '23', day: '*', month: '*', weekday: '*' } },
+  { key: 'cron-generate-every-5m', label: '每 5 分钟', values: { minute: '*/5', hour: '*', day: '*', month: '*', weekday: '*' } },
+  { key: 'cron-generate-daily-9', label: '每天 09:00', values: { minute: '0', hour: '9', day: '*', month: '*', weekday: '*' } },
+  { key: 'cron-generate-weekday-10', label: '工作日 10:00', values: { minute: '0', hour: '10', day: '*', month: '*', weekday: '1-5' } },
+  { key: 'cron-generate-nightly', label: '每天 23:30', values: { minute: '30', hour: '23', day: '*', month: '*', weekday: '*' } },
 ] satisfies Array<{ key: string; label: string; values: Record<string, string> }>
 
 const cronExpressionPresets = [
-  { key: 'cron-expression-every-5m', label: '*/5 * * * *', values: { expression: '*/5 * * * *' } },
-  { key: 'cron-expression-daily-9', label: '0 9 * * *', values: { expression: '0 9 * * *' } },
-  { key: 'cron-expression-weekday-10', label: '0 10 * * 1-5', values: { expression: '0 10 * * 1-5' } },
-  { key: 'cron-expression-nightly', label: '30 23 * * *', values: { expression: '30 23 * * *' } },
+  { key: 'cron-expression-every-5m', label: '每 5 分钟', values: { expression: '*/5 * * * *' } },
+  { key: 'cron-expression-daily-9', label: '每天 09:00', values: { expression: '0 9 * * *' } },
+  { key: 'cron-expression-weekday-10', label: '工作日 10:00', values: { expression: '0 10 * * 1-5' } },
+  { key: 'cron-expression-nightly', label: '每天 23:30', values: { expression: '30 23 * * *' } },
 ] satisfies Array<{ key: string; label: string; values: Record<string, string> }>
 
 const jsonPathPresets = [
@@ -1170,7 +1108,7 @@ const sortJsonKeys = (value: any): any => {
 
 const parseJsonFieldValue = (fieldName: string) => {
   const rawValue = String(toolForm.value[fieldName] ?? '').trim()
-  if (!rawValue) throw new Error('Please enter JSON first.')
+  if (!rawValue) throw new Error('请先输入 JSON 内容。')
   return JSON.parse(rawValue)
 }
 
@@ -1182,9 +1120,9 @@ const formatJsonField = (fieldName: string, options?: { minify?: boolean }) => {
     toolForm.value[fieldName] = options?.minify
       ? JSON.stringify(value)
       : JSON.stringify(value, null, normalizedJsonIndent())
-    Message.success(options?.minify ? 'JSON minified.' : 'JSON formatted.')
+    Message.success(options?.minify ? 'JSON 已压缩。' : 'JSON 已格式化。')
   } catch (error: any) {
-    Message.warning(error?.message || 'Invalid JSON input.')
+    Message.warning(error?.message || 'JSON 输入无效。')
   }
 }
 
@@ -1267,32 +1205,34 @@ const analyseJsonInput = (value: unknown): JsonInputAnalysis => {
       status: 'empty',
       charCount: 0,
       lineCount: 0,
-      summary: 'Empty',
-      help: 'Paste or generate a JSON payload to continue.',
+      summary: '暂无内容',
+      help: '请先粘贴或生成 JSON 内容。',
     }
   }
 
   try {
     const parsed = JSON.parse(trimmed)
     const summary = Array.isArray(parsed)
-      ? `Array | ${parsed.length} items`
-      : parsed && typeof parsed === 'object'
-        ? `Object | ${Object.keys(parsed).length} keys`
-        : `Primitive | ${typeof parsed}`
+      ? `数组 | ${parsed.length} 项`
+      : parsed === null
+        ? '空值 | null'
+        : parsed && typeof parsed === 'object'
+          ? `对象 | ${Object.keys(parsed).length} 个键`
+          : `基础类型 | ${({ string: '字符串', number: '数字', boolean: '布尔值' } as Record<string, string>)[typeof parsed] || typeof parsed}`
     return {
       status: 'valid',
       charCount: text.length,
       lineCount: text.split(/\r?\n/).length,
       summary,
-      help: 'JSON is valid and ready for execution.',
+      help: 'JSON 内容有效，可以直接执行。',
     }
   } catch (error: any) {
     return {
       status: 'invalid',
       charCount: text.length,
       lineCount: text.split(/\r?\n/).length,
-      summary: 'Invalid JSON',
-      help: error?.message || 'JSON syntax error detected.',
+      summary: 'JSON 无效',
+      help: error?.message || '检测到 JSON 语法错误。',
     }
   }
 }
@@ -1305,6 +1245,8 @@ const categoryCards = computed<CategoryCard[]>(() => {
   })
 })
 
+const routeCategory = computed<CategoryFilter>(() => normalizeCategoryFilter(route.query.category))
+const isCategoryMenuView = computed(() => routeCategory.value !== 'all')
 const visibleCategories = computed<VisibleCategory[]>(() => {
   const keyword = toolKeyword.value.trim().toLowerCase()
   return catalog.value.categories.map(category => ({ ...category, visibleTools: category.tools.filter(tool => (selectedScenario.value === 'all' || tool.scenario === selectedScenario.value) && matchKeyword(tool, keyword)) })).filter(category => category.visibleTools.length > 0)
@@ -1313,10 +1255,19 @@ const visibleCategories = computed<VisibleCategory[]>(() => {
 const workspaceCategories = computed<VisibleCategory[]>(() => focusedCategory.value === 'all' ? visibleCategories.value : visibleCategories.value.filter(category => category.category === focusedCategory.value))
 const workspaceToolTotal = computed(() => workspaceCategories.value.reduce((total, category) => total + category.visibleTools.length, 0))
 const activeScenarioLabel = computed(() => selectedScenario.value === 'all' ? '全部场景' : scenarioLabel(selectedScenario.value))
-const workspaceTitle = computed(() => focusedCategory.value === 'all' ? '工具工作台' : `${categoryName(focusedCategory.value)}工具工作台`)
+const activeCategoryLabel = computed(() => focusedCategory.value === 'all' ? '全部分类' : categoryName(focusedCategory.value as DataFactoryCategoryKey))
+const heroToolCount = computed(() => isCategoryMenuView.value ? workspaceToolTotal.value : catalog.value.tools.length)
+const pageTitle = computed(() => isCategoryMenuView.value ? categoryName(routeCategory.value as DataFactoryCategoryKey) : '数据工厂')
+const pageDescription = computed(() => {
+  if (isCategoryMenuView.value) {
+    return `当前为“${categoryName(routeCategory.value as DataFactoryCategoryKey)}”分类视图，仅展示该分类下的工具内容。`
+  }
+  return '参考 testhub_platform 的数据工厂交互，保留 7 大类工具总览、场景筛选、工具执行、记录和标签管理能力。'
+})
+const workspaceTitle = computed(() => focusedCategory.value === 'all' ? '工具面板' : '')
 const workspaceDescription = computed(() => {
-  const scope = focusedCategory.value === 'all' ? '默认展示全部分类工具。' : `当前已聚焦到“${categoryName(focusedCategory.value)}”。`
-  return `${scope} 点击工具卡片会立即打开执行面板。`
+  if (focusedCategory.value !== 'all') return ''
+  return '默认展示全部分类工具。点击工具卡片会立即打开执行面板。'
 })
 const referencePickerTitle = computed(() => referencePickerMode.value === 'api' ? '浏览 API 数据工厂引用' : '浏览 UI 数据工厂引用')
 const topReferenceTags = computed(() => statistics.value.tag_stats.slice(0, 6).map(item => {
@@ -1369,27 +1320,27 @@ const toolHelperDescription = computed(() => {
     case 'json_to_xml':
     case 'json_to_yaml':
     case 'json_to_csv':
-      return 'Use a sample payload, format the current JSON, or quickly clear the editor.'
+      return '可快速载入 JSON 样例、格式化当前内容，或一键清空输入区域。'
     case 'jsonpath_query':
-      return 'Fill a demo JSON document and apply common JSONPath expressions with one click.'
+      return '可一键填入示例 JSON，并快速套用常见 JSONPath 表达式。'
     case 'json_diff':
-      return 'Load a ready-to-compare pair and switch the left/right JSON quickly.'
+      return '可一键载入对比样例，快速切换左右两份 JSON。'
     case 'text_diff':
-      return 'Load a sample pair, swap the two texts, or clear fields before comparing.'
+      return '可载入对比样例、交换两段文本，或在执行前快速清空输入。'
     case 'regex_test':
-      return 'Apply a ready-made pattern and sample text, then inspect matches and capture groups.'
+      return '可套用常见正则和示例文本，快速查看匹配结果与分组信息。'
     case 'cron_generate':
-      return 'Apply common schedules directly to the five cron fields.'
+      return '可直接套用常见计划模板，快速生成五段式表达式。'
     case 'cron_parse':
     case 'cron_next_runs':
     case 'cron_validate':
-      return 'Try common expressions before editing the cron string manually.'
+      return '可先套用常见表达式，再按需手动调整定时表达式内容。'
     case 'generate_qrcode':
-      return 'Start from a URL or note template, then adjust size and border as needed.'
+      return '可从链接或备注模板开始，按需调整尺寸倍率和边框。'
     case 'generate_barcode':
-      return 'Fill a sample code and switch barcode styles faster.'
+      return '可快速填入示例编码，并切换条形码类型。'
     case 'image_base64_convert':
-      return 'Switch between image and Base64 mode, then upload, paste, or preview the current payload.'
+      return '可在图片与 Base64 模式间切换，并直接上传、粘贴和预览当前内容。'
     default:
       return ''
   }
@@ -1398,55 +1349,55 @@ const toolHelperPresets = computed<ToolPreset[]>(() => {
   switch (currentTool.value?.name) {
     case 'json_format':
       return [
-        { key: 'json-format-sample', label: 'Sample JSON', values: { text: sampleJsonObjectText, sort_keys: false } },
-        { key: 'json-format-current', label: 'Format Current', action: () => formatJsonField('text') },
-        { key: 'json-format-sort', label: 'Enable Sort Keys', values: { sort_keys: true } },
+        { key: 'json-format-sample', label: '示例 JSON', values: { text: sampleJsonObjectText, sort_keys: false } },
+        { key: 'json-format-current', label: '格式化当前内容', action: () => formatJsonField('text') },
+        { key: 'json-format-sort', label: '启用键名排序', values: { sort_keys: true } },
       ]
     case 'json_minify':
       return [
-        { key: 'json-minify-sample', label: 'Sample JSON', values: { text: sampleJsonObjectText } },
-        { key: 'json-minify-current', label: 'Minify Current', action: () => formatJsonField('text', { minify: true }) },
+        { key: 'json-minify-sample', label: '示例 JSON', values: { text: sampleJsonObjectText } },
+        { key: 'json-minify-current', label: '压缩当前内容', action: () => formatJsonField('text', { minify: true }) },
       ]
     case 'json_validate':
       return [
-        { key: 'json-validate-sample', label: 'Sample JSON', values: { text: sampleJsonObjectText } },
-        { key: 'json-validate-format', label: 'Format Current', action: () => formatJsonField('text') },
+        { key: 'json-validate-sample', label: '示例 JSON', values: { text: sampleJsonObjectText } },
+        { key: 'json-validate-format', label: '格式化当前内容', action: () => formatJsonField('text') },
       ]
     case 'jsonpath_query':
       return [
-        { key: 'jsonpath-demo', label: 'Demo JSON + Path', values: { text: sampleJsonObjectText, path: '$.items[*].sku' } },
+        { key: 'jsonpath-demo', label: '示例 JSON + 路径', values: { text: sampleJsonObjectText, path: '$.items[*].sku' } },
         ...jsonPathPresets,
       ]
     case 'json_diff':
       return [
-        { key: 'json-diff-sample', label: 'Load Compare Pair', values: { left_text: sampleJsonDiffLeftText, right_text: sampleJsonDiffRightText } },
-        { key: 'json-diff-swap', label: 'Swap Left / Right', action: swapJsonDiffInputs },
+        { key: 'json-diff-sample', label: '载入对比样例', values: { left_text: sampleJsonDiffLeftText, right_text: sampleJsonDiffRightText } },
+        { key: 'json-diff-swap', label: '交换左右内容', action: swapJsonDiffInputs },
       ]
     case 'text_diff':
       return [
-        { key: 'text-diff-sample', label: 'Load Compare Pair', values: { left_text: sampleTextDiffLeftText, right_text: sampleTextDiffRightText } },
-        { key: 'text-diff-swap', label: 'Swap Left / Right', action: swapJsonDiffInputs },
+        { key: 'text-diff-sample', label: '载入对比样例', values: { left_text: sampleTextDiffLeftText, right_text: sampleTextDiffRightText } },
+        { key: 'text-diff-swap', label: '交换左右内容', action: swapJsonDiffInputs },
       ]
     case 'regex_test':
       return [
-        { key: 'regex-case-code', label: 'Case Code Pattern', values: { pattern: '^FT-[A-Z]+-\\d{3}$', text: sampleRegexCaseCodeText, flags: ['m'] } },
-        { key: 'regex-email', label: 'Email Pattern', values: { pattern: '^[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}$', text: sampleRegexEmailText, flags: ['m'] } },
-        { key: 'regex-clear', label: 'Clear Inputs', action: () => applyFormValues({ pattern: '', text: '', flags: [] }) },
+        { key: 'regex-case-code', label: '用例编号正则', values: { pattern: '^FT-[A-Z]+-\\d{3}$', text: sampleRegexCaseCodeText, flags: ['m'] } },
+        { key: 'regex-email', label: '邮箱正则', values: { pattern: '^[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}$', text: sampleRegexEmailText, flags: ['m'] } },
+        { key: 'regex-clear', label: '清空输入', action: () => applyFormValues({ pattern: '', text: '', flags: [] }) },
       ]
     case 'json_to_xml':
       return [
-        { key: 'json-xml-sample', label: 'Sample JSON', values: { text: sampleJsonObjectText, root_name: 'root' } },
-        { key: 'json-xml-format', label: 'Format Current', action: () => formatJsonField('text') },
+        { key: 'json-xml-sample', label: '示例 JSON', values: { text: sampleJsonObjectText, root_name: 'root' } },
+        { key: 'json-xml-format', label: '格式化当前内容', action: () => formatJsonField('text') },
       ]
     case 'json_to_yaml':
       return [
-        { key: 'json-yaml-sample', label: 'Sample JSON', values: { text: sampleJsonObjectText } },
-        { key: 'json-yaml-format', label: 'Format Current', action: () => formatJsonField('text') },
+        { key: 'json-yaml-sample', label: '示例 JSON', values: { text: sampleJsonObjectText } },
+        { key: 'json-yaml-format', label: '格式化当前内容', action: () => formatJsonField('text') },
       ]
     case 'json_to_csv':
       return [
-        { key: 'json-csv-sample', label: 'Sample Rows', values: { text: sampleJsonArrayText } },
-        { key: 'json-csv-format', label: 'Format Current', action: () => formatJsonField('text') },
+        { key: 'json-csv-sample', label: '示例数据行', values: { text: sampleJsonArrayText } },
+        { key: 'json-csv-format', label: '格式化当前内容', action: () => formatJsonField('text') },
       ]
     case 'cron_generate':
       return cronGeneratePresets.map(preset => ({ ...preset }))
@@ -1461,35 +1412,35 @@ const toolHelperPresets = computed<ToolPreset[]>(() => {
       }))
     case 'generate_qrcode':
       return [
-        { key: 'qrcode-url', label: 'Sample URL', values: { text: 'https://flytest.example.com/login', box_size: 8, border: 2 } },
-        { key: 'qrcode-note', label: 'Sample Note', values: { text: 'FlyTest\\nUI automation\\nRun smoke suite' } },
+        { key: 'qrcode-url', label: '示例链接', values: { text: 'https://flytest.example.com/login', box_size: 8, border: 2 } },
+        { key: 'qrcode-note', label: '示例备注', values: { text: 'FlyTest\\nUI 自动化\\n执行冒烟套件' } },
       ]
     case 'generate_barcode':
       return [
-        { key: 'barcode-order', label: 'Order Code', values: { text: 'FT202604060001', barcode_type: 'code128' } },
-        { key: 'barcode-product', label: 'Product SKU', values: { text: 'SKU-FT-9001', barcode_type: 'code128' } },
+        { key: 'barcode-order', label: '示例订单号', values: { text: 'FT202604060001', barcode_type: 'code128' } },
+        { key: 'barcode-product', label: '示例产品编码', values: { text: 'SKU-FT-9001', barcode_type: 'code128' } },
       ]
     case 'image_base64_convert':
       return [
-        { key: 'image-base64-image-mode', label: 'Image -> Base64', values: { mode: 'image_to_base64', image_data: '', include_prefix: true } },
-        { key: 'image-base64-base64-mode', label: 'Base64 -> Image', values: { mode: 'base64_to_image', image_data: sampleImageDataUrl } },
-        { key: 'image-base64-clear', label: 'Clear Input', action: () => clearField('image_data') },
+        { key: 'image-base64-image-mode', label: '图片转 Base64', values: { mode: 'image_to_base64', image_data: '', include_prefix: true } },
+        { key: 'image-base64-base64-mode', label: 'Base64 转图片', values: { mode: 'base64_to_image', image_data: sampleImageDataUrl } },
+        { key: 'image-base64-clear', label: '清空输入', action: () => clearField('image_data') },
       ]
     default:
       return []
   }
 })
-const imageInputModeLabel = computed(() => toolForm.value.mode === 'base64_to_image' ? 'Base64 Preview' : 'Image Preview')
+const imageInputModeLabel = computed(() => toolForm.value.mode === 'base64_to_image' ? 'Base64 预览' : '图片预览')
 const imageAssistantTip = computed(() => {
   if (currentTool.value?.name !== 'image_base64_convert') return ''
   return toolForm.value.mode === 'base64_to_image'
-    ? 'Raw Base64 can be previewed automatically for PNG, JPEG, GIF, WebP, BMP, and SVG signatures.'
-    : 'Upload an image or paste a data URL. The preview updates immediately before execution.'
+    ? 'PNG、JPEG、GIF、WebP、BMP、SVG 等常见 Base64 内容会自动尝试预览。'
+    : '可上传图片或粘贴 Data URL，预览会在执行前即时更新。'
 })
 const fieldPreviewImageUrl = (fieldName: string) => resolveImagePreviewUrl(toolForm.value[fieldName])
 const describeImageInput = (fieldName: string) => {
   const value = toolForm.value[fieldName]
-  if (typeof value !== 'string' || !value.trim()) return 'No image payload'
+  if (typeof value !== 'string' || !value.trim()) return '暂无图片内容'
   const mimeType = value.startsWith('data:image/')
     ? value.slice(5, value.indexOf(';') > -1 ? value.indexOf(';') : undefined)
     : guessImageMimeType(value)
@@ -1504,45 +1455,45 @@ const fieldActionItems = (field: DataFactoryToolField): ToolFieldAction[] => {
   const toolName = currentTool.value?.name || ''
   const actions: ToolFieldAction[] = []
   if (field.name === 'text' && ['json_format', 'json_minify', 'json_validate', 'jsonpath_query', 'json_to_xml', 'json_to_yaml', 'json_to_csv'].includes(toolName)) {
-    actions.push({ key: `${toolName}-${field.name}-sample`, label: 'Sample', run: () => fillJsonSample(field.name, sampleJsonForField(toolName, field.name)) })
-    actions.push({ key: `${toolName}-${field.name}-format`, label: 'Format', run: () => formatJsonField(field.name) })
-    if (toolName === 'json_minify') actions.push({ key: `${toolName}-${field.name}-minify`, label: 'Minify', run: () => formatJsonField(field.name, { minify: true }) })
-    actions.push({ key: `${toolName}-${field.name}-clear`, label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: `${toolName}-${field.name}-sample`, label: '示例', run: () => fillJsonSample(field.name, sampleJsonForField(toolName, field.name)) })
+    actions.push({ key: `${toolName}-${field.name}-format`, label: '格式化', run: () => formatJsonField(field.name) })
+    if (toolName === 'json_minify') actions.push({ key: `${toolName}-${field.name}-minify`, label: '压缩', run: () => formatJsonField(field.name, { minify: true }) })
+    actions.push({ key: `${toolName}-${field.name}-clear`, label: '清空', run: () => clearField(field.name) })
   }
   if (toolName === 'json_diff' && ['left_text', 'right_text'].includes(field.name)) {
-    actions.push({ key: `${field.name}-sample`, label: field.name === 'left_text' ? 'Sample A' : 'Sample B', run: () => fillJsonSample(field.name, sampleJsonForField(toolName, field.name)) })
-    actions.push({ key: `${field.name}-format`, label: 'Format', run: () => formatJsonField(field.name) })
-    actions.push({ key: `${field.name}-clear`, label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: `${field.name}-sample`, label: field.name === 'left_text' ? '示例 A' : '示例 B', run: () => fillJsonSample(field.name, sampleJsonForField(toolName, field.name)) })
+    actions.push({ key: `${field.name}-format`, label: '格式化', run: () => formatJsonField(field.name) })
+    actions.push({ key: `${field.name}-clear`, label: '清空', run: () => clearField(field.name) })
   }
   if (toolName === 'text_diff' && ['left_text', 'right_text'].includes(field.name)) {
-    actions.push({ key: `${field.name}-sample`, label: field.name === 'left_text' ? 'Sample A' : 'Sample B', run: () => applyFormValues({ [field.name]: field.name === 'left_text' ? sampleTextDiffLeftText : sampleTextDiffRightText }) })
-    actions.push({ key: `${field.name}-clear`, label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: `${field.name}-sample`, label: field.name === 'left_text' ? '示例 A' : '示例 B', run: () => applyFormValues({ [field.name]: field.name === 'left_text' ? sampleTextDiffLeftText : sampleTextDiffRightText }) })
+    actions.push({ key: `${field.name}-clear`, label: '清空', run: () => clearField(field.name) })
   }
   if (toolName === 'jsonpath_query' && field.name === 'path') {
     for (const preset of jsonPathPresets) actions.push({ key: preset.key, label: preset.label, run: () => applyFormValues(preset.values) })
-    actions.push({ key: 'jsonpath-clear', label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: 'jsonpath-clear', label: '清空', run: () => clearField(field.name) })
   }
   if (toolName === 'regex_test' && field.name === 'pattern') {
-    actions.push({ key: 'regex-pattern-id', label: 'Case ID', run: () => applyFormValues({ pattern: '^FT-[A-Z]+-\\d{3}$', flags: ['m'] }) })
-    actions.push({ key: 'regex-pattern-email', label: 'Email', run: () => applyFormValues({ pattern: '^[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}$', flags: ['m'] }) })
-    actions.push({ key: 'regex-pattern-clear', label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: 'regex-pattern-id', label: '用例编号', run: () => applyFormValues({ pattern: '^FT-[A-Z]+-\\d{3}$', flags: ['m'] }) })
+    actions.push({ key: 'regex-pattern-email', label: '邮箱地址', run: () => applyFormValues({ pattern: '^[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}$', flags: ['m'] }) })
+    actions.push({ key: 'regex-pattern-clear', label: '清空', run: () => clearField(field.name) })
   }
   if (toolName === 'regex_test' && field.name === 'text') {
-    actions.push({ key: 'regex-text-sample', label: 'Sample Text', run: () => applyFormValues({ text: sampleRegexCaseCodeText }) })
-    actions.push({ key: 'regex-text-clear', label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: 'regex-text-sample', label: '示例文本', run: () => applyFormValues({ text: sampleRegexCaseCodeText }) })
+    actions.push({ key: 'regex-text-clear', label: '清空', run: () => clearField(field.name) })
   }
   if (['cron_parse', 'cron_next_runs', 'cron_validate'].includes(toolName) && field.name === 'expression') {
     for (const preset of cronExpressionPresets) actions.push({ key: preset.key, label: preset.label, run: () => applyFormValues(preset.values) })
-    actions.push({ key: `${toolName}-clear`, label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: `${toolName}-clear`, label: '清空', run: () => clearField(field.name) })
   }
   if (['generate_qrcode', 'generate_barcode'].includes(toolName) && field.name === 'text') {
-    actions.push({ key: `${toolName}-clear`, label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: `${toolName}-clear`, label: '清空', run: () => clearField(field.name) })
   }
   if (field.type === 'upload-base64') {
     if (toolName === 'image_base64_convert' && toolForm.value.mode === 'base64_to_image') {
-      actions.push({ key: 'upload-base64-sample', label: 'Sample Base64', run: () => applyFormValues({ [field.name]: sampleImageDataUrl }) })
+      actions.push({ key: 'upload-base64-sample', label: '示例 Base64', run: () => applyFormValues({ [field.name]: sampleImageDataUrl }) })
     }
-    actions.push({ key: 'upload-base64-clear', label: 'Clear', run: () => clearField(field.name) })
+    actions.push({ key: 'upload-base64-clear', label: '清空', run: () => clearField(field.name) })
   }
   return actions
 }
@@ -1555,7 +1506,7 @@ const jsonDiffLeftAnalysis = computed(() => currentTool.value?.name === 'json_di
 const jsonDiffRightAnalysis = computed(() => currentTool.value?.name === 'json_diff' ? analyseJsonInput(toolForm.value.right_text) : null)
 const activeUploadFieldName = computed(() => currentTool.value?.fields.find(field => field.type === 'upload-base64')?.name || '')
 const activeUploadPreviewUrl = computed(() => activeUploadFieldName.value ? fieldPreviewImageUrl(activeUploadFieldName.value) : '')
-const activeUploadDescription = computed(() => activeUploadFieldName.value ? describeImageInput(activeUploadFieldName.value) : 'No image payload')
+const activeUploadDescription = computed(() => activeUploadFieldName.value ? describeImageInput(activeUploadFieldName.value) : '暂无图片内容')
 const cronExpressionPreview = computed(() => {
   const toolName = currentTool.value?.name || ''
   if (!cronToolNames.has(toolName)) return ''
@@ -1572,9 +1523,9 @@ const cronExpressionPreview = computed(() => {
 })
 const cronSegmentCount = computed(() => cronExpressionPreview.value ? cronExpressionPreview.value.split(/\s+/).filter(Boolean).length : 0)
 const cronPreviewStatus = computed(() => {
-  if (!cronExpressionPreview.value) return { text: 'Waiting for input', tone: 'warning' as const, help: 'Fill the cron fields or apply a preset.' }
-  if (cronSegmentCount.value === 5) return { text: '5 fields ready', tone: 'success' as const, help: 'Expression shape looks correct for a standard cron entry.' }
-  return { text: `${cronSegmentCount.value} fields`, tone: 'warning' as const, help: 'Cron expression should contain exactly 5 space-separated fields.' }
+  if (!cronExpressionPreview.value) return { text: '等待输入', tone: 'warning' as const, help: '请填写定时表达式字段，或直接套用预设表达式。' }
+  if (cronSegmentCount.value === 5) return { text: '5 段就绪', tone: 'success' as const, help: '当前表达式结构符合标准五段式定时表达式格式。' }
+  return { text: `${cronSegmentCount.value} 段`, tone: 'warning' as const, help: '定时表达式应包含 5 个以空格分隔的字段。' }
 })
 const toolWorkbenchCards = computed<ToolWorkbenchCard[]>(() => {
   const toolName = currentTool.value?.name || ''
@@ -1582,18 +1533,18 @@ const toolWorkbenchCards = computed<ToolWorkbenchCard[]>(() => {
 
   if (currentJsonAnalysis.value) {
     return [
-      { key: 'json-status', label: 'JSON status', value: currentJsonAnalysis.value.summary, help: currentJsonAnalysis.value.help, tone: currentJsonAnalysis.value.status === 'valid' ? 'success' : currentJsonAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
-      { key: 'json-chars', label: 'Characters', value: String(currentJsonAnalysis.value.charCount), help: 'Current input length in characters.' },
-      { key: 'json-lines', label: 'Lines', value: String(currentJsonAnalysis.value.lineCount), help: 'Useful when reviewing formatted payloads.' },
+      { key: 'json-status', label: 'JSON 状态', value: currentJsonAnalysis.value.summary, help: currentJsonAnalysis.value.help, tone: currentJsonAnalysis.value.status === 'valid' ? 'success' : currentJsonAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
+      { key: 'json-chars', label: '字符数', value: String(currentJsonAnalysis.value.charCount), help: '当前输入内容的总字符数。' },
+      { key: 'json-lines', label: '行数', value: String(currentJsonAnalysis.value.lineCount), help: '查看格式化内容时可用于快速确认结构。' },
     ]
   }
 
   if (toolName === 'json_diff' && jsonDiffLeftAnalysis.value && jsonDiffRightAnalysis.value) {
     const ready = jsonDiffLeftAnalysis.value.status === 'valid' && jsonDiffRightAnalysis.value.status === 'valid'
     return [
-      { key: 'json-diff-left', label: 'Left JSON', value: jsonDiffLeftAnalysis.value.summary, help: jsonDiffLeftAnalysis.value.help, tone: jsonDiffLeftAnalysis.value.status === 'valid' ? 'success' : jsonDiffLeftAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
-      { key: 'json-diff-right', label: 'Right JSON', value: jsonDiffRightAnalysis.value.summary, help: jsonDiffRightAnalysis.value.help, tone: jsonDiffRightAnalysis.value.status === 'valid' ? 'success' : jsonDiffRightAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
-      { key: 'json-diff-ready', label: 'Compare status', value: ready ? 'Ready to compare' : 'Need valid pair', help: ready ? 'Both inputs are valid JSON.' : 'Load samples or format both sides before running.', tone: ready ? 'success' : 'warning' },
+      { key: 'json-diff-left', label: '左侧 JSON', value: jsonDiffLeftAnalysis.value.summary, help: jsonDiffLeftAnalysis.value.help, tone: jsonDiffLeftAnalysis.value.status === 'valid' ? 'success' : jsonDiffLeftAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
+      { key: 'json-diff-right', label: '右侧 JSON', value: jsonDiffRightAnalysis.value.summary, help: jsonDiffRightAnalysis.value.help, tone: jsonDiffRightAnalysis.value.status === 'valid' ? 'success' : jsonDiffRightAnalysis.value.status === 'invalid' ? 'warning' : 'default' },
+      { key: 'json-diff-ready', label: '对比状态', value: ready ? '可开始对比' : '需要有效输入', help: ready ? '左右两侧都是有效 JSON，可直接执行。' : '请先载入样例或格式化两侧内容。', tone: ready ? 'success' : 'warning' },
     ]
   }
 
@@ -1604,9 +1555,9 @@ const toolWorkbenchCards = computed<ToolWorkbenchCard[]>(() => {
     const rightLines = rightText ? rightText.split(/\r?\n/).length : 0
     const ready = Boolean(leftText.trim() && rightText.trim())
     return [
-      { key: 'text-diff-left', label: 'Text A', value: `${leftLines} lines`, help: leftText ? `${leftText.length} characters in the left document.` : 'Paste the first text block to compare.', tone: leftText ? 'success' : 'default' },
-      { key: 'text-diff-right', label: 'Text B', value: `${rightLines} lines`, help: rightText ? `${rightText.length} characters in the right document.` : 'Paste the second text block to compare.', tone: rightText ? 'success' : 'default' },
-      { key: 'text-diff-ready', label: 'Compare status', value: ready ? 'Ready to compare' : 'Need both texts', help: ready ? 'Both text areas contain content and can be compared now.' : 'Fill both sides or apply the sample pair first.', tone: ready ? 'success' : 'warning' },
+      { key: 'text-diff-left', label: '文本 A', value: `${leftLines} 行`, help: leftText ? `左侧文本共 ${leftText.length} 个字符。` : '请先输入第一段对比文本。', tone: leftText ? 'success' : 'default' },
+      { key: 'text-diff-right', label: '文本 B', value: `${rightLines} 行`, help: rightText ? `右侧文本共 ${rightText.length} 个字符。` : '请先输入第二段对比文本。', tone: rightText ? 'success' : 'default' },
+      { key: 'text-diff-ready', label: '对比状态', value: ready ? '可开始对比' : '需要两侧文本', help: ready ? '两侧文本都已填写，可直接执行对比。' : '请先填写两侧文本，或载入示例内容。', tone: ready ? 'success' : 'warning' },
     ]
   }
 
@@ -1615,8 +1566,8 @@ const toolWorkbenchCards = computed<ToolWorkbenchCard[]>(() => {
     const text = String(toolForm.value.text || '')
     const flags = Array.isArray(toolForm.value.flags) ? toolForm.value.flags.join('') : ''
     let regexTone: ToolWorkbenchCard['tone'] = 'default'
-    let regexValue = pattern ? 'Pattern ready' : 'Waiting for pattern'
-    let regexHelp = pattern ? 'Current expression can be compiled in the browser preview.' : 'Enter a regex pattern or apply a preset.'
+    let regexValue = pattern ? '表达式已就绪' : '等待输入表达式'
+    let regexHelp = pattern ? '当前表达式可在前端预览中正常编译。' : '请输入正则表达式，或直接套用预设。'
 
     if (pattern) {
       try {
@@ -1624,46 +1575,46 @@ const toolWorkbenchCards = computed<ToolWorkbenchCard[]>(() => {
         regexTone = 'success'
       } catch (error: any) {
         regexTone = 'warning'
-        regexValue = 'Pattern error'
-        regexHelp = error?.message || 'Regex syntax error detected.'
+        regexValue = '表达式有误'
+        regexHelp = error?.message || '检测到正则语法错误。'
       }
     }
 
     return [
-      { key: 'regex-status', label: 'Regex status', value: regexValue, help: regexHelp, tone: regexTone },
-      { key: 'regex-input', label: 'Input size', value: `${text ? text.split(/\r?\n/).length : 0} lines`, help: text ? `${text.length} characters ready for matching.` : 'Paste the text that should be tested.' },
-      { key: 'regex-flags', label: 'Flags', value: flags || 'None', help: 'Supported flags match the backend executor: i, m, and s.' },
+      { key: 'regex-status', label: '正则状态', value: regexValue, help: regexHelp, tone: regexTone },
+      { key: 'regex-input', label: '输入规模', value: `${text ? text.split(/\r?\n/).length : 0} 行`, help: text ? `当前待匹配文本共 ${text.length} 个字符。` : '请先输入需要测试的文本。', tone: text ? 'success' : 'default' },
+      { key: 'regex-flags', label: '修饰符', value: flags || '无', help: '当前支持的修饰符与后端一致：i、m、s。' },
     ]
   }
 
   if (cronToolNames.has(toolName)) {
     return [
-      { key: 'cron-preview', label: 'Expression', value: cronExpressionPreview.value || 'Not set', help: cronPreviewStatus.value.help, tone: cronPreviewStatus.value.tone },
-      { key: 'cron-fields', label: 'Field count', value: String(cronSegmentCount.value || 0), help: 'Standard cron expressions here use 5 fields.' },
-      { key: 'cron-mode', label: 'Tool mode', value: toolName === 'cron_generate' ? 'Generator' : 'Expression inspector', help: toolName === 'cron_generate' ? 'Build the expression from separate cron fields.' : 'Parse, validate, or inspect an existing expression.' },
+      { key: 'cron-preview', label: '当前表达式', value: cronExpressionPreview.value || '未设置', help: cronPreviewStatus.value.help, tone: cronPreviewStatus.value.tone },
+      { key: 'cron-fields', label: '字段数量', value: String(cronSegmentCount.value || 0), help: '这里使用的是标准五段式定时表达式。' },
+      { key: 'cron-mode', label: '工具模式', value: toolName === 'cron_generate' ? '表达式生成' : '表达式分析', help: toolName === 'cron_generate' ? '根据分开的字段生成表达式。' : '对现有表达式进行解析、校验或执行时间推算。' },
     ]
   }
 
   if (toolName === 'image_base64_convert') {
     return [
-      { key: 'image-mode', label: 'Mode', value: toolForm.value.mode === 'base64_to_image' ? 'Base64 -> Image' : 'Image -> Base64', help: 'Switch mode from the shortcuts above when needed.' },
-      { key: 'image-preview', label: 'Preview', value: activeUploadPreviewUrl.value ? 'Available' : 'Waiting for input', help: activeUploadPreviewUrl.value ? activeUploadDescription.value : 'Paste an image data URL or upload a file to preview it.', tone: activeUploadPreviewUrl.value ? 'success' : 'default' },
-      { key: 'image-prefix', label: 'Data URL prefix', value: toolForm.value.include_prefix === false ? 'Disabled' : 'Enabled', help: 'When enabled, generated Base64 keeps the `data:image/...;base64,` prefix.' },
+      { key: 'image-mode', label: '转换模式', value: toolForm.value.mode === 'base64_to_image' ? 'Base64 转图片' : '图片转 Base64', help: '需要时可通过上方快捷按钮快速切换模式。' },
+      { key: 'image-preview', label: '预览状态', value: activeUploadPreviewUrl.value ? '可预览' : '等待输入', help: activeUploadPreviewUrl.value ? activeUploadDescription.value : '请粘贴图片 Data URL，或上传图片文件进行预览。', tone: activeUploadPreviewUrl.value ? 'success' : 'default' },
+      { key: 'image-prefix', label: 'Data URL 前缀', value: toolForm.value.include_prefix === false ? '关闭' : '开启', help: '开启后，生成的 Base64 会保留 `data:image/...;base64,` 前缀。' },
     ]
   }
 
   if (toolName === 'generate_qrcode') {
     return [
-      { key: 'qrcode-content', label: 'Content size', value: `${String(toolForm.value.text || '').length} chars`, help: 'Longer content creates denser QR matrices.' },
-      { key: 'qrcode-size', label: 'Box size', value: String(toolForm.value.box_size || 8), help: 'Higher values create larger QR code images.' },
-      { key: 'qrcode-border', label: 'Border', value: String(toolForm.value.border || 2), help: 'Quiet zone around the QR code for scanning reliability.' },
+      { key: 'qrcode-content', label: '内容长度', value: `${String(toolForm.value.text || '').length} 字符`, help: '内容越长，二维码矩阵会越密集。' },
+      { key: 'qrcode-size', label: '尺寸倍率', value: String(toolForm.value.box_size || 8), help: '数值越大，生成的二维码图片越大。' },
+      { key: 'qrcode-border', label: '边框', value: String(toolForm.value.border || 2), help: '用于确保二维码扫描时保留足够的静区。' },
     ]
   }
 
   if (toolName === 'generate_barcode') {
     return [
-      { key: 'barcode-content', label: 'Content size', value: `${String(toolForm.value.text || '').length} chars`, help: 'Barcode payload length affects generated width.' },
-      { key: 'barcode-type', label: 'Barcode type', value: String(toolForm.value.barcode_type || 'code128').toUpperCase(), help: 'Switch format depending on the code standard you need.' },
+      { key: 'barcode-content', label: '内容长度', value: `${String(toolForm.value.text || '').length} 字符`, help: '条形码内容长度会影响最终生成宽度。' },
+      { key: 'barcode-type', label: '条形码类型', value: String(toolForm.value.barcode_type || 'code128').toUpperCase(), help: '可根据实际编码规范切换条形码格式。' },
     ]
   }
 
@@ -1925,10 +1876,25 @@ const scrollToWorkspace = async () => {
   toolWorkspaceSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+const syncCategoryRoute = async (category: CategoryFilter) => {
+  const nextCategory = category === 'all' ? undefined : category
+  const currentCategory = normalizeCategoryFilter(route.query.category)
+  if ((currentCategory === 'all' ? undefined : currentCategory) === nextCategory) {
+    return
+  }
+
+  const nextQuery = { ...route.query }
+  if (nextCategory) nextQuery.category = nextCategory
+  else delete nextQuery.category
+
+  await router.replace({ path: route.path, query: nextQuery })
+}
+
 const applyScenarioFilter = async (scenario: ScenarioFilter) => {
   selectedScenario.value = scenario
   focusedCategory.value = 'all'
   viewMode.value = 'category'
+  await syncCategoryRoute('all')
   await scrollToWorkspace()
 }
 
@@ -1938,11 +1904,13 @@ const focusCategorySection = async (category: DataFactoryCategoryKey) => {
   if (!hasVisible) selectedScenario.value = 'all'
   viewMode.value = 'category'
   focusedCategory.value = category
+  await syncCategoryRoute(category)
   await scrollToWorkspace()
 }
 
 const clearCategoryFocus = async () => {
   focusedCategory.value = 'all'
+  await syncCategoryRoute('all')
   await scrollToWorkspace()
 }
 
@@ -2124,6 +2092,19 @@ const handleImagePicked = (fieldName: string, event: Event) => {
 
 const triggerImagePicker = (fieldName: string) => uploadInputs.get(fieldName)?.click()
 const handleTagsUpdated = () => { if (projectReady.value) void Promise.all([loadTags(), loadStatistics(), loadRecords()]) }
+
+watch(
+  () => route.query.category,
+  category => {
+    const normalizedCategory = normalizeCategoryFilter(category)
+    focusedCategory.value = normalizedCategory
+    if (normalizedCategory !== 'all') {
+      selectedScenario.value = 'all'
+      viewMode.value = 'category'
+    }
+  },
+  { immediate: true }
+)
 
 watch(() => projectId.value, () => void refreshAll(), { immediate: true })
 watch(

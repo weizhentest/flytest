@@ -338,15 +338,12 @@ class GroupSerializer(serializers.ModelSerializer):
 
 
 class ContentTypeSerializer(serializers.ModelSerializer):
-    """
-    内容类型（模型）序列化器
-    """
-
     app_label_cn = serializers.SerializerMethodField()
     app_label_sort = serializers.SerializerMethodField()
-    app_label_subcategory = serializers.SerializerMethodField()  # 新增第二层分类
-    app_label_subcategory_sort = serializers.SerializerMethodField()  # 第二层排序
+    app_label_subcategory = serializers.SerializerMethodField()
+    app_label_subcategory_sort = serializers.SerializerMethodField()
     model_cn = serializers.SerializerMethodField()
+    model_sort = serializers.SerializerMethodField()
     model_verbose = serializers.SerializerMethodField()
 
     class Meta:
@@ -360,392 +357,366 @@ class ContentTypeSerializer(serializers.ModelSerializer):
             "app_label_sort",
             "model",
             "model_cn",
+            "model_sort",
             "model_verbose",
         )
 
+    MENU_CATEGORY_MAP = {
+        "projects": "\u9879\u76ee\u7ba1\u7406",
+        "requirements": "\u9700\u6c42\u7ba1\u7406",
+        "testcases": "\u6d4b\u8bd5\u7ba1\u7406",
+        "api_automation": "API\u81ea\u52a8\u5316",
+        "app_automation": "APP\u81ea\u52a8\u5316",
+        "ui_automation": "UI\u81ea\u52a8\u5316",
+        "knowledge": "\u77e5\u8bc6\u5e93\u7ba1\u7406",
+        "data_factory": "\u6570\u636e\u5de5\u5382",
+        "auth": "\u7cfb\u7edf\u7ba1\u7406",
+        "accounts": "\u7cfb\u7edf\u7ba1\u7406",
+        "api_keys": "\u7cfb\u7edf\u7ba1\u7406",
+        "mcp_tools": "\u7cfb\u7edf\u7ba1\u7406",
+        "skills": "\u7cfb\u7edf\u7ba1\u7406",
+    }
+
+    MENU_SORT_ORDER = {
+        "\u9879\u76ee\u7ba1\u7406": 1,
+        "\u9700\u6c42\u7ba1\u7406": 2,
+        "\u6d4b\u8bd5\u7ba1\u7406": 3,
+        "API\u81ea\u52a8\u5316": 4,
+        "APP\u81ea\u52a8\u5316": 5,
+        "UI\u81ea\u52a8\u5316": 6,
+        "AI \u5bf9\u8bdd": 7,
+        "\u77e5\u8bc6\u5e93\u7ba1\u7406": 8,
+        "\u6570\u636e\u5de5\u5382": 9,
+        "\u7cfb\u7edf\u7ba1\u7406": 10,
+    }
+
+    SUBCATEGORY_SORT_ORDER = {
+        "\u6d4b\u8bd5\u7528\u4f8b": 1,
+        "\u8bf7\u6c42\u7ba1\u7406": 1,
+        "\u9875\u9762\u7ba1\u7406": 1,
+        "\u6982\u89c8": 1,
+        "\u6d4b\u8bd5\u5957\u4ef6": 2,
+        "\u9875\u9762\u6b65\u9aa4": 2,
+        "\u8bbe\u5907\u7ba1\u7406": 2,
+        "\u6267\u884c\u5386\u53f2": 3,
+        "\u73af\u5883\u914d\u7f6e": 3,
+        "\u5e94\u7528\u5305": 3,
+        "\u6743\u9650\u7ba1\u7406": 3,
+        "\u6267\u884c\u8bb0\u5f55": 4,
+        "AI\u5927\u6a21\u578b\u914d\u7f6e": 4,
+        "\u6d4b\u8bd5\u62a5\u544a": 5,
+        "API KEY \u7ba1\u7406": 5,
+        "\u5143\u7d20\u7ba1\u7406": 5,
+        "MCP \u914d\u7f6e": 6,
+        "\u573a\u666f\u7f16\u6392": 6,
+        "\u516c\u5171\u6570\u636e": 7,
+        "Skills \u7ba1\u7406": 7,
+        "\u4f7f\u7528\u8bb0\u5f55": 1,
+        "\u6807\u7b7e\u7ba1\u7406": 2,
+        "\u5b9a\u65f6\u4efb\u52a1": 8,
+        "\u6267\u884c\u5668": 9,
+        "\u901a\u77e5\u65e5\u5fd7": 9,
+        "\u6267\u884c\u62a5\u544a": 10,
+        "\u73af\u5883\u8bbe\u7f6e": 11,
+        "\u7ec4\u7ec7\u7ba1\u7406": 2,
+        "\u7528\u6237\u7ba1\u7406": 1,
+    }
+
+    MODEL_NAME_MAP = {
+        "projects.project": "\u9879\u76ee",
+        "projects.projectmember": "\u9879\u76ee\u6210\u5458",
+        "projects.projectcredential": "\u9879\u76ee\u51ed\u636e",
+        "requirements.requirementdocument": "\u9700\u6c42\u6587\u6863",
+        "requirements.requirementmodule": "\u9700\u6c42\u6a21\u5757",
+        "requirements.reviewreport": "\u8bc4\u5ba1\u62a5\u544a",
+        "requirements.reviewissue": "\u8bc4\u5ba1\u95ee\u9898",
+        "requirements.modulereviewresult": "\u6a21\u5757\u8bc4\u5ba1\u7ed3\u679c",
+        "requirements.documentimage": "\u6587\u6863\u56fe\u7247",
+        "testcases.testcase": "\u6d4b\u8bd5\u7528\u4f8b",
+        "testcases.testsuite": "\u6d4b\u8bd5\u5957\u4ef6",
+        "testcases.testexecution": "\u6267\u884c\u5386\u53f2",
+        "testcases.testcaseresult": "\u6267\u884c\u7ed3\u679c",
+        "testcases.testcasemodule": "\u7528\u4f8b\u6a21\u5757",
+        "testcases.testcasestep": "\u7528\u4f8b\u6b65\u9aa4",
+        "testcases.testcasescreenshot": "\u7528\u4f8b\u622a\u56fe",
+        "api_automation.apicollection": "\u63a5\u53e3\u76ee\u5f55",
+        "api_automation.apirequest": "\u63a5\u53e3\u8bf7\u6c42",
+        "api_automation.apirequestspec": "\u8bf7\u6c42\u89c4\u683c",
+        "api_automation.apirequestfieldspec": "\u8bf7\u6c42\u5b57\u6bb5\u89c4\u5219",
+        "api_automation.apirequestfilespec": "\u8bf7\u6c42\u6587\u4ef6\u89c4\u5219",
+        "api_automation.apirequestauthspec": "\u8bf7\u6c42\u8ba4\u8bc1\u914d\u7f6e",
+        "api_automation.apirequesttransportspec": "\u8bf7\u6c42\u4f20\u8f93\u914d\u7f6e",
+        "api_automation.apiimportjob": "\u5bfc\u5165\u4efb\u52a1",
+        "api_automation.apitestcase": "API\u6d4b\u8bd5\u7528\u4f8b",
+        "api_automation.apitestcaseoverridespec": "\u7528\u4f8b\u8986\u76d6\u89c4\u5219",
+        "api_automation.apitestcasefieldspec": "\u7528\u4f8b\u5b57\u6bb5\u89c4\u5219",
+        "api_automation.apitestcasefilespec": "\u7528\u4f8b\u6587\u4ef6\u89c4\u5219",
+        "api_automation.apitestcaseauthspec": "\u7528\u4f8b\u8ba4\u8bc1\u914d\u7f6e",
+        "api_automation.apitestcasetransportspec": "\u7528\u4f8b\u4f20\u8f93\u914d\u7f6e",
+        "api_automation.apiassertionspec": "\u65ad\u8a00\u89c4\u5219",
+        "api_automation.apiextractorspec": "\u63d0\u53d6\u89c4\u5219",
+        "api_automation.apicasegenerationjob": "\u7528\u4f8b\u751f\u6210\u4efb\u52a1",
+        "api_automation.apienvironment": "API\u73af\u5883\u914d\u7f6e",
+        "api_automation.apienvironmentvariablespec": "\u73af\u5883\u53d8\u91cf",
+        "api_automation.apienvironmentheaderspec": "\u73af\u5883\u8bf7\u6c42\u5934",
+        "api_automation.apienvironmentcookiespec": "\u73af\u5883 Cookie",
+        "api_automation.apiexecutionrecord": "API\u6267\u884c\u8bb0\u5f55",
+        "api_automation.apiexecutionreport": "API\u6d4b\u8bd5\u62a5\u544a",
+        "ui_automation.uimodule": "\u9875\u9762\u6a21\u5757",
+        "ui_automation.uipage": "UI\u9875\u9762",
+        "ui_automation.uielement": "UI\u5143\u7d20",
+        "ui_automation.uipagesteps": "\u9875\u9762\u6b65\u9aa4",
+        "ui_automation.uipagestepsdetailed": "\u9875\u9762\u6b65\u9aa4\u660e\u7ec6",
+        "ui_automation.uitestcase": "UI\u6d4b\u8bd5\u7528\u4f8b",
+        "ui_automation.uicasestepsdetailed": "\u7528\u4f8b\u6b65\u9aa4\u660e\u7ec6",
+        "ui_automation.uiexecutionrecord": "UI\u6267\u884c\u8bb0\u5f55",
+        "ui_automation.uibatchexecutionrecord": "UI\u6279\u91cf\u6267\u884c\u8bb0\u5f55",
+        "ui_automation.uiaicase": "AI\u667a\u80fd\u6a21\u5f0f",
+        "ui_automation.uiaiexecutionrecord": "AI\u667a\u80fd\u6267\u884c\u8bb0\u5f55",
+        "ui_automation.uipublicdata": "\u516c\u5171\u6570\u636e",
+        "ui_automation.uienvironmentconfig": "UI\u73af\u5883\u914d\u7f6e",
+        "ui_automation.uiactuator": "\u6267\u884c\u5668",
+        "app_automation.appautomationoverview": "\u6982\u89c8",
+        "app_automation.appautomationdevice": "\u8bbe\u5907\u7ba1\u7406",
+        "app_automation.appautomationpackage": "\u5e94\u7528\u5305",
+        "app_automation.appautomationelement": "\u5143\u7d20\u7ba1\u7406",
+        "app_automation.appautomationscenebuilder": "\u573a\u666f\u7f16\u6392",
+        "app_automation.appautomationtestcase": "\u6d4b\u8bd5\u7528\u4f8b",
+        "app_automation.appautomationsuite": "\u6d4b\u8bd5\u5957\u4ef6",
+        "app_automation.appautomationexecution": "\u6267\u884c\u8bb0\u5f55",
+        "app_automation.appautomationscheduledtask": "\u5b9a\u65f6\u4efb\u52a1",
+        "app_automation.appautomationnotification": "\u901a\u77e5\u65e5\u5fd7",
+        "app_automation.appautomationreport": "\u6267\u884c\u62a5\u544a",
+        "app_automation.appautomationsettings": "\u73af\u5883\u8bbe\u7f6e",
+        "knowledge.knowledgebase": "\u77e5\u8bc6\u5e93",
+        "knowledge.document": "\u6587\u6863",
+        "knowledge.documentchunk": "\u6587\u6863\u5206\u5757",
+        "knowledge.querylog": "\u67e5\u8be2\u65e5\u5fd7",
+        "knowledge.knowledgeglobalconfig": "\u77e5\u8bc6\u5e93\u5168\u5c40\u914d\u7f6e",
+        "langgraph_integration.llmconfig": "AI\u5927\u6a21\u578b\u914d\u7f6e",
+        "langgraph_integration.chatsession": "\u5bf9\u8bdd\u4f1a\u8bdd",
+        "langgraph_integration.chatmessage": "\u5bf9\u8bdd\u6d88\u606f",
+        "langgraph_integration.usertoolapproval": "\u5de5\u5177\u5ba1\u6279\u504f\u597d",
+        "prompts.userprompt": "\u63d0\u793a\u8bcd",
+        "api_keys.apikey": "API KEY",
+        "mcp_tools.remotemcpconfig": "MCP \u914d\u7f6e",
+        "mcp_tools.mcptool": "MCP \u5de5\u5177",
+        "skills.skill": "Skills",
+        "auth.user": "\u7528\u6237",
+        "auth.group": "\u7ec4\u7ec7",
+        "auth.permission": "\u6743\u9650",
+    }
+
+    MODEL_SORT_ORDER = {
+        "projects.project": 1,
+        "projects.projectmember": 2,
+        "projects.projectcredential": 3,
+        "requirements.requirementdocument": 1,
+        "requirements.requirementmodule": 2,
+        "requirements.reviewreport": 3,
+        "requirements.reviewissue": 4,
+        "requirements.modulereviewresult": 5,
+        "requirements.documentimage": 6,
+        "testcases.testcase": 1,
+        "testcases.testcasemodule": 2,
+        "testcases.testcasestep": 3,
+        "testcases.testcasescreenshot": 4,
+        "testcases.testsuite": 5,
+        "testcases.testexecution": 6,
+        "testcases.testcaseresult": 7,
+        "api_automation.apicollection": 1,
+        "api_automation.apirequest": 2,
+        "api_automation.apirequestspec": 3,
+        "api_automation.apirequestfieldspec": 4,
+        "api_automation.apirequestfilespec": 5,
+        "api_automation.apirequestauthspec": 6,
+        "api_automation.apirequesttransportspec": 7,
+        "api_automation.apiimportjob": 8,
+        "api_automation.apitestcase": 1,
+        "api_automation.apitestcaseoverridespec": 2,
+        "api_automation.apitestcasefieldspec": 3,
+        "api_automation.apitestcasefilespec": 4,
+        "api_automation.apitestcaseauthspec": 5,
+        "api_automation.apitestcasetransportspec": 6,
+        "api_automation.apiassertionspec": 7,
+        "api_automation.apiextractorspec": 8,
+        "api_automation.apicasegenerationjob": 9,
+        "api_automation.apienvironment": 1,
+        "api_automation.apienvironmentvariablespec": 2,
+        "api_automation.apienvironmentheaderspec": 3,
+        "api_automation.apienvironmentcookiespec": 4,
+        "api_automation.apiexecutionrecord": 1,
+        "api_automation.apiexecutionreport": 1,
+        "app_automation.appautomationoverview": 1,
+        "app_automation.appautomationdevice": 2,
+        "app_automation.appautomationpackage": 3,
+        "app_automation.appautomationelement": 4,
+        "app_automation.appautomationscenebuilder": 5,
+        "app_automation.appautomationtestcase": 6,
+        "app_automation.appautomationsuite": 7,
+        "app_automation.appautomationexecution": 8,
+        "app_automation.appautomationscheduledtask": 9,
+        "app_automation.appautomationnotification": 10,
+        "app_automation.appautomationreport": 11,
+        "app_automation.appautomationsettings": 12,
+        "ui_automation.uimodule": 1,
+        "ui_automation.uipage": 2,
+        "ui_automation.uielement": 3,
+        "ui_automation.uipagesteps": 1,
+        "ui_automation.uipagestepsdetailed": 2,
+        "ui_automation.uitestcase": 1,
+        "ui_automation.uicasestepsdetailed": 2,
+        "ui_automation.uiaicase": 1,
+        "ui_automation.uiaiexecutionrecord": 2,
+        "ui_automation.uiexecutionrecord": 1,
+        "ui_automation.uibatchexecutionrecord": 1,
+        "ui_automation.uipublicdata": 1,
+        "ui_automation.uienvironmentconfig": 1,
+        "ui_automation.uiactuator": 1,
+        "data_factory.datafactoryrecord": 1,
+        "data_factory.datafactorytag": 2,
+        "knowledge.knowledgebase": 1,
+        "knowledge.document": 2,
+        "knowledge.documentchunk": 3,
+        "knowledge.querylog": 4,
+        "knowledge.knowledgeglobalconfig": 5,
+        "langgraph_integration.chatsession": 1,
+        "langgraph_integration.chatmessage": 2,
+        "langgraph_integration.usertoolapproval": 3,
+        "langgraph_integration.llmconfig": 1,
+        "prompts.userprompt": 4,
+        "api_keys.apikey": 1,
+        "mcp_tools.remotemcpconfig": 1,
+        "mcp_tools.mcptool": 2,
+        "skills.skill": 1,
+        "auth.user": 1,
+        "auth.group": 2,
+        "auth.permission": 3,
+    }
+
     def get_app_label_cn(self, obj):
-        """
-        返回与前端菜单一致的第一层分类。
-        """
         app_label = obj.app_label
         model_name = (obj.model or "").lower()
-
-        # 条件：langgraph_integration 下不同模型；动作：拆分到不同一级菜单；结果：前端导航分组更直观。
         if app_label == "langgraph_integration":
             if model_name == "llmconfig":
-                return "系统管理"
-            if model_name in ["chatsession", "chatmessage"]:
-                return "LLM对话"
-
-        # 提示词配置统一归类到 LLM 对话菜单，避免系统管理菜单过载。
+                return "\u7cfb\u7edf\u7ba1\u7406"
+            if model_name in ["chatsession", "chatmessage", "usertoolapproval"]:
+                return "AI \u5bf9\u8bdd"
         if app_label == "prompts":
-            return "LLM对话"
-
-        app_labels = {
-            # 前端一级菜单
-            "projects": "项目管理",
-            "requirements": "需求管理",
-            "orchestrator_integration": "智能图表",
-            "ui_automation": "UI自动化",
-            "testcases": "测试管理",
-            "testcase_templates": "测试管理",
-            "knowledge": "知识库管理",
-            # 系统管理
-            "auth": "系统管理",
-            "accounts": "系统管理",
-            "api_keys": "系统管理",
-            "apikey": "系统管理",
-            "mcp_tools": "系统管理",
-            "skills": "系统管理",
-            "task_center": "系统管理",
-            "django_celery_beat": "系统管理",
-            "llms": "系统管理",
-            "llm_config": "系统管理",
-            "message": "系统管理",
-            "mcpserverconfig": "系统管理",
-            # 系统核心应用（内容类型接口已排除 admin/contenttypes/sessions）
-            "authtoken": "系统管理",
-        }
-        return app_labels.get(app_label, "系统管理")
+            return "AI \u5bf9\u8bdd"
+        return self.MENU_CATEGORY_MAP.get(app_label, "\u7cfb\u7edf\u7ba1\u7406")
 
     def get_app_label_subcategory(self, obj):
-        """
-        返回与前端菜单一致的第二层分类（用于子菜单分组）。
-        """
         menu_category = self.get_app_label_cn(obj)
         app_label = obj.app_label
         model_name = (obj.model or "").lower()
 
-        # 条件：一级菜单是测试管理；动作：按模型分流到子菜单；结果：用例/套件/执行历史结构清晰。
-        if menu_category == "测试管理":
-            if app_label == "testcase_templates":
-                return "用例管理"
-            if app_label == "testcases":
-                if model_name == "testsuite":
-                    return "测试套件"
-                if model_name in ["testexecution", "testcaseresult", "scriptexecution"]:
-                    return "执行历史"
-                return "用例管理"
+        if menu_category == "\u6d4b\u8bd5\u7ba1\u7406" and app_label == "testcases":
+            if model_name == "testsuite":
+                return "\u6d4b\u8bd5\u5957\u4ef6"
+            if model_name in ["testexecution", "testcaseresult"]:
+                return "\u6267\u884c\u5386\u53f2"
+            return "\u6d4b\u8bd5\u7528\u4f8b"
+
+        if menu_category == "API\u81ea\u52a8\u5316":
+            if model_name in [
+                "apicollection", "apirequest", "apirequestspec", "apirequestfieldspec",
+                "apirequestfilespec", "apirequestauthspec", "apirequesttransportspec", "apiimportjob"
+            ]:
+                return "\u8bf7\u6c42\u7ba1\u7406"
+            if model_name in [
+                "apitestcase", "apitestcaseoverridespec", "apitestcasefieldspec", "apitestcasefilespec",
+                "apitestcaseauthspec", "apitestcasetransportspec", "apiassertionspec", "apiextractorspec",
+                "apicasegenerationjob"
+            ]:
+                return "\u6d4b\u8bd5\u7528\u4f8b"
+            if model_name in [
+                "apienvironment", "apienvironmentvariablespec", "apienvironmentheaderspec", "apienvironmentcookiespec"
+            ]:
+                return "\u73af\u5883\u914d\u7f6e"
+            if model_name == "apiexecutionrecord":
+                return "\u6267\u884c\u8bb0\u5f55"
+            if model_name == "apiexecutionreport":
+                return "\u6d4b\u8bd5\u62a5\u544a"
             return None
 
-        # 非系统管理菜单不需要二级分组，返回 None 让前端按一级菜单展示。
-        if menu_category != "系统管理":
+        if menu_category == "UI\u81ea\u52a8\u5316":
+            if model_name in ["uimodule", "uipage", "uielement"]:
+                return "\u9875\u9762\u7ba1\u7406"
+            if model_name in ["uipagesteps", "uipagestepsdetailed"]:
+                return "\u9875\u9762\u6b65\u9aa4"
+            if model_name in ["uitestcase", "uicasestepsdetailed"]:
+                return "\u6d4b\u8bd5\u7528\u4f8b"
+            if model_name in ["uiaicase", "uiaiexecutionrecord"]:
+                return "AI\u667a\u80fd\u6a21\u5f0f"
+            if model_name == "uiexecutionrecord":
+                return "\u6267\u884c\u8bb0\u5f55"
+            if model_name == "uibatchexecutionrecord":
+                return "\u6279\u91cf\u6267\u884c"
+            if model_name == "uipublicdata":
+                return "\u516c\u5171\u6570\u636e"
+            if model_name == "uienvironmentconfig":
+                return "\u73af\u5883\u914d\u7f6e"
+            if model_name == "uiactuator":
+                return "\u6267\u884c\u5668"
             return None
 
-        # 特殊映射：LLM 配置模型归入系统管理下的 LLM 配置子菜单。
-        if app_label == "langgraph_integration" and model_name == "llmconfig":
-            return "LLM配置"
+        if menu_category == "\u6570\u636e\u5de5\u5382":
+            if model_name == "datafactoryrecord":
+                return "\u4f7f\u7528\u8bb0\u5f55"
+            if model_name == "datafactorytag":
+                return "\u6807\u7b7e\u7ba1\u7406"
+            return None
 
-        subcategories = {
-            "auth": self._get_auth_subcategory(obj),
-            "accounts": "权限管理",
-            "api_keys": "KEY管理",
-            "apikey": "KEY管理",
-            "mcp_tools": "MCP配置",
-            "mcpserverconfig": "MCP配置",
-            "skills": "Skills管理",
-            "llms": "LLM配置",
-            "llm_config": "LLM配置",
-            "message": "消息管理",
-            "task_center": "任务调度",
-            "django_celery_beat": "任务调度",
-        }
-        return subcategories.get(app_label, None)
+        if menu_category == "\u7cfb\u7edf\u7ba1\u7406":
+            if app_label == "langgraph_integration" and model_name == "llmconfig":
+                return "AI\u5927\u6a21\u578b\u914d\u7f6e"
+            if app_label == "auth":
+                return self._get_auth_subcategory(obj)
+            return {
+                "accounts": "\u6743\u9650\u7ba1\u7406",
+                "api_keys": "API KEY \u7ba1\u7406",
+                "mcp_tools": "MCP \u914d\u7f6e",
+                "skills": "Skills \u7ba1\u7406",
+            }.get(app_label)
+
+        return None
 
     def _get_auth_subcategory(self, obj):
-        """
-        auth应用下的具体分类 - 只对特定模型进行分类
-        """
-        model_name = obj.model.lower()
-        # 条件：auth 模型不同；动作：映射不同二级菜单；结果：用户/组织/权限入口分离。
+        model_name = (obj.model or "").lower()
         if model_name == "user":
-            return "用户管理"
-        elif model_name == "group":
-            return "组织管理"
-        elif model_name == "permission":
-            return "权限管理"
-        else:
-            # 对于auth应用下的其他模型，不分配第二层分类
-            return None
+            return "\u7528\u6237\u7ba1\u7406"
+        if model_name == "group":
+            return "\u7ec4\u7ec7\u7ba1\u7406"
+        if model_name == "permission":
+            return "\u6743\u9650\u7ba1\u7406"
+        return None
 
     def get_app_label_subcategory_sort(self, obj):
-        """
-        返回第二层分类的排序权重
-        """
         subcategory = self.get_app_label_subcategory(obj)
-        # 未命中二级菜单时统一放在尾部，避免破坏既有分组顺序。
         if not subcategory:
-            return 99  # 没有第二层分类的排在最后
-
-        subcategory_sort = {
-            # 测试管理
-            "用例管理": 1,
-            "测试套件": 2,
-            "执行历史": 3,
-            # 系统管理
-            "用户管理": 1,
-            "组织管理": 2,
-            "权限管理": 3,
-            "LLM配置": 4,
-            "KEY管理": 5,
-            "MCP配置": 6,
-            "消息管理": 7,
-            "Skills管理": 8,
-            "任务调度": 9,
-        }
-        return subcategory_sort.get(subcategory, 99)
+            return 99
+        return self.SUBCATEGORY_SORT_ORDER.get(subcategory, 99)
 
     def get_app_label_sort(self, obj):
-        """
-        返回应用标签的排序权重
-        数字越小排序越靠前
-        """
-        app_label_cn = self.get_app_label_cn(obj)
-        sort_order = {
-            "项目管理": 1,
-            "需求管理": 2,
-            "智能图表": 3,
-            "UI自动化": 4,
-            "测试管理": 5,
-            "LLM对话": 6,
-            "知识库管理": 7,
-            "系统管理": 8,
-        }
-        return sort_order.get(app_label_cn, 99)
+        return self.MENU_SORT_ORDER.get(self.get_app_label_cn(obj), 99)
 
     def get_model_cn(self, obj):
-        """
-        返回模型的中文名称，根据应用名区分相同模型
-        """
+        app_model_key = f"{obj.app_label}.{obj.model}"
+        if app_model_key in self.MODEL_NAME_MAP:
+            return self.MODEL_NAME_MAP[app_model_key]
         try:
             verbose_name = obj.model_class()._meta.verbose_name
-            app_label = obj.app_label
-            model_name = obj.model
-
-            # 按应用+模型组合进行精确翻译
-            app_model_translations = {
-                # llm_config 应用下的模型
-                "llm_config.llmprovider": "LLM提供商配置",
-                "llm_config.llmmodel": "LLM模型配置",
-                "llm_config.llmconfiguration": "LLM配置",
-                # llms 应用下的模型
-                "llms.llmprovider": "LLM提供商",
-                "llms.llmmodel": "LLM模型",
-                "llms.llmservice": "LLM服务",
-                # 其他应用模型
-                "message.message": "消息",
-                "conversation.conversation": "对话",
-                "api_keys.apikey": "API密钥",
-                "mcp_tools.mcpserverconfig": "MCP服务器配置",
-                "mcp_tools.mcptool": "MCP工具",
-                "knowledge.document": "文档",
-                "knowledge.knowledgebase": "知识库",
-                "knowledge.knowledgedocument": "知识库文档",
-                "knowledge.documentchunk": "文档分块",
-                "knowledge.vectordatabaseindex": "向量数据库索引",
-                "knowledge.vectorstoreindex": "向量存储索引",
-                "testcase_templates.importexporttemplate": "用例导入导出模板",
-                "orchestrator_integration.orchestratortask": "智能编排任务",
-                "orchestrator_integration.agenttask": "Agent任务",
-                "orchestrator_integration.agentstep": "Agent步骤",
-                "orchestrator_integration.agentblackboard": "Agent黑板",
-                "skills.skill": "Skills",
-                "langgraph_integration.usertoolapproval": "用户工具审批偏好",
-                "task_center.scheduledtask": "调度任务",
-                "task_center.taskexecution": "任务执行记录",
-                "django_celery_beat.clockedschedule": "单次调度配置",
-                "django_celery_beat.crontabschedule": "Cron调度配置",
-                "django_celery_beat.intervalschedule": "间隔调度配置",
-                "django_celery_beat.periodictask": "周期任务",
-                "django_celery_beat.periodictasks": "周期任务状态",
-                "django_celery_beat.solarschedule": "太阳事件调度配置",
-                "ui_automation.uibatchexecutionrecord": "UI批量执行记录",
-                "ui_automation.uicasestepsdetailed": "UI用例步骤明细",
-                "ui_automation.uielement": "UI元素",
-                "ui_automation.uienvironmentconfig": "UI环境配置",
-                "ui_automation.uiexecutionrecord": "UI执行记录",
-                "ui_automation.uimodule": "UI模块",
-                "ui_automation.uipage": "UI页面",
-                "ui_automation.uipagesteps": "UI页面步骤",
-                "ui_automation.uipagestepsdetailed": "UI页面步骤明细",
-                "ui_automation.uipublicdata": "UI公共数据",
-                "ui_automation.uitestcase": "UI测试用例",
-            }
-
-            # 优先使用 应用+模型 精确映射，避免跨应用同名模型翻译冲突。
-            app_model_key = f"{app_label}.{model_name}"
-            if app_model_key in app_model_translations:
-                return app_model_translations[app_model_key]
-
-            # 未命中精确映射时回退到通用名称映射，保证最差情况也有中文展示。
-            model_name_translations = {
-                "chatsession": "对话会话",
-                "chat session": "对话会话",
-                "chatmessage": "对话消息",
-                "chat message": "对话消息",
-                "message": "消息",
-                "conversation": "对话",
-                "apikey": "API密钥",
-                "api key": "API密钥",
-                "mcpserverconfig": "MCP服务器配置",
-                "mcp server config": "MCP服务器配置",
-                "llmprovider": "LLM提供商",
-                "llm provider": "LLM提供商",
-                "llmmodel": "LLM模型",
-                "llm model": "LLM模型",
-                "llmconfiguration": "LLM配置",
-                "llm configuration": "LLM配置",
-                "vectordatabaseindex": "向量数据库索引",
-                "vector database index": "向量数据库索引",
-                "vectorstoreindex": "向量存储索引",
-                "vector store index": "向量存储索引",
-                "document": "文档",
-                "knowledgebase": "知识库",
-                "knowledge base": "知识库",
-                "knowledgedocument": "知识库文档",
-                "knowledge document": "知识库文档",
-                "documentchunk": "文档分块",
-                "document chunk": "文档分块",
-                "user": "用户",
-                "group": "用户组",
-                "permission": "权限",
-                "content type": "内容类型",
-                "session": "会话",
-                "log entry": "日志条目",
-                "importexporttemplate": "用例导入导出模板",
-                "orchestratortask": "智能编排任务",
-                "agenttask": "Agent任务",
-                "agentstep": "Agent步骤",
-                "agentblackboard": "Agent黑板",
-                "skill": "Skills",
-                "usertoolapproval": "用户工具审批偏好",
-                "mcptool": "MCP工具",
-                "scheduledtask": "调度任务",
-                "taskexecution": "任务执行记录",
-                "clockedschedule": "单次调度配置",
-                "crontabschedule": "Cron调度配置",
-                "intervalschedule": "间隔调度配置",
-                "periodictask": "周期任务",
-                "periodictasks": "周期任务状态",
-                "solarschedule": "太阳事件调度配置",
-                "uibatchexecutionrecord": "UI批量执行记录",
-                "uicasestepsdetailed": "UI用例步骤明细",
-                "uielement": "UI元素",
-                "uienvironmentconfig": "UI环境配置",
-                "uiexecutionrecord": "UI执行记录",
-                "uimodule": "UI模块",
-                "uipage": "UI页面",
-                "uipagesteps": "UI页面步骤",
-                "uipagestepsdetailed": "UI页面步骤明细",
-                "uipublicdata": "UI公共数据",
-                "uitestcase": "UI测试用例",
-            }
-            return model_name_translations.get(verbose_name.lower(), verbose_name)
-        except:
-            # 条件：无法读取 model_class()._meta；动作：回退 model 字段翻译；结果：接口不因反射失败中断。
-            app_label = obj.app_label
-            model_name = obj.model
-
-            # 按应用+模型组合进行精确翻译
-            app_model_translations = {
-                "llm_config.llmprovider": "LLM提供商配置",
-                "llm_config.llmmodel": "LLM模型配置",
-                "llm_config.llmconfiguration": "LLM配置",
-                "llms.llmprovider": "LLM提供商",
-                "llms.llmmodel": "LLM模型",
-                "llms.llmservice": "LLM服务",
-                "mcp_tools.mcptool": "MCP工具",
-                "testcase_templates.importexporttemplate": "用例导入导出模板",
-                "orchestrator_integration.orchestratortask": "智能编排任务",
-                "orchestrator_integration.agenttask": "Agent任务",
-                "orchestrator_integration.agentstep": "Agent步骤",
-                "orchestrator_integration.agentblackboard": "Agent黑板",
-                "skills.skill": "Skills",
-                "langgraph_integration.usertoolapproval": "用户工具审批偏好",
-                "task_center.scheduledtask": "调度任务",
-                "task_center.taskexecution": "任务执行记录",
-                "django_celery_beat.clockedschedule": "单次调度配置",
-                "django_celery_beat.crontabschedule": "Cron调度配置",
-                "django_celery_beat.intervalschedule": "间隔调度配置",
-                "django_celery_beat.periodictask": "周期任务",
-                "django_celery_beat.periodictasks": "周期任务状态",
-                "django_celery_beat.solarschedule": "太阳事件调度配置",
-                "ui_automation.uibatchexecutionrecord": "UI批量执行记录",
-                "ui_automation.uicasestepsdetailed": "UI用例步骤明细",
-                "ui_automation.uielement": "UI元素",
-                "ui_automation.uienvironmentconfig": "UI环境配置",
-                "ui_automation.uiexecutionrecord": "UI执行记录",
-                "ui_automation.uimodule": "UI模块",
-                "ui_automation.uipage": "UI页面",
-                "ui_automation.uipagesteps": "UI页面步骤",
-                "ui_automation.uipagestepsdetailed": "UI页面步骤明细",
-                "ui_automation.uipublicdata": "UI公共数据",
-                "ui_automation.uitestcase": "UI测试用例",
-            }
-
-            app_model_key = f"{app_label}.{model_name}"
-            if app_model_key in app_model_translations:
-                return app_model_translations[app_model_key]
-
-            model_name_translations = {
-                "chatsession": "对话会话",
-                "chatmessage": "对话消息",
-                "message": "消息",
-                "conversation": "对话",
-                "apikey": "API密钥",
-                "mcpserverconfig": "MCP服务器配置",
-                "llmprovider": "LLM提供商",
-                "llmmodel": "LLM模型",
-                "llmconfiguration": "LLM配置",
-                "llmconfig": "LLM配置",
-                "vectordatabaseindex": "向量数据库索引",
-                "vectorstoreindex": "向量存储索引",
-                "document": "文档",
-                "knowledgebase": "知识库",
-                "knowledgedocument": "知识库文档",
-                "documentchunk": "文档分块",
-                "user": "用户",
-                "group": "用户组",
-                "permission": "权限",
-                "importexporttemplate": "用例导入导出模板",
-                "orchestratortask": "智能编排任务",
-                "agenttask": "Agent任务",
-                "agentstep": "Agent步骤",
-                "agentblackboard": "Agent黑板",
-                "skill": "Skills",
-                "usertoolapproval": "用户工具审批偏好",
-                "mcptool": "MCP工具",
-                "scheduledtask": "调度任务",
-                "taskexecution": "任务执行记录",
-                "clockedschedule": "单次调度配置",
-                "crontabschedule": "Cron调度配置",
-                "intervalschedule": "间隔调度配置",
-                "periodictask": "周期任务",
-                "periodictasks": "周期任务状态",
-                "solarschedule": "太阳事件调度配置",
-                "uibatchexecutionrecord": "UI批量执行记录",
-                "uicasestepsdetailed": "UI用例步骤明细",
-                "uielement": "UI元素",
-                "uienvironmentconfig": "UI环境配置",
-                "uiexecutionrecord": "UI执行记录",
-                "uimodule": "UI模块",
-                "uipage": "UI页面",
-                "uipagesteps": "UI页面步骤",
-                "uipagestepsdetailed": "UI页面步骤明细",
-                "uipublicdata": "UI公共数据",
-                "uitestcase": "UI测试用例",
-            }
-            return model_name_translations.get(obj.model.lower(), obj.model)
-
-    def get_model_verbose(self, obj):
-        """
-        返回模型的详细名称（与model_cn相同，保持兼容性）
-        """
-        try:
-            return obj.model_class()._meta.verbose_name
-        except:
+            return str(verbose_name)
+        except Exception:
             return obj.model
 
+    def get_model_verbose(self, obj):
+        return self.get_model_cn(obj)
+
+    def get_model_sort(self, obj):
+        app_model_key = f"{obj.app_label}.{obj.model}"
+        return self.MODEL_SORT_ORDER.get(app_model_key, 99)
 
 
 class PermissionSerializer(serializers.ModelSerializer):

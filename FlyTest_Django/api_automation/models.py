@@ -918,3 +918,11 @@ class ApiExtractorSpec(models.Model):
     def __str__(self) -> str:
         owner = self.test_case.name if self.test_case_id and self.test_case else self.request.name if self.request_id and self.request else "unknown"
         return f"{owner} - {self.variable_name}"
+
+
+class ApiExecutionReport(models.Model):
+    class Meta:
+        managed = False
+        default_permissions = ("view",)
+        verbose_name = _("API 测试报告")
+        verbose_name_plural = _("API 测试报告")

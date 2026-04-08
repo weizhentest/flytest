@@ -18,6 +18,7 @@ export interface Permission {
     app_label_subcategory_sort: number; // 第二层分类排序权重
     model: string;
     model_cn: string; // 模型中文名称
+    model_sort: number; // 模型排序权重
     model_verbose: string; // 模型详细名称
   };
 }
