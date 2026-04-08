@@ -1,77 +1,91 @@
 # FlyTest
 
-面向测试团队的 AI-Native 智能测试平台。  
-FlyTest 把需求评审、知识检索、测试设计、测试资产管理、Web/UI/APP 自动化和执行反馈串成一条完整链路，帮助团队更快地产出高质量测试用例，并把经验沉淀成可复用的知识与技能。
+FlyTest 是一套面向测试团队的 AI-Native 智能测试平台，覆盖需求评审、知识库增强、测试用例设计、测试资产管理，以及 API / UI / APP 自动化执行的完整链路。
 
 中文 | [English](README_EN.md)
 
-## 项目定位
+## 项目简介
 
-FlyTest 不是单一的“AI 生成测试用例”工具，而是一套完整的测试工作台：
+FlyTest 的目标不是只做“AI 生成测试用例”，而是把测试工作真正串起来：
 
-- 用 AI 理解需求和上下文
-- 用知识库补充项目规则和业务约束
-- 生成、保存、评审和优化测试用例
-- 管理 API、UI、APP 自动化资产
-- 通过 MCP 与 Skills 扩展工具能力
-- 用执行器和自动化服务把设计落到执行
+- 从需求文档进入测试流程
+- 用 AI 和知识库理解业务上下文
+- 生成、保存、评审、优化测试用例
+- 管理测试套件、执行历史与报告
+- 连接 MCP、Skills、执行器和自动化服务，把设计落到执行
 
 ## 核心能力
 
-### 1. 需求管理与需求评审
+### 需求管理与需求评审
 
-- 上传需求文档，支持文件上传和直接录入
-- 文档拆分、模块化整理、评审报告查看
-- 多维度需求评审：完整性、一致性、可测性、可行性、清晰度、逻辑性
-- 模块级问题、建议、总结和评审结果沉淀
+- 上传需求文档，支持文件上传与直接录入
+- 文档拆分、模块化整理、需求评审
+- 多维度专项分析：
+  - 完整性
+  - 一致性
+  - 可测性
+  - 可行性
+  - 清晰度
+  - 逻辑性
+- 生成评审报告、问题清单、模块级建议
 
-### 2. AI 对话与测试设计
+### AI 对话与测试设计
 
 - 基于 LangGraph 的对话式测试设计
-- 支持项目上下文、提示词、知识库、Skills、工具调用
-- 支持流式响应、会话历史、提示词切换和工具审批
-- 生成测试用例后可直接保存到测试管理模块
+- 支持提示词、知识库、Skills、工具调用
+- 支持流式响应、会话历史、工具审批
+- 生成结果可直接保存为测试用例
 
-### 3. 测试资产管理
+### 测试资产管理
 
 - 项目管理、成员管理、权限控制
 - 测试用例、测试套件、执行历史管理
 - 测试模板管理
-- 用例支持等级、前置条件、步骤、备注、审核状态、测试类型等字段
+- 支持等级、前置条件、步骤、备注、审核状态、测试类型等字段
 
-### 4. 知识库与上下文增强
+### 知识库增强
 
-- 创建项目级知识库
-- 上传文档、切片、向量化、检索与结果回溯
-- 为 AI 对话、需求评审、测试设计提供上下文增强
-- 支持 Qdrant 向量存储
+- 项目级知识库管理
+- 文档上传、切片、向量化、检索
+- 用于 AI 对话、需求评审、测试设计的上下文增强
+- 向量存储基于 Qdrant
 
-### 5. 自动化测试能力
+### 自动化测试能力
 
-- API 自动化：请求管理、测试用例、环境配置、执行记录、测试报告
-- UI 自动化：页面、步骤、执行记录、Trace、AI 智能模式
-- APP 自动化：设备、应用包、元素、场景编排、测试用例、执行记录、报告
+- API 自动化
+  - 请求管理
+  - 测试用例
+  - 环境配置
+  - 执行记录
+  - 测试报告
+- UI 自动化
+  - 页面与步骤管理
+  - AI 智能模式
+  - Trace 与执行记录
+- APP 自动化
+  - 设备、应用包、元素、场景编排
+  - 测试用例与执行记录
 
-### 6. MCP 与 Skills 扩展
+### MCP 与 Skills 扩展
 
 - 支持 MCP 远程配置与工具接入
-- 内置 FlyTest 工具、Playwright MCP 工具链
+- 内置 FlyTest 工具、Playwright 工具链
 - 支持项目 Skills 管理与仓库内置 Skills 回退
-- 可通过工具调用执行 FlyTest 用例管理、截图上传、图表处理等动作
+- 支持测试用例保存、截图上传、图表处理等工具动作
 
 ## 仓库结构
 
 | 目录 | 说明 |
 | --- | --- |
-| `FlyTest_Django/` | 主后端，Django REST Framework + Channels + LangGraph |
-| `FlyTest_Vue/` | 前端应用，Vue 3 + TypeScript + Vite + Arco Design |
+| `FlyTest_Django/` | 主后端，负责业务 API、AI 对话、需求评审、知识库、测试管理 |
+| `FlyTest_Vue/` | 主前端，Vue 3 + TypeScript + Vite |
 | `FlyTest_FastAPI_AppAutomation/` | APP 自动化独立 FastAPI 服务 |
-| `FlyTest_Actuator/` | UI 自动化执行器，通过 WebSocket 接收任务并驱动 Playwright |
-| `FlyTest_MCP/` | MCP 工具服务，包含 FlyTest Tools 和其他工具入口 |
+| `FlyTest_Actuator/` | UI 自动化执行器，通过 WebSocket 接收任务并驱动浏览器执行 |
+| `FlyTest_MCP/` | MCP 工具服务 |
 | `FlyTest_Skills/` | 内置 Skills 仓库 |
-| `docs/` | 项目文档与 VitePress 站点内容 |
-| `deploy-scripts/` | 文档和部署辅助脚本 |
-| `data/` | 本地运行数据目录 |
+| `docs/` | 文档与 VitePress 内容 |
+| `deploy-scripts/` | 构建和部署辅助脚本 |
+| `data/` | 运行数据目录 |
 
 ## 技术栈
 
@@ -92,34 +106,30 @@ FlyTest 不是单一的“AI 生成测试用例”工具，而是一套完整的
 - Celery + Redis
 - LangChain / LangGraph
 
-### AI 与知识增强
+### AI / 检索 / 自动化
 
 - OpenAI 兼容模型接入
 - Qwen Provider 支持
 - Qdrant
-- FastEmbed / 向量检索链路
-
-### 自动化与扩展
-
 - Playwright
 - FastAPI
 - MCP
-- Skills Runtime / Bundled Skills
+- Skills Runtime
 
 ## 系统架构
 
 ```mermaid
 flowchart LR
-    A["Vue 前端"] --> B["Django 主后端"]
-    B --> C["LangGraph / AI 对话"]
-    B --> D["需求评审与测试管理"]
-    B --> E["知识库 / Qdrant"]
-    B --> F["Celery / Redis"]
-    B --> G["MCP 工具服务"]
-    B --> H["APP 自动化 FastAPI"]
-    B --> I["UI Actuator / Playwright"]
-    G --> B
-    I --> B
+    FE["FlyTest_Vue"] --> BE["FlyTest_Django"]
+    BE --> AI["LangGraph / AI 对话"]
+    BE --> REQ["需求评审与测试管理"]
+    BE --> KB["知识库 / Qdrant"]
+    BE --> CEL["Celery / Redis"]
+    BE --> MCP["FlyTest_MCP"]
+    BE --> APP["FlyTest_FastAPI_AppAutomation"]
+    BE --> ACT["FlyTest_Actuator / Playwright"]
+    MCP --> BE
+    ACT --> BE
 ```
 
 ## 典型使用流程
@@ -127,9 +137,9 @@ flowchart LR
 1. 创建项目并配置成员权限
 2. 上传需求文档并完成需求拆分
 3. 发起需求评审，查看专项报告与模块结果
-4. 进入 AI 对话，结合需求、提示词和知识库生成测试用例
+4. 在 AI 对话中结合需求、提示词和知识库生成测试用例
 5. 将生成结果保存到测试用例模块
-6. 在 API / UI / APP 自动化模块中继续编排和执行
+6. 在 API / UI / APP 自动化模块中继续编排与执行
 7. 查看执行记录、报告和 Trace，持续优化测试资产
 
 ## 快速开始
@@ -204,11 +214,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 关键配置
+## 常见配置项
 
-常见环境变量：
+建议从根目录 `.env.example` 开始配置。常见变量包括：
 
-- `DATABASE_TYPE`：`postgres` 或 `sqlite`
+- `DATABASE_TYPE`
 - `POSTGRES_HOST` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`
 - `CELERY_BROKER_URL`
 - `CELERY_RESULT_BACKEND`
@@ -220,37 +230,36 @@ python main.py
 - `QDRANT_URL`
 - `MEDIA_ROOT`
 
-建议从根目录 `.env.example` 开始配置。
-
-## 文档与说明
+## 相关文档
 
 - 快速启动指南：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
-- Docker / 部署配置：[`docker-compose.yml`](./docker-compose.yml)
+- 部署配置：[`docker-compose.yml`](./docker-compose.yml)
 - 后端说明：[`FlyTest_Django/README.md`](./FlyTest_Django/README.md)
 - 前端说明：[`FlyTest_Vue/README.md`](./FlyTest_Vue/README.md)
 - APP 自动化服务：[`FlyTest_FastAPI_AppAutomation/README.md`](./FlyTest_FastAPI_AppAutomation/README.md)
 - UI 执行器：[`FlyTest_Actuator/README.md`](./FlyTest_Actuator/README.md)
 - MCP 工具服务：[`FlyTest_MCP/README.md`](./FlyTest_MCP/README.md)
+- 许可证说明：[`docs/license.md`](./docs/license.md)
+
+## 授权说明
+
+本项目当前采用 [PolyForm Noncommercial 1.0.0](./LICENSE) 许可证。
+
+这意味着：
+
+- 允许学习、研究、评估和内部非商业使用
+- 允许在非商业前提下修改和分发
+- 不允许将本项目直接用于商业目的
+- 商业部署、商业交付、SaaS 或客户项目使用需获得单独授权
+
+更多说明请参考：
+
+- [`LICENSE`](./LICENSE)
+- [`docs/license.md`](./docs/license.md)
 
 ## 安全建议
 
-- 默认配置仅适合本地开发或受控内网环境
+- 默认配置更适合本地开发或受控内网环境
 - 生产环境请务必更换默认管理员密码和 API Key
 - 对 MCP、Skills、执行器等高权限能力启用最小权限原则
-- 对外暴露服务前请补齐访问控制、密钥管理、跨域与网关策略
-
-## 许可证
-
-本项目采用 [LICENSE](./LICENSE) 中定义的许可证。
-
-## 致谢
-
-感谢以下开源生态为 FlyTest 提供基础能力：
-
-- Django / Django REST Framework
-- Vue / Vite / Pinia
-- LangChain / LangGraph
-- Qdrant
-- Playwright
-- FastAPI
-- Arco Design
+- 对外暴露服务前请补齐访问控制、密钥管理、网关与审计策略
