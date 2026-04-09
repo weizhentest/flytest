@@ -91,8 +91,9 @@ const { activeImportJobs, recentImportJobs, importTaskVisible, syncProject, canc
 const importTaskSteps = [
   { key: 'uploaded', title: '文档已上传' },
   { key: 'queued', title: '进入后台队列' },
-  { key: 'rule_parse', title: '规则解析' },
-  { key: 'ai_parse', title: 'AI增强解析' },
+  { key: 'ai_prepare', title: 'AI准备' },
+  { key: 'structured_parse', title: '结构化解析' },
+  { key: 'ai_parse', title: 'AI文档解析' },
   { key: 'save_requests', title: '写入接口' },
   { key: 'generate_cases', title: '生成脚本与用例' },
   { key: 'completed', title: '完成' },

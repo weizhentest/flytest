@@ -10,6 +10,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from langgraph_integration.views import (
     LLMConfigViewSet,
+    create_llm_instance,
     _should_hide_tool_message,
     _diagnose_llm_connection_error,
     _extract_llm_response_text,
@@ -53,8 +54,8 @@ class LlmConnectionDiagnosticsTests(TestCase):
             "Error code: 404 - {'error': {'message': 'Not Found'}}",
         )
 
-        self.assertIn("/v1", message)
         self.assertIn("接口地址不存在", message)
+        self.assertIn("https://example.com", message)
 
     def test_test_connection_accepts_non_string_content_as_success(self) -> None:
         llm = Mock()
@@ -98,6 +99,15 @@ class LlmConnectionDiagnosticsTests(TestCase):
         self.assertEqual(response.data["diagnostics"]["conclusion"], "connection_ok_response_text_empty")
         self.assertEqual(response.data["diagnostics"]["completion_tokens"], 6)
 
+    @patch("langgraph_integration.views.ClaudeMessagesCompatibleChatModel")
+    def test_create_llm_instance_uses_messages_adapter(self, mock_messages_model) -> None:
+        self.config.wire_api = "messages"
+
+        create_llm_instance(self.config, temperature=0.2)
+
+        self.assertTrue(mock_messages_model.called)
+        self.assertEqual(mock_messages_model.call_args.kwargs["wire_api"], "messages")
+
     def test_probe_models_returns_batch_summary(self) -> None:
         request = self.factory.post(
             f"/api/lg/llm-configs/{self.config.id}/probe_models/",
@@ -130,6 +140,30 @@ class LlmConnectionDiagnosticsTests(TestCase):
         self.assertEqual(response.data["status"], "success")
         self.assertIn("2 个模型探测", response.data["message"])
         self.assertEqual(len(response.data["results"]), 2)
+
+    def test_provider_choices_include_siliconflow(self) -> None:
+        from langgraph_integration.views import ProviderChoicesAPIView
+
+        request = self.factory.get("/api/lg/providers/")
+        force_authenticate(request, user=self.user)
+        response = ProviderChoicesAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        choices = response.data["data"]["choices"]
+        self.assertTrue(any(item["value"] == "siliconflow" for item in choices))
+
+    @patch("langgraph_integration.views.ChatOpenAI")
+    def test_create_llm_instance_uses_siliconflow_default_base_url(self, mock_chat_openai) -> None:
+        self.config.provider = "siliconflow"
+        self.config.api_url = ""
+        self.config.wire_api = "chat_completions"
+
+        create_llm_instance(self.config, temperature=0.2)
+
+        self.assertEqual(
+            mock_chat_openai.call_args.kwargs["base_url"],
+            "https://api.siliconflow.cn/v1",
+        )
 
 
 class LlmConfigSharingTests(TestCase):

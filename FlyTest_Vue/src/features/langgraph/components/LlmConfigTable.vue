@@ -109,6 +109,7 @@ const columns: TableColumnData[] = [
   { title: 'ID', dataIndex: 'id', width: 80, sortable: { sortDirections: ['ascend', 'descend'] } },
   { title: '配置名称', dataIndex: 'config_name', width: 150, ellipsis: true, tooltip: true },
   { title: '归属', dataIndex: 'owner_name', slotName: 'owner', width: 150 },
+  { title: '协议', dataIndex: 'wire_api', width: 120 },
   { title: '模型名称', dataIndex: 'name', width: 150, ellipsis: true, tooltip: true },
   { title: 'API URL', dataIndex: 'api_url', width: 200, ellipsis: true, tooltip: true },
   { title: '系统提示词', dataIndex: 'system_prompt', slotName: 'systemPrompt', width: 200, ellipsis: true, tooltip: true },

@@ -124,6 +124,7 @@ from flytest_django.checkpointer import (
     get_thread_ids_by_prefix,
     rollback_checkpoints_to_count,
 )
+from flytest_django.claude_messages_model import ClaudeMessagesCompatibleChatModel
 import json  # For JSON serialization in streaming
 import asyncio  # For async operations
 
@@ -157,6 +158,7 @@ def create_llm_instance(active_config, temperature=0.7):
     """
     model_identifier = active_config.name or "gpt-3.5-turbo"
     provider = (getattr(active_config, "provider", None) or "openai_compatible").strip()
+    wire_api = (getattr(active_config, "wire_api", None) or "chat_completions").strip().lower()
 
     # 从配置获取超时设置，默认120秒（LLM响应可能较慢）
     request_timeout = getattr(active_config, "request_timeout", None) or 120
@@ -188,23 +190,37 @@ def create_llm_instance(active_config, temperature=0.7):
 
             llm = ChatQwen(**llm_kwargs)
         else:
-            if provider != "openai_compatible":
+            if provider not in {"openai_compatible", "siliconflow"}:
                 logger.warning(
                     "Unknown provider '%s', fallback to openai_compatible", provider
                 )
-            llm_kwargs = {
-                "model": model_identifier,
-                "temperature": temperature,
-                "api_key": api_key,
-                "base_url": base_url,
-                "timeout": request_timeout,  # 单次请求超时
-                "max_retries": max_retries,  # 自动重试次数
-            }
-            llm = ChatOpenAI(**llm_kwargs)
+            if provider == "siliconflow" and not base_url:
+                base_url = "https://api.siliconflow.cn/v1"
+            if wire_api == "messages":
+                llm = ClaudeMessagesCompatibleChatModel(
+                    model=model_identifier,
+                    temperature=temperature,
+                    api_key=api_key,
+                    base_url=base_url or "",
+                    timeout=request_timeout,
+                    max_retries=max_retries,
+                    wire_api=wire_api,
+                )
+            else:
+                llm_kwargs = {
+                    "model": model_identifier,
+                    "temperature": temperature,
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "timeout": request_timeout,  # 单次请求超时
+                    "max_retries": max_retries,  # 自动重试次数
+                }
+                llm = ChatOpenAI(**llm_kwargs)
 
         logger.info(
-            "Initialized LLM: provider=%s, model=%s, base_url=%s, timeout=%ss, max_retries=%s",
+            "Initialized LLM: provider=%s, wire_api=%s, model=%s, base_url=%s, timeout=%ss, max_retries=%s",
             provider,
+            wire_api,
             model_identifier,
             base_url,
             request_timeout,
@@ -445,11 +461,6 @@ def _diagnose_llm_connection_error(config, error) -> str:
         return "请求受限：接口已触发频率限制或额度不足，请稍后重试或检查账户额度。"
 
     if "404" in lowered or "not found" in lowered:
-        if provider == "openai_compatible" and api_url and not api_url.rstrip("/").endswith("/v1"):
-            return (
-                f"接口地址不存在：当前地址 `{api_url}` 可能缺少 `/v1` 后缀。"
-                "OpenAI 兼容接口通常应配置为类似 `https://example.com/v1`。"
-            )
         return f"接口地址不存在：请检查 API URL 是否正确。当前配置地址为 `{api_url}`。"
 
     if (

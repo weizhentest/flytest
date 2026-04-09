@@ -1,12 +1,15 @@
+import re
+
 from django.contrib.auth.models import Group, User
 from rest_framework import serializers
+
 from .models import LLMConfig, UserToolApproval, get_user_active_llm_config
 
 
 class LLMConfigSerializer(serializers.ModelSerializer):
     """
-    LLM配置序列化器，用于创建和更新LLM配置
-    注意：为了安全，在读取时不返回 api_key 字段
+    LLM 配置序列化器。
+    读取时隐藏 api_key，并按当前请求用户控制敏感字段可见性。
     """
 
     has_api_key = serializers.SerializerMethodField()
@@ -42,6 +45,7 @@ class LLMConfigSerializer(serializers.ModelSerializer):
             "owner_name",
             "config_name",
             "provider",
+            "wire_api",
             "name",
             "api_url",
             "api_key",
@@ -67,20 +71,33 @@ class LLMConfigSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
         extra_kwargs = {
-            "api_key": {"write_only": True}  # API密钥只允许写入，不允许读取
+            "api_key": {"write_only": True},
         }
 
+    @staticmethod
+    def _normalize_api_url(value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        suffixes = (
+            "/chat/completions",
+            "/responses",
+            "/messages",
+            "/messages/count_tokens",
+        )
+        lowered = normalized.lower()
+        for suffix in suffixes:
+            if lowered.endswith(suffix):
+                normalized = normalized[: -len(suffix)]
+                break
+        normalized = re.sub(r"(?<!:)/{2,}", "/", normalized)
+        return normalized
+
     def to_representation(self, instance):
-        """
-        自定义序列化输出，隐藏敏感字段
-        """
         data = super().to_representation(instance)
         request = self.context.get("request")
         user = getattr(request, "user", None)
         is_sensitive_visible = instance.can_view_sensitive(user) if request else True
 
-        if "api_key" in data:
-            del data["api_key"]
+        data.pop("api_key", None)
 
         active_config = get_user_active_llm_config(user) if user and user.is_authenticated else None
         data["is_active"] = bool(active_config and active_config.pk == instance.pk)
@@ -88,6 +105,7 @@ class LLMConfigSerializer(serializers.ModelSerializer):
         if not is_sensitive_visible:
             data["api_url"] = ""
             data["system_prompt"] = ""
+
         return data
 
     def get_has_api_key(self, obj):
@@ -138,42 +156,37 @@ class LLMConfigSerializer(serializers.ModelSerializer):
         return not obj.can_view_sensitive(user) if request else False
 
     def validate_config_name(self, value):
-        """验证配置名称"""
         if not value or not value.strip():
             raise serializers.ValidationError("配置名称不能为空")
         return value.strip()
 
     def validate_name(self, value):
-        """验证模型名称（原name字段）"""
         if not value or not value.strip():
             raise serializers.ValidationError("模型名称不能为空")
         return value.strip()
 
     def validate_api_key(self, value):
-        """验证API密钥"""
         if value and len(value.strip()) < 1:
-            raise serializers.ValidationError("API密钥长度至少需要1个字符")
+            raise serializers.ValidationError("API 密钥长度至少需要 1 个字符")
         return value.strip() if value else ""
 
     def validate_api_url(self, value):
-        """验证API地址"""
         if not value:
-            raise serializers.ValidationError("API地址不能为空")
-
-        # 简单的URL格式验证
+            raise serializers.ValidationError("API 地址不能为空")
+        value = self._normalize_api_url(value)
         if not (value.startswith("http://") or value.startswith("https://")):
-            raise serializers.ValidationError("API地址必须以http://或https://开头")
-
+            raise serializers.ValidationError("API 地址必须以 http:// 或 https:// 开头")
         return value
 
     def validate(self, attrs):
-        """全局验证"""
         request = self.context.get("request")
         owner = getattr(self.instance, "owner", None)
         if owner is None and request is not None:
             owner = getattr(request, "user", None)
 
-        # 检查是否存在同名配置（排除当前实例）
+        provider = attrs.get("provider", getattr(self.instance, "provider", None))
+        wire_api = attrs.get("wire_api", getattr(self.instance, "wire_api", "chat_completions"))
+
         config_name = attrs.get("config_name")
         if config_name:
             queryset = LLMConfig.objects.filter(config_name=config_name, owner=owner)
@@ -181,6 +194,9 @@ class LLMConfigSerializer(serializers.ModelSerializer):
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
                 raise serializers.ValidationError({"config_name": "当前用户下已存在同名配置"})
+
+        if provider == "qwen" and wire_api == "messages":
+            raise serializers.ValidationError({"wire_api": "当前供应商不支持 Claude Messages 协议。"})
 
         if request and request.user and not request.user.is_superuser and not request.user.is_staff:
             shared_groups = attrs.get("shared_groups")
@@ -190,18 +206,8 @@ class LLMConfigSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def create(self, validated_data):
-        """创建LLM配置"""
-        return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        """更新LLM配置"""
-        return super().update(instance, validated_data)
-
 
 class UserToolApprovalSerializer(serializers.ModelSerializer):
-    """用户工具审批偏好序列化器"""
-
     class Meta:
         model = UserToolApproval
         fields = [
@@ -216,28 +222,21 @@ class UserToolApprovalSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_tool_name(self, value):
-        """验证工具名称"""
         if not value or not value.strip():
             raise serializers.ValidationError("工具名称不能为空")
         return value.strip()
 
     def validate(self, attrs):
-        """全局验证"""
         scope = attrs.get("scope", "permanent")
         session_id = attrs.get("session_id")
 
-        # 如果是会话级别偏好，必须提供 session_id
         if scope == "session" and not session_id:
-            raise serializers.ValidationError(
-                {"session_id": "会话级别偏好必须提供 session_id"}
-            )
+            raise serializers.ValidationError({"session_id": "会话级别偏好必须提供 session_id"})
 
         return attrs
 
 
 class UserToolApprovalBatchSerializer(serializers.Serializer):
-    """批量更新用户工具审批偏好"""
-
     tool_name = serializers.CharField(max_length=100)
     policy = serializers.ChoiceField(choices=UserToolApproval.POLICY_CHOICES)
     scope = serializers.ChoiceField(

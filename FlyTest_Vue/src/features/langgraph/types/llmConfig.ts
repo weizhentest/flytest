@@ -7,6 +7,7 @@ export interface LlmConfig {
   owner_name?: string;
   config_name: string; // 配置名称
   provider: string; // 供应商
+  wire_api?: string; // 协议类型
   name: string; // 模型名称
   api_url: string;
   api_key?: string; // 在列表视图中可能不返回，在详细视图中可能返回
@@ -72,6 +73,7 @@ export interface LlmModelProbeResult {
 export interface CreateLlmConfigRequest {
   config_name: string; // 配置名称
   provider: string; // 供应商
+  wire_api?: string;
   name: string; // 模型名称
   api_url: string;
   api_key: string;
@@ -98,6 +100,7 @@ export interface UpdateLlmConfigRequest extends CreateLlmConfigRequest {}
 export interface PartialUpdateLlmConfigRequest {
   config_name?: string; // 配置名称
   provider?: string; // 供应商
+  wire_api?: string;
   name?: string; // 模型名称
   api_url?: string;
   api_key?: string;

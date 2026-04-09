@@ -8,6 +8,7 @@ from django.conf import settings
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from flytest_django.claude_messages_model import ClaudeMessagesCompatibleChatModel
 from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from .models import RequirementDocument, RequirementModule, DocumentImage
 from prompts.models import UserPrompt
@@ -22,6 +23,7 @@ def create_llm_instance(active_config, temperature=0.1):
     """
     model_identifier = active_config.name or "gpt-3.5-turbo"
     provider = (getattr(active_config, "provider", "") or "openai_compatible").lower()
+    wire_api = (getattr(active_config, "wire_api", None) or "chat_completions").strip().lower()
     api_key = (getattr(active_config, "api_key", "") or "").strip()
     base_url = (getattr(active_config, "api_url", "") or "").strip() or None
     request_timeout = getattr(active_config, "request_timeout", 120) or 120
@@ -49,15 +51,28 @@ def create_llm_instance(active_config, temperature=0.1):
             llm_kwargs["base_url"] = base_url
         llm = ChatQwen(**llm_kwargs)
     else:
-        llm_kwargs = {
-            "model": model_identifier,
-            "temperature": temperature,
-            "api_key": api_key,
-            "base_url": base_url,
-            "max_retries": max_retries,
-            "timeout": request_timeout,
-        }
-        llm = ChatOpenAI(**llm_kwargs)
+        if provider == "siliconflow" and not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+        if wire_api == "messages":
+            llm = ClaudeMessagesCompatibleChatModel(
+                model=model_identifier,
+                temperature=temperature,
+                api_key=api_key,
+                base_url=base_url or "",
+                timeout=request_timeout,
+                max_retries=max_retries,
+                wire_api=wire_api,
+            )
+        else:
+            llm_kwargs = {
+                "model": model_identifier,
+                "temperature": temperature,
+                "api_key": api_key,
+                "base_url": base_url,
+                "max_retries": max_retries,
+                "timeout": request_timeout,
+            }
+            llm = ChatOpenAI(**llm_kwargs)
 
     logger.info(
         "Initialized requirement-review LLM: provider=%s, model=%s, base_url=%s, timeout=%ss, max_retries=%s",

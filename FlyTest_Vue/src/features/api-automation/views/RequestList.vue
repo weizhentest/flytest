@@ -285,16 +285,16 @@
 
       <div v-else class="document-import-panel">
         <div class="import-hero-card">
-          <div class="import-hero-badge">AI增强解析</div>
+          <div class="import-hero-badge">AI文档解析</div>
           <div class="import-hero-title">接口文档导入与自动化生成</div>
           <div class="import-hero-description">
             支持 Swagger / OpenAPI / Postman，以及 PDF、图片、PPTX、DOCX、XLSX、HTML、EPUB 等格式。
-            导入时会先做规则解析，再按需调用系统设置中的当前激活模型进行 AI 增强解析，自动补全接口定义、断言，并批量生成脚本与测试用例。
+            导入时会直接调用系统设置中的当前激活模型进行 AI 文档解析，按正文切片提取接口定义，并批量生成脚本与测试用例。
           </div>
           <div class="import-hero-meta">
             <span class="hero-pill">系统设置 &gt; AI大模型配置</span>
             <span class="hero-pill">提示词管理 &gt; API自动化解析</span>
-            <span class="hero-pill">失败自动回退规则解析</span>
+            <span class="hero-pill">长文档自动切片解析</span>
           </div>
         </div>
 
@@ -319,7 +319,7 @@
             {{ documentFile ? '已选择接口文档，导入时将自动解析' : '拖拽接口文档到这里，或点击选择文件' }}
           </div>
           <div class="dropzone-subtitle">
-            推荐优先上传 OpenAPI / Swagger / Postman。非结构化文档将结合规则解析与 AI 增强解析提取接口信息。
+            推荐优先上传 OpenAPI / Swagger / Postman。非结构化文档会直接使用 AI 文档解析提取接口信息。
           </div>
 
           <div v-if="documentFile" class="selected-file-card" @click.stop>
@@ -334,9 +334,9 @@
         <div class="import-option-grid">
           <div class="import-option-card import-option-card-primary">
             <div class="option-copy">
-              <div class="option-title">AI增强解析</div>
+              <div class="option-title">AI文档解析</div>
               <div class="option-description">
-                使用系统设置中当前激活的 AI 接口，并读取“提示词管理”中的 API 自动化解析提示词；若 AI 不可用，会自动回退到规则解析。
+                使用系统设置中当前激活的 AI 接口，并读取“提示词管理”中的 API 自动化解析提示词；长文档会自动切片后并发解析，再统一汇总。
               </div>
               <a-alert
                 v-if="importAiCompatibility"
@@ -368,7 +368,7 @@
 
         <a-alert type="info" class="import-alert">
           <template #title>导入说明</template>
-          文档导入完成后，结果面板会显示本次是否启用了 AI 增强解析、采用了哪个模型、提示词来源，以及是否回退到了规则解析。
+          文档导入完成后，结果面板会显示本次是否启用了 AI 文档解析、采用了哪个模型、提示词来源，以及解析耗时与结果说明。
         </a-alert>
       </div>
     </a-modal>
@@ -722,7 +722,7 @@ const loadImportAiCompatibility = async () => {
       level: 'warning',
       title: '兼容性检测失败',
       message: error?.error || '暂时无法确认当前 AI 配置是否兼容文档导入。',
-      action_hint: '可先关闭 AI 增强解析继续导入，或稍后重试检测。',
+      action_hint: '请先修正当前 AI 配置，或稍后重试兼容性检测。',
     }
   } finally {
     importAiCompatibilityLoading.value = false
@@ -732,13 +732,13 @@ const loadImportAiCompatibility = async () => {
 const importResultAlertTitle = computed(() => {
   if (!importResult.value) return ''
   if (importResult.value.ai_requested) {
-    if (importResult.value.ai_used) return 'AI增强解析已生效'
+    if (importResult.value.ai_used) return 'AI文档解析已生效'
     if (importResult.value.ai_issue_code === 'gateway_incompatible_empty_content') {
-      return '当前 AI 网关未返回正文，已回退到规则解析'
+      return '当前 AI 网关未返回正文，无法执行文档 AI 解析'
     }
-    return 'AI增强解析未生效，已回退到规则解析'
+    return 'AI文档解析未成功完成'
   }
-  return '本次未启用 AI 增强解析'
+  return '本次未执行 AI 文档解析'
 })
 
 const importResultAlertMessage = computed(() => {
@@ -1173,10 +1173,10 @@ const getErrorMessage = (error: any) => {
     return '当前激活的 AI 网关调用成功但未返回正文，请切换到能正常返回正文的模型或网关后再试。'
   }
   if (error?.status === 408 || /timeout/i.test(String(rawMessage))) {
-    return '接口文档解析超时，请稍后重试；如果文档较大，建议先关闭 AI 增强解析后再导入。'
+    return '接口文档解析超时，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
   }
   if (rawText.includes('服务器无响应')) {
-    return '接口文档解析等待时间过长，请稍后重试；如果文档较大，建议先关闭 AI 增强解析后再导入。'
+    return '接口文档解析等待时间过长，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
   }
   return rawMessage
 }

@@ -111,6 +111,7 @@ WORKFLOW_STAGE_LABELS = {
     "request": "Request",
     "teardown": "Teardown",
 }
+STALE_IMPORT_JOB_TIMEOUT_SECONDS = 5 * 60
 
 
 class ImportJobCancelled(Exception):
@@ -178,6 +179,59 @@ def _clear_import_job_source_file(job_id: int):
         return
     _delete_import_job_source_file(job)
     ApiImportJob.objects.filter(pk=job_id).update(source_file="", updated_at=timezone.now())
+
+
+def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
+    if job.status not in {"pending", "running"}:
+        return job
+
+    updated_at = job.updated_at or job.created_at
+    if not updated_at:
+        return job
+
+    age_seconds = max((timezone.now() - updated_at).total_seconds(), 0)
+    if age_seconds < STALE_IMPORT_JOB_TIMEOUT_SECONDS:
+        return job
+
+    if job.progress_stage == "ai_parse" and job.result_payload:
+        payload = dict(job.result_payload or {})
+        fallback_message = "AI 增强解析长时间未完成，已自动回退到规则解析并完成导入。"
+        payload["ai_requested"] = True
+        payload["ai_used"] = False
+        payload["ai_issue_code"] = "llm_timeout"
+        payload["ai_user_message"] = fallback_message
+        payload["ai_action_hint"] = "如需更完整的 AI 补全，可缩小文档范围、切换更快的模型，或稍后重试。"
+        existing_note = str(payload.get("ai_note") or "").strip()
+        payload["ai_note"] = f"{existing_note} {fallback_message}".strip() if existing_note else fallback_message
+        _save_job(
+            job.id,
+            force=True,
+            status="success",
+            progress_percent=100,
+            progress_stage="completed",
+            progress_message="接口文档解析完成（AI 增强解析超时，已回退到规则解析）。",
+            result_payload=payload,
+            error_message="",
+            completed_at=timezone.now(),
+        )
+    else:
+        failure_message = "接口文档解析任务长时间未更新，已自动结束，请重新发起导入。"
+        _save_job(
+            job.id,
+            force=True,
+            status="failed",
+            progress_stage="failed",
+            progress_message=failure_message,
+            error_message=job.error_message or failure_message,
+            completed_at=timezone.now(),
+        )
+    logger.warning(
+        "Recovered stale API import job: job_id=%s stage=%s age_seconds=%.1f",
+        job.id,
+        job.progress_stage,
+        age_seconds,
+    )
+    return ApiImportJob.objects.get(pk=job.id)
 
 
 def _save_case_generation_job(job_id: int, *, force: bool = False, **fields):
@@ -2098,6 +2152,23 @@ class ApiImportJobViewSet(BaseModelViewSet):
             queryset = queryset.filter(status=status_value)
         return queryset
 
+    def retrieve(self, request, *args, **kwargs):
+        job = _recover_stale_import_job(self.get_object())
+        serializer = self.get_serializer(job)
+        return Response(serializer.data)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        for job in queryset.filter(status__in=["pending", "running"])[:20]:
+            _recover_stale_import_job(job)
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         job = self.get_object()
@@ -2483,6 +2554,37 @@ class ApiRequestViewSet(BaseModelViewSet):
                 run_execution_context.close()
                 runtime_context.pop("_execution_run_context", None)
         return Response(_serialize_execution_batch(records))
+
+
+def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
+    if job.status not in {"pending", "running"}:
+        return job
+
+    updated_at = job.updated_at or job.created_at
+    if not updated_at:
+        return job
+
+    age_seconds = max((timezone.now() - updated_at).total_seconds(), 0)
+    if age_seconds < STALE_IMPORT_JOB_TIMEOUT_SECONDS:
+        return job
+
+    failure_message = "AI 文档解析长时间未完成，任务已自动结束。请缩小文档规模或稍后重试。"
+    _save_job(
+        job.id,
+        force=True,
+        status="failed",
+        progress_stage="failed",
+        progress_message=failure_message,
+        error_message=job.error_message or failure_message,
+        completed_at=timezone.now(),
+    )
+    logger.warning(
+        "Recovered stale API import job: job_id=%s stage=%s age_seconds=%.1f",
+        job.id,
+        job.progress_stage,
+        age_seconds,
+    )
+    return ApiImportJob.objects.get(pk=job.id)
 
     @action(detail=False, methods=["post"], url_path="generate-test-cases")
     def generate_test_cases(self, request):

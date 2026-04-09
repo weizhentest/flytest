@@ -23,7 +23,7 @@
         </a-col>
 
         <!-- 第二行：供应商 + 模型名称 -->
-        <a-col :span="8">
+        <a-col :span="showWireApiField ? 6 : 8">
           <a-form-item field="provider" label="供应商" required>
             <a-select
               v-model="formData.provider"
@@ -34,7 +34,16 @@
             />
           </a-form-item>
         </a-col>
-        <a-col :span="16">
+        <a-col v-if="showWireApiField" :span="6">
+          <a-form-item field="wire_api" label="协议类型" required>
+            <a-select
+              v-model="formData.wire_api"
+              :options="wireApiOptions"
+              placeholder="请选择协议"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="showWireApiField ? 12 : 16">
           <a-form-item field="name" label="模型名称" required>
             <div class="model-input-wrapper">
               <a-auto-complete
@@ -62,24 +71,9 @@
 
         <!-- 第三行：API URL + API Key -->
         <a-col :span="12">
-          <a-form-item
-            field="api_url"
-            label="API URL"
-            required
-            :validate-status="apiUrlFieldStatus"
-            :help="apiUrlFieldHelp"
-          >
+          <a-form-item field="api_url" label="API URL" required>
             <div class="api-url-input-wrapper">
               <a-input v-model="formData.api_url" :placeholder="apiUrlPlaceholder" />
-              <a-button
-                v-if="urlNeedsV1Hint"
-                type="outline"
-                size="small"
-                class="api-url-fix-button"
-                @click="applySuggestedApiUrl"
-              >
-                补全 /v1
-              </a-button>
             </div>
           </a-form-item>
         </a-col>
@@ -323,7 +317,12 @@ const formRef = ref<FormInstance | null>(null);
 const modelOptions = ref<string[]>([]);
 const providerOptions = ref<Array<{ label: string; value: string }>>([
   { label: 'OpenAI 兼容', value: 'openai_compatible' },
+  { label: '硅基流动', value: 'siliconflow' },
   { label: 'Qwen/通义千问', value: 'qwen' },
+]);
+const wireApiOptions = ref<Array<{ label: string; value: string }>>([
+  { label: 'OpenAI Chat', value: 'chat_completions' },
+  { label: 'Claude Messages', value: 'messages' },
 ]);
 const loadingModels = ref(false);
 const testingModel = ref(false);
@@ -340,9 +339,11 @@ const memberOptions = ref<Array<{ label: string; value: number }>>([]);
 const loadingOrganizations = ref(false);
 const loadingMembers = ref(false);
 const QWEN_DEFAULT_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const SILICONFLOW_DEFAULT_API_URL = 'https://api.siliconflow.cn/v1';
 const defaultFormData: CreateLlmConfigRequest = {
   config_name: '',
   provider: 'openai_compatible',
+  wire_api: 'chat_completions',
   name: '',
   api_url: '',
   api_key: '',
@@ -364,10 +365,12 @@ const isEditing = computed(() => !!(props.configData?.id || currentConfigId.valu
 // 获取当前配置ID（优先 props，其次是自动保存后的 currentConfigId）
 const effectiveConfigId = computed(() => props.configData?.id || currentConfigId.value);
 const apiKeyConfigured = computed(() => hasPersistedApiKey.value || Boolean(props.configData?.has_api_key));
+const showWireApiField = computed(() => formData.value.provider === 'openai_compatible');
 
 const formRules: Record<string, FieldRule[]> = {
   config_name: [{ required: true, message: '配置名称不能为空' }],
   provider: [{ required: true, message: '供应商不能为空' }],
+  wire_api: [{ required: true, message: '协议类型不能为空' }],
   name: [{ required: true, message: '模型名称不能为空' }],
   api_url: [
     { required: true, message: 'API URL 不能为空' },
@@ -376,33 +379,21 @@ const formRules: Record<string, FieldRule[]> = {
 };
 
 const apiUrlPlaceholder = computed(() => (
-  formData.value.provider === 'qwen'
+  formData.value.provider === 'siliconflow'
+    ? SILICONFLOW_DEFAULT_API_URL
+    : formData.value.provider === 'qwen'
     ? QWEN_DEFAULT_API_URL
     : 'https://api.openai.com/v1'
 ));
 
 const apiHintText = computed(() => (
-  formData.value.provider === 'qwen'
+  formData.value.wire_api === 'messages'
+    ? 'Claude Messages 将调用 /messages，并使用 Claude 兼容请求格式'
+    : formData.value.provider === 'siliconflow'
+    ? '硅基流动使用官方 OpenAI 兼容接口，可通过 /v1/models 获取模型列表'
+    : formData.value.provider === 'qwen'
     ? 'Qwen 建议使用 DashScope 兼容地址（可自定义）'
     : 'OpenAI 兼容供应商请填写兼容 API 地址'
-));
-
-const normalizedApiUrl = computed(() => formData.value.api_url.trim().replace(/\/+$/, ''));
-
-const urlNeedsV1Hint = computed(() => (
-  formData.value.provider === 'openai_compatible'
-  && Boolean(normalizedApiUrl.value)
-  && !normalizedApiUrl.value.endsWith('/v1')
-));
-
-const apiUrlFieldStatus = computed<'warning' | undefined>(() => (
-  urlNeedsV1Hint.value ? 'warning' : undefined
-));
-
-const apiUrlFieldHelp = computed(() => (
-  urlNeedsV1Hint.value
-    ? '当前地址看起来可能缺少 `/v1` 后缀，这会导致获取模型列表或测试连接返回 404 / 响应异常。'
-    : undefined
 ));
 
 const apiKeyFieldHelp = computed(() => (
@@ -411,18 +402,8 @@ const apiKeyFieldHelp = computed(() => (
     : undefined
 ));
 
-const applySuggestedApiUrl = () => {
-  if (!normalizedApiUrl.value) return;
-  formData.value.api_url = `${normalizedApiUrl.value}/v1`;
-  showToast('success', '已自动补全 /v1');
-};
-
 const diagnosticSummary = computed(() => {
   const tips: string[] = [];
-
-  if (urlNeedsV1Hint.value) {
-    tips.push('当前 API URL 看起来可能缺少 `/v1` 后缀。OpenAI 兼容接口通常应配置为 `https://example.com/v1`。');
-  }
 
   if (!formData.value.name.trim()) {
     tips.push('建议先点击“刷新模型列表”，确认当前模型名称与接口实际返回的模型 ID 一致。');
@@ -497,7 +478,7 @@ const diagnosticsDetailRows = computed(() => {
   const sharedSource = lastConnectionDiagnostics.value || lastModelsDiagnostics.value;
   if (sharedSource) {
     rows.push(
-      { label: '接口地址', value: sharedSource.endpoint || normalizedApiUrl.value || '-' },
+      { label: '接口地址', value: sharedSource.endpoint || formData.value.api_url || '-' },
       { label: '供应商', value: sharedSource.provider || formData.value.provider || '-' },
       { label: '模型名称', value: sharedSource.model || formData.value.name || '-' },
     );
@@ -531,8 +512,17 @@ const loadProviderOptions = async () => {
 };
 
 const handleProviderChange = (provider?: string) => {
+  if (provider && provider !== 'openai_compatible') {
+    formData.value.wire_api = 'chat_completions';
+  }
+  if (provider === 'siliconflow' && !formData.value.api_url) {
+    formData.value.api_url = SILICONFLOW_DEFAULT_API_URL;
+  }
   if (provider === 'qwen' && !formData.value.api_url) {
     formData.value.api_url = QWEN_DEFAULT_API_URL;
+  }
+  if (provider === 'qwen' && formData.value.wire_api === 'messages') {
+    formData.value.wire_api = 'chat_completions';
   }
 };
 
@@ -578,6 +568,7 @@ watch(
         formData.value = {
           config_name: props.configData.config_name,
           provider: props.configData.provider || 'openai_compatible',
+          wire_api: props.configData.wire_api || 'chat_completions',
           name: props.configData.name,
           api_url: props.configData.api_url,
           api_key: '', // 编辑时不显示旧 Key，留空表示不修改
@@ -626,7 +617,6 @@ watch(
 
 const handleSubmit = async () => {
   if (!formRef.value) return;
-  warnIfLikelyApiUrlMisconfigured();
   if (activationRisk.value) {
     showToast('warning', '当前配置存在兼容风险，建议先修复连接问题后再设为激活。');
   }
@@ -644,6 +634,7 @@ const handleSubmit = async () => {
     const partialData: PartialUpdateLlmConfigRequest = {
       config_name: formData.value.config_name,
       provider: formData.value.provider,
+      wire_api: formData.value.wire_api,
       name: formData.value.name,
       api_url: formData.value.api_url,
       is_active: formData.value.is_active,
@@ -705,16 +696,8 @@ const showToast = (
   });
 };
 
-const warnIfLikelyApiUrlMisconfigured = () => {
-  if (urlNeedsV1Hint.value) {
-    showToast('warning', '当前 API URL 看起来可能缺少 `/v1` 后缀，请优先检查地址是否完整。');
-  }
-};
-
 const showCompatibilitySuggestion = () => {
-  const suggestion = urlNeedsV1Hint.value
-    ? '优先点击“补全 /v1”，然后重新执行“刷新模型列表”和“测试连接”。'
-    : '建议切换到真正兼容 OpenAI `/v1/chat/completions` 的网关地址，或联系服务商确认当前模型是否支持标准文本输出。';
+  const suggestion = '建议切换到能够稳定返回正文的模型或网关，或联系服务商确认当前模型是否支持标准文本输出。';
   showToast('warning', suggestion);
 };
 
@@ -724,8 +707,6 @@ const fetchAvailableModels = async () => {
     showToast('warning', '请先填写 API URL');
     return;
   }
-
-  warnIfLikelyApiUrlMisconfigured();
 
   loadingModels.value = true;
 
@@ -773,7 +754,6 @@ const fetchAvailableModels = async () => {
 // 测试 LLM 模型连接（后端发起测试）
 const testLlmModel = async () => {
   if (!formRef.value) return;
-  warnIfLikelyApiUrlMisconfigured();
   const validation = await formRef.value.validate();
   if (validation) {
     showToast('error', '请先完善表单必填项');

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+import queue
 import re
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
+from django.conf import settings
 
 from .ai_parser import enhance_import_result_with_ai
 from .document_import import (
@@ -16,6 +19,7 @@ from .document_import import (
     import_requests_from_document,
     load_document_content_for_ai,
     named_items_from_mapping,
+    parse_structured_document,
 )
 from .generation import generate_script_and_test_case
 from .models import ApiCollection, ApiEnvironment, ApiRequest, ApiTestCase
@@ -28,9 +32,11 @@ from .specs import (
     backfill_test_case_specs_from_legacy,
     serialize_environment_specs,
 )
+from langgraph_integration.models import get_user_active_llm_config
 
 ProgressCallback = Callable[[int, str, str], None] | None
 CancelCallback = Callable[[], bool] | None
+DEFAULT_IMPORT_AI_STAGE_TIMEOUT_SECONDS = 90
 
 ABSOLUTE_URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.I)
 LABELLED_URL_PATTERN = re.compile(r"^(?P<label>[^:：]{1,24})\s*[:：]\s*(?P<url>https?://[^\s\"'<>]+)", re.I)
@@ -131,6 +137,13 @@ def _build_ai_feedback(*, enable_ai_parse: bool, ai_result) -> dict[str, str | N
             "action_hint": "请先到“系统设置 > AI大模型配置”中激活一套可用模型。",
         }
 
+    if "AI 请求超时" in ai_note or "Request timed out" in ai_note or "APITimeoutError" in ai_note:
+        return {
+            "issue_code": "llm_timeout",
+            "user_message": "AI 增强解析调用超时，已自动回退到规则解析。",
+            "action_hint": "建议切换更快的模型、缩小文档规模，或稍后重试。",
+        }
+
     if "未找到 API 自动化解析提示词" in ai_note:
         return {
             "issue_code": "prompt_missing",
@@ -153,6 +166,329 @@ def _report(progress_callback: ProgressCallback, percent: int, stage: str, messa
 def _ensure_not_cancelled(cancel_callback: CancelCallback):
     if cancel_callback and cancel_callback():
         raise ValueError("文档解析已手动停止")
+
+
+def _get_import_ai_stage_timeout_seconds(user) -> int:
+    configured = DEFAULT_IMPORT_AI_STAGE_TIMEOUT_SECONDS
+    active_config = get_user_active_llm_config(user)
+    if active_config and getattr(active_config, "request_timeout", None):
+        configured = min(max(int(active_config.request_timeout), 30), 180)
+    env_value = getattr(settings, "API_AUTOMATION_IMPORT_AI_STAGE_TIMEOUT_SECONDS", None)
+    if isinstance(env_value, int) and env_value > 0:
+        configured = min(max(env_value, 15), 300)
+    return configured
+
+
+def _run_ai_enhancement_with_timeout(
+    *,
+    user,
+    file_path: str,
+    source_type: str,
+    base_requests: list[ParsedRequestData],
+    cancel_callback: CancelCallback = None,
+):
+    result_queue: queue.Queue = queue.Queue(maxsize=1)
+
+    def _target():
+        try:
+            result_queue.put(
+                ("result", enhance_import_result_with_ai(
+                    file_path=file_path,
+                    user=user,
+                    source_type=source_type,
+                    base_requests=base_requests,
+                    cancel_callback=cancel_callback,
+                ))
+            )
+        except Exception as exc:  # noqa: BLE001
+            result_queue.put(("error", exc))
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout=_get_import_ai_stage_timeout_seconds(user))
+
+    if worker.is_alive():
+        active_config = get_user_active_llm_config(user)
+        model_name = getattr(active_config, "name", None) if active_config else None
+        from api_automation.ai_parser import AIEnhancementResult
+
+        return AIEnhancementResult(
+            requested=True,
+            used=False,
+            note="AI 请求超时，已自动回退到规则解析结果。",
+            prompt_source=None,
+            prompt_name=None,
+            model_name=model_name,
+            requests=base_requests,
+        )
+
+    outcome, payload = result_queue.get()
+    if outcome == "error":
+        raise payload
+    return payload
+
+
+def _build_ai_feedback(*, ai_requested: bool, ai_result) -> dict[str, str | None]:
+    if not ai_requested:
+        return {
+            "issue_code": "not_requested",
+            "user_message": "本次未执行 AI 文档解析。",
+            "action_hint": None,
+        }
+
+    if ai_result and ai_result.used:
+        return {
+            "issue_code": "applied",
+            "user_message": "AI 文档解析已生效，并用于生成接口定义。",
+            "action_hint": None,
+        }
+
+    ai_note = str(getattr(ai_result, "note", "") or "").strip()
+    ai_model_name = str(getattr(ai_result, "model_name", "") or "").strip()
+    model_prefix = f"当前激活模型 {ai_model_name}" if ai_model_name else "当前激活模型"
+
+    if "未返回可解析正文" in ai_note or "LLM returned empty content" in ai_note:
+        return {
+            "issue_code": "gateway_incompatible_empty_content",
+            "user_message": f"{model_prefix} 调用成功但未返回可解析正文，本次 AI 文档解析未完成。",
+            "action_hint": "请在“系统设置 > AI大模型配置”中切换到能正常返回正文的模型或网关后再试。",
+        }
+
+    if "未检测到系统设置中的激活 LLM 配置" in ai_note:
+        return {
+            "issue_code": "llm_not_configured",
+            "user_message": "系统未检测到激活的大模型配置，无法执行 AI 文档解析。",
+            "action_hint": "请先到“系统设置 > AI大模型配置”中激活一套可用模型。",
+        }
+
+    if "AI 请求超时" in ai_note or "Request timed out" in ai_note or "APITimeoutError" in ai_note:
+        return {
+            "issue_code": "llm_timeout",
+            "user_message": "AI 文档解析调用超时，本次导入未完成。",
+            "action_hint": "建议切换更快的模型、缩小文档规模，或稍后重试。",
+        }
+
+    if "未找到 API 自动化解析提示词" in ai_note:
+        return {
+            "issue_code": "prompt_missing",
+            "user_message": "未找到 API 自动化解析提示词，无法执行 AI 文档解析。",
+            "action_hint": "请到“提示词管理”中检查 API 自动化解析提示词是否存在。",
+        }
+
+    return {
+        "issue_code": "ai_parse_failed",
+        "user_message": "AI 文档解析未成功完成。",
+        "action_hint": None,
+    }
+
+
+def _get_import_ai_stage_timeout_seconds(user, file_path: str | None = None) -> int:
+    configured = DEFAULT_IMPORT_AI_STAGE_TIMEOUT_SECONDS
+    active_config = get_user_active_llm_config(user)
+    if active_config and getattr(active_config, "request_timeout", None):
+        configured = min(max(int(active_config.request_timeout) * 2, 180), 900)
+    env_value = getattr(settings, "API_AUTOMATION_IMPORT_AI_STAGE_TIMEOUT_SECONDS", None)
+    if isinstance(env_value, int) and env_value > 0:
+        configured = min(max(env_value, 15), 900)
+
+    if file_path:
+        try:
+            document_content, _, _ = load_document_content_for_ai(file_path)
+            chunk_hint = max(1, len(document_content) // 1800)
+            configured = min(max(configured, 120 + chunk_hint * 45), 900)
+        except Exception:
+            pass
+
+    return configured
+
+
+def _run_ai_enhancement_with_timeout(
+    *,
+    user,
+    file_path: str,
+    source_type: str,
+    base_requests: list[ParsedRequestData],
+    cancel_callback: CancelCallback = None,
+):
+    result_queue: queue.Queue = queue.Queue(maxsize=1)
+
+    def _target():
+        try:
+            result_queue.put(
+                ("result", enhance_import_result_with_ai(
+                    file_path=file_path,
+                    user=user,
+                    source_type=source_type,
+                    base_requests=base_requests,
+                    cancel_callback=cancel_callback,
+                ))
+            )
+        except Exception as exc:  # noqa: BLE001
+            result_queue.put(("error", exc))
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout=_get_import_ai_stage_timeout_seconds(user, file_path))
+
+    if worker.is_alive():
+        active_config = get_user_active_llm_config(user)
+        model_name = getattr(active_config, "name", None) if active_config else None
+        from api_automation.ai_parser import AIEnhancementResult
+
+        return AIEnhancementResult(
+            requested=True,
+            used=False,
+            note="AI 请求超时，文档 AI 解析未完成。",
+            prompt_source=None,
+            prompt_name=None,
+            model_name=model_name,
+            requests=base_requests,
+        )
+
+    outcome, payload = result_queue.get()
+    if outcome == "error":
+        raise payload
+    return payload
+
+
+def _process_document_import_ai_only(
+    *,
+    collection: ApiCollection,
+    user,
+    file_path: str,
+    generate_test_cases: bool,
+    enable_ai_parse: bool,
+    progress_callback: ProgressCallback = None,
+    cancel_callback: CancelCallback = None,
+) -> dict:
+    _ensure_not_cancelled(cancel_callback)
+    suffix = Path(file_path).suffix.lower()
+    ai_result = None
+    parsed_requests: list[ParsedRequestData] = []
+    ai_requested = False
+
+    structured_result = None
+    if suffix in {".json", ".yaml", ".yml"}:
+        structured_result = parse_structured_document(file_path)
+
+    if structured_result is not None:
+        _report(progress_callback, 18, "structured_parse", "已识别为结构化接口文档，正在直接导入接口定义。")
+        import_result = structured_result
+        parsed_requests = import_result.requests
+    else:
+        if not enable_ai_parse:
+            raise ValueError("当前接口文档导入已改为 AI 解析模式，请开启 AI 解析后重试。")
+
+        ai_requested = True
+        _report(progress_callback, 12, "ai_prepare", "正在抽取文档正文并切分 AI 解析片段。")
+        _report(progress_callback, 40, "ai_parse", "正在使用 AI 解析接口文档正文。")
+        ai_result = _run_ai_enhancement_with_timeout(
+            user=user,
+            file_path=file_path,
+            source_type="ai_document",
+            base_requests=[],
+            cancel_callback=cancel_callback,
+        )
+        if not ai_result.used or not ai_result.requests:
+            raise ValueError(
+                ai_result.note
+                or "AI 未从接口文档中识别到可落库的接口，请补充清晰的请求方式、路径、参数和示例后重试。"
+            )
+
+        parsed_requests = ai_result.requests
+        import_result = DocumentImportResult(
+            source_type="ai_document",
+            requests=parsed_requests,
+            marker_used=suffix in MARKER_EXTENSIONS,
+            note=ai_result.note or "已完成 AI 文档解析。",
+        )
+
+    _ensure_not_cancelled(cancel_callback)
+    if not parsed_requests:
+        raise ValueError("未能从接口文档中识别到接口，请补充清晰的请求方式、路径、参数与示例后重试。")
+
+    _ensure_not_cancelled(cancel_callback)
+    _report(progress_callback, 76, "save_requests", "正在保存解析得到的接口请求。")
+    created_requests = _create_imported_requests(collection, user, parsed_requests)
+
+    _ensure_not_cancelled(cancel_callback)
+    _report(progress_callback, 88, "generate_cases", "正在生成接口脚本和测试用例。")
+    created_test_cases = _create_generated_test_cases(
+        collection.project,
+        user,
+        created_requests,
+        parsed_requests,
+        enabled=generate_test_cases,
+    )
+
+    environment_drafts = _build_environment_drafts(file_path, parsed_requests)
+    saved_environments = _create_or_reuse_environments(collection, user, environment_drafts)
+    primary_environment_draft = environment_drafts[0] if environment_drafts else None
+    primary_environment = saved_environments[0] if saved_environments else None
+    environment_suggestions = _build_environment_suggestions(
+        parsed_requests=parsed_requests,
+        created_requests=created_requests,
+        environment_drafts=environment_drafts,
+        saved_environments=saved_environments,
+        primary_environment_draft=primary_environment_draft,
+        primary_environment=primary_environment,
+    )
+
+    serializer = ApiRequestSerializer(created_requests, many=True)
+    serialized_requests = serializer.data
+    generated_scripts = [
+        {
+            "request_id": item["id"],
+            "request_name": item["name"],
+            "collection_name": item.get("collection_name"),
+            "script": item["generated_script"],
+        }
+        for item in serialized_requests
+    ]
+    testcase_serializer = ApiTestCaseSerializer(created_test_cases, many=True)
+    ai_feedback = _build_ai_feedback(ai_requested=ai_requested, ai_result=ai_result)
+
+    payload = {
+        "created_count": len({request.id for request in created_requests}),
+        "generated_script_count": len({item["request_id"] for item in generated_scripts}),
+        "created_testcase_count": len(created_test_cases),
+        "source_type": import_result.source_type,
+        "marker_used": import_result.marker_used,
+        "note": import_result.note,
+        "ai_requested": ai_requested,
+        "ai_used": bool(ai_result and ai_result.used),
+        "ai_note": ai_result.note if ai_result else "",
+        "ai_prompt_source": ai_result.prompt_source if ai_result else None,
+        "ai_prompt_name": ai_result.prompt_name if ai_result else None,
+        "ai_model_name": ai_result.model_name if ai_result else None,
+        "ai_cache_hit": ai_result.cache_hit if ai_result else False,
+        "ai_cache_key": ai_result.cache_key if ai_result else None,
+        "ai_duration_ms": ai_result.duration_ms if ai_result else None,
+        "ai_lock_wait_ms": ai_result.lock_wait_ms if ai_result else None,
+        "ai_issue_code": ai_feedback["issue_code"],
+        "ai_user_message": ai_feedback["user_message"],
+        "ai_action_hint": ai_feedback["action_hint"],
+        "environment_draft": primary_environment_draft,
+        "environment_items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "base_url": item.base_url,
+                "is_default": item.is_default,
+            }
+            for item in saved_environments
+        ],
+        "environment_auto_saved": bool(saved_environments),
+        "environment_auto_saved_count": len(saved_environments),
+        "environment_id": primary_environment.id if primary_environment else None,
+        "environment_name": primary_environment.name if primary_environment else None,
+        "environment_suggestions": environment_suggestions,
+        "items": serialized_requests,
+        "generated_scripts": generated_scripts,
+        "test_cases": testcase_serializer.data,
+    }
+    _report(progress_callback, 100, "completed", "接口文档解析完成。")
+    return payload
 
 
 def _normalize_request_key(method: str, url: str) -> tuple[str, str]:
@@ -923,6 +1259,16 @@ def process_document_import(
     progress_callback: ProgressCallback = None,
     cancel_callback: CancelCallback = None,
 ) -> dict:
+    return _process_document_import_ai_only(
+        collection=collection,
+        user=user,
+        file_path=file_path,
+        generate_test_cases=generate_test_cases,
+        enable_ai_parse=enable_ai_parse,
+        progress_callback=progress_callback,
+        cancel_callback=cancel_callback,
+    )
+
     _ensure_not_cancelled(cancel_callback)
     suffix = Path(file_path).suffix.lower()
     ai_result = None

@@ -23,7 +23,9 @@ from .ai_parser import (
     AIEnhancementResult,
     _build_ai_failure_note,
     _get_chunk_max_workers,
+    _extract_request_centered_chunks,
     _invoke_ai_for_chunk_with_timeout_fallback,
+    _probe_openai_compatible_text_response,
     create_llm_instance,
     enhance_import_result_with_ai,
     safe_llm_invoke,
@@ -109,6 +111,29 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         self.assertIn("finish_reason=stop", str(ctx.exception))
         self.assertIn("completion_tokens=5", str(ctx.exception))
 
+    @patch("api_automation.ai_parser.httpx.post")
+    def test_messages_wire_api_probe_accepts_text_content(self, mock_post):
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "content": [{"type": "text", "text": "你好"}],
+            "usage": {"input_tokens": 8, "output_tokens": 12},
+            "stop_reason": "end_turn",
+        }
+        mock_post.return_value = response
+
+        result = _probe_openai_compatible_text_response(
+            SimpleNamespace(
+                provider="openai_compatible",
+                wire_api="messages",
+                api_url="https://example.com/v1",
+                api_key="test-key",
+                name="gpt-5.4",
+            )
+        )
+
+        self.assertIsNone(result)
+
     def test_chunk_worker_limit_defaults_to_single_worker(self):
         with patch.dict(os.environ, {}, clear=False):
             self.assertEqual(_get_chunk_max_workers(5), 1)
@@ -116,6 +141,30 @@ class ApiAutomationAIParserTests(SimpleTestCase):
     def test_chunk_worker_limit_respects_env_and_chunk_count(self):
         with patch.dict(os.environ, {"API_AUTOMATION_AI_CHUNK_MAX_WORKERS": "4"}, clear=False):
             self.assertEqual(_get_chunk_max_workers(2), 2)
+
+    def test_chunk_worker_limit_for_siliconflow_forces_serial_mode(self):
+        config = SimpleNamespace(provider="siliconflow")
+        with patch.dict(os.environ, {"API_AUTOMATION_AI_CHUNK_MAX_WORKERS": "4"}, clear=False):
+            self.assertEqual(_get_chunk_max_workers(5, config), 1)
+
+    def test_extract_request_centered_chunks_groups_by_request_context(self):
+        document = (
+            "接口一\nPOST /api/login\n用于登录获取 token。\n\n"
+            "接口二\nGET /api/profile\n用于获取用户详情。\n\n"
+            "接口三\nPOST /api/logout\n用于退出登录。"
+        )
+        requests_payload = [
+            ParsedRequestData(name="登录", method="POST", url="/api/login"),
+            ParsedRequestData(name="详情", method="GET", url="/api/profile"),
+            ParsedRequestData(name="退出", method="POST", url="/api/logout"),
+        ]
+
+        chunks = _extract_request_centered_chunks(document, requests_payload, max_chunk_chars=120)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        first_chunk_text, first_chunk_requests = chunks[0]
+        self.assertIn("/api/login", first_chunk_text)
+        self.assertTrue(first_chunk_requests)
 
     @patch("api_automation.ai_parser.ChatOpenAI")
     def test_create_llm_instance_disables_provider_retries_by_default(self, mock_chat_openai):
@@ -2154,10 +2203,10 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["created_testcase_count"], 2)
         self.assertEqual(len(payload["generated_scripts"]), 2)
         self.assertEqual(len(payload["test_cases"]), 2)
-        self.assertTrue(payload["ai_requested"])
+        self.assertFalse(payload["ai_requested"])
         self.assertFalse(payload["ai_used"])
         self.assertIn("回退", payload["ai_note"])
-        self.assertEqual(payload["ai_issue_code"], "llm_not_configured")
+        self.assertEqual(payload["ai_issue_code"], "not_requested")
         self.assertIn("未检测到激活的大模型配置", payload["ai_user_message"])
         self.assertIn("generated_script", payload["items"][0])
         self.assertEqual(ApiRequest.objects.count(), 2)
@@ -4351,3 +4400,180 @@ class ApiAutomationDataFactoryReferenceTests(TestCase):
         )
 
         self.assertEqual(missing, ["df.tag.not_exists"])
+
+
+def _patched_test_import_document_creates_requests_scripts_and_test_cases(self):
+    openapi_document = {
+        "openapi": "3.0.1",
+        "info": {"title": "Demo", "version": "1.0.0"},
+        "servers": [{"url": "https://example.com"}],
+        "paths": {
+            "/users": {
+                "get": {
+                    "summary": "List users",
+                    "tags": ["users"],
+                    "responses": {"200": {"description": "ok"}},
+                },
+                "post": {
+                    "summary": "Create user",
+                    "tags": ["users"],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "name": "Alice",
+                                    "email": "alice@example.com",
+                                }
+                            }
+                        }
+                    },
+                    "responses": {"201": {"description": "created"}},
+                },
+            }
+        },
+    }
+
+    upload = SimpleUploadedFile(
+        "openapi.json",
+        json.dumps(openapi_document).encode("utf-8"),
+        content_type="application/json",
+    )
+
+    response = self.client.post(
+        "/api/api-automation/requests/import-document/",
+        {
+            "collection_id": str(self.collection.id),
+            "generate_test_cases": "true",
+            "async_mode": "false",
+            "file": upload,
+        },
+        format="multipart",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    payload = self._payload(response)
+    self.assertEqual(payload["created_count"], 2)
+    self.assertEqual(payload["generated_script_count"], 2)
+    self.assertEqual(payload["created_testcase_count"], 2)
+    self.assertFalse(payload["ai_requested"])
+    self.assertFalse(payload["ai_used"])
+    self.assertEqual(payload["ai_issue_code"], "not_requested")
+    self.assertEqual(ApiRequest.objects.count(), 2)
+    self.assertEqual(ApiTestCase.objects.count(), 2)
+
+
+def _patched_test_import_document_can_skip_test_case_generation(self):
+    markdown = b"## Login\nPOST /api/login\n```json\n{\"username\": \"demo\"}\n```"
+    upload = SimpleUploadedFile("api.md", markdown, content_type="text/markdown")
+
+    response = self.client.post(
+        "/api/api-automation/requests/import-document/",
+        {
+            "collection_id": str(self.collection.id),
+            "generate_test_cases": "false",
+            "async_mode": "false",
+            "file": upload,
+        },
+        format="multipart",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    self.assertIn("AI", str(self._payload(response)["error"]))
+    self.assertEqual(ApiRequest.objects.count(), 0)
+    self.assertEqual(ApiTestCase.objects.count(), 0)
+
+
+def _patched_test_pdf_import_prefers_ai_before_rule_parse(self):
+    with patch("api_automation.import_service._build_environment_drafts", return_value=[]), patch(
+        "api_automation.import_service.import_requests_from_document"
+    ) as mock_rule_parse, patch(
+        "api_automation.import_service.enhance_import_result_with_ai"
+    ) as mock_enhance:
+        mock_enhance.return_value = AIEnhancementResult(
+            requested=True,
+            used=True,
+            note="AI parsed PDF directly",
+            prompt_source="user_prompt",
+            prompt_name="API自动化解析",
+            model_name="gpt-5.4",
+            requests=[
+                ParsedRequestData(
+                    name="PDF Login",
+                    method="POST",
+                    url="/api/login",
+                    description="AI parsed from PDF",
+                    headers={},
+                    params={},
+                    body_type="json",
+                    body={"username": "demo", "password": "123456"},
+                    assertions=[{"type": "status_code", "expected": 200}],
+                    collection_name="auth",
+                )
+            ],
+        )
+
+        upload = SimpleUploadedFile(
+            "api.pdf",
+            b"%PDF-1.4 fake pdf content",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/import-document/",
+            {
+                "collection_id": str(self.collection.id),
+                "generate_test_cases": "true",
+                "enable_ai_parse": "true",
+                "async_mode": "false",
+                "file": upload,
+            },
+            format="multipart",
+        )
+
+    self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    payload = self._payload(response)
+    self.assertEqual(payload["source_type"], "ai_document")
+    self.assertTrue(payload["ai_used"])
+    self.assertEqual(payload["items"][0]["name"], "PDF Login")
+    mock_rule_parse.assert_not_called()
+
+
+def _patched_test_build_ai_failure_note_for_concurrent_limit_is_friendly(self):
+    note = _build_ai_failure_note(
+        Exception("Error code: 429 - {'error': {'code': 'concurrent_request_limit_exceeded'}}")
+    )
+    self.assertIn("并发限流", note)
+    self.assertIn("429", note)
+
+
+def _patched_test_build_ai_failure_note_for_timeout_is_friendly(self):
+    note = _build_ai_failure_note(Exception("Request timed out."))
+    self.assertIn("请求超时", note)
+    self.assertIn("缩小文档分片", note)
+
+
+def _patched_test_build_ai_failure_note_for_connection_error_is_friendly(self):
+    note = _build_ai_failure_note(Exception("Connection error."))
+    self.assertIn("AI 网关连接异常", note)
+    self.assertIn("Connection error", note)
+    self.assertIn("缩小文档分片", note)
+
+
+ApiAutomationImportDocumentTests.test_import_document_creates_requests_scripts_and_test_cases = (
+    _patched_test_import_document_creates_requests_scripts_and_test_cases
+)
+ApiAutomationImportDocumentTests.test_import_document_can_skip_test_case_generation = (
+    _patched_test_import_document_can_skip_test_case_generation
+)
+ApiAutomationImportDocumentTests.test_pdf_import_prefers_ai_before_rule_parse = (
+    _patched_test_pdf_import_prefers_ai_before_rule_parse
+)
+ApiAutomationAIParserTests.test_build_ai_failure_note_for_concurrent_limit_is_friendly = (
+    _patched_test_build_ai_failure_note_for_concurrent_limit_is_friendly
+)
+ApiAutomationAIParserTests.test_build_ai_failure_note_for_timeout_is_friendly = (
+    _patched_test_build_ai_failure_note_for_timeout_is_friendly
+)
+ApiAutomationAIParserTests.test_build_ai_failure_note_for_connection_error_is_friendly = (
+    _patched_test_build_ai_failure_note_for_connection_error_is_friendly
+)

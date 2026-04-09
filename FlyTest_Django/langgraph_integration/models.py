@@ -13,7 +13,12 @@ class LLMConfig(models.Model):
     
     PROVIDER_CHOICES = [
         ('openai_compatible', 'OpenAI 兼容'),
+        ('siliconflow', '硅基流动'),
         ('qwen', 'Qwen/通义千问'),
+    ]
+    WIRE_API_CHOICES = [
+        ('chat_completions', 'OpenAI Chat'),
+        ('messages', 'Claude Messages'),
     ]
     
     owner = models.ForeignKey(
@@ -33,6 +38,13 @@ class LLMConfig(models.Model):
     # 供应商字段（新增）
     provider = models.CharField(max_length=50, choices=PROVIDER_CHOICES, default='openai_compatible', verbose_name="供应商",
                                help_text="LLM服务供应商")
+    wire_api = models.CharField(
+        max_length=32,
+        choices=WIRE_API_CHOICES,
+        default='chat_completions',
+        verbose_name="协议类型",
+        help_text="OpenAI 兼容网关默认走 /chat/completions；如网关只兼容 Claude Messages，可切换为 /messages。",
+    )
     
     # 模型名称字段（原来的name字段，现在表示具体模型）
     name = models.CharField(max_length=255, verbose_name="模型名称",
