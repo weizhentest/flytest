@@ -18,7 +18,7 @@ from django.db import close_old_connections
 from django.utils import timezone
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 
 from .models import UiAIExecutionRecord, UiElement, UiEnvironmentConfig, UiModule, UiPage
 
@@ -768,7 +768,7 @@ def run_ai_execution(record_id: int) -> None:
         return
 
     started_at = time.time()
-    active_config = _get_active_llm_config()
+    active_config = _get_active_llm_config(getattr(record, "executed_by", None))
     env_config = _get_default_env_config(record.project_id)
     runtime_state = ExecutionRuntimeState(
         record_id=record.id,
@@ -1144,8 +1144,8 @@ async def _run_browser_use_execution(
             logger.warning("Failed to stop browser session for record %s: %s", record.id, exc)
 
 
-def _get_active_llm_config() -> LLMConfig | None:
-    return LLMConfig.objects.filter(is_active=True).order_by("-updated_at").first()
+def _get_active_llm_config(user=None) -> LLMConfig | None:
+    return get_user_active_llm_config(user)
 
 
 def _get_default_env_config(project_id: int) -> UiEnvironmentConfig | None:

@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from knowledge.models import Document as KnowledgeDocument
 from knowledge.models import DocumentChunk
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from prompts.models import UserPrompt
 from requirements.models import RequirementDocument, RequirementModule
 
@@ -1866,7 +1866,7 @@ def _generate_test_case_drafts_with_ai_uncached(
     reference_context_json: str | None = None,
     historical_context_json: str | None = None,
 ) -> AITestCaseGenerationResult:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         fallback_cases = _build_fallback_cases(api_request, existing_cases, count=count)
         return AITestCaseGenerationResult(
@@ -1981,7 +1981,7 @@ def generate_test_case_drafts_with_ai(
     mode: str,
     count: int,
 ) -> AITestCaseGenerationResult:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return _ensure_case_summaries(
             api_request,

@@ -287,6 +287,10 @@ onMounted(() => {
   padding: 20px 20px;
 }
 
+.llm-config-management :deep(.arco-table-container) {
+  overflow-x: auto;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;

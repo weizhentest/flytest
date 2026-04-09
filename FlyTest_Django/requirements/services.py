@@ -8,7 +8,7 @@ from django.conf import settings
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from .models import RequirementDocument, RequirementModule, DocumentImage
 from prompts.models import UserPrompt
 
@@ -1299,7 +1299,7 @@ class ModuleSplitter:
     def _get_llm_instance(self):
         """获取LLM实例"""
         try:
-            active_config = LLMConfig.objects.filter(is_active=True).first()
+            active_config = get_user_active_llm_config(self.user)
             if not active_config:
                 raise Exception("没有可用的LLM配置")
 
@@ -2606,7 +2606,7 @@ class RequirementReviewEngine:
     def _get_llm_instance(self):
         """获取LLM实例"""
         try:
-            active_config = LLMConfig.objects.filter(is_active=True).first()
+            active_config = get_user_active_llm_config(self.user)
             if not active_config:
                 raise Exception("没有可用的LLM配置")
 

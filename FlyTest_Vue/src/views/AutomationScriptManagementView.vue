@@ -449,6 +449,7 @@ import { Message, type FormInstance } from '@arco-design/web-vue';
 	  IconRefresh, IconEye, IconPlayArrow, IconDelete, IconPlus, IconEdit, IconCode, IconPause, IconLoading, IconCodeBlock, IconClose, IconLeft, IconRight
 	} from '@arco-design/web-vue/es/icon';
 	import { useProjectStore } from '@/store/projectStore';
+	import { useAuthStore } from '@/store/authStore';
 	import request from '@/utils/request';
 	import {
 	  createAutomationScript,
@@ -501,6 +502,7 @@ interface ScriptForm {
 }
 
 const projectStore = useProjectStore();
+const authStore = useAuthStore();
 const loading = ref(false);
 const scripts = ref<AutomationScript[]>([]);
 const searchKeyword = ref('');
@@ -640,10 +642,7 @@ const previewStatusText = computed(() => {
 });
 
 // 获取用户 Token
-const getUserToken = (): string => {
-  // 从 localStorage 获取 JWT access token
-  return localStorage.getItem('auth-accessToken') || '';
-};
+const getUserToken = (): string => authStore.getAccessToken || '';
 
 // 构建保存 payload
 const buildScriptPayload = () => ({

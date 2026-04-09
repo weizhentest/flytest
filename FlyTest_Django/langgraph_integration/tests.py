@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from unittest.mock import Mock, patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.test import TestCase
 from rest_framework import status
-from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from langgraph_integration.views import (
     LLMConfigViewSet,
     _should_hide_tool_message,
@@ -130,3 +130,73 @@ class LlmConnectionDiagnosticsTests(TestCase):
         self.assertEqual(response.data["status"], "success")
         self.assertIn("2 个模型探测", response.data["message"])
         self.assertEqual(len(response.data["results"]), 2)
+
+
+class LlmConfigSharingTests(TestCase):
+    def setUp(self) -> None:
+        self.owner = User.objects.create_user(
+            username="owner",
+            email="owner@example.com",
+            password="password123",
+        )
+        self.member = User.objects.create_user(
+            username="member",
+            email="member@example.com",
+            password="password123",
+        )
+        self.group = Group.objects.create(name="研发一组")
+        self.member.groups.add(self.group)
+        self.config = LLMConfig.objects.create(
+            owner=self.owner,
+            config_name="Shared Config",
+            provider="openai_compatible",
+            name="gpt-5.4",
+            api_url="https://example.com/v1",
+            api_key="test-key",
+            system_prompt="owner only",
+            is_active=True,
+        )
+        self.config.shared_groups.add(self.group)
+        self.client = APIClient()
+
+    def _payload(self, response):
+        if isinstance(response.data, dict) and "data" in response.data:
+            return response.data["data"]
+        return response.data
+
+    def test_shared_member_sees_config_but_sensitive_fields_are_hidden(self):
+        self.client.force_authenticate(self.member)
+
+        response = self.client.get("/api/lg/llm-configs/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["config_name"], "Shared Config")
+        self.assertEqual(payload[0]["api_url"], "")
+        self.assertEqual(payload[0]["system_prompt"], "")
+        self.assertFalse(payload[0]["can_edit"])
+        self.assertTrue(payload[0]["is_shared"])
+
+    def test_shared_member_can_activate_shared_config_for_self(self):
+        self.client.force_authenticate(self.member)
+
+        response = self.client.patch(
+            f"/api/lg/llm-configs/{self.config.id}/",
+            {"is_active": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(get_user_active_llm_config(self.member).id, self.config.id)
+
+    def test_shared_member_cannot_edit_sensitive_fields(self):
+        self.client.force_authenticate(self.member)
+
+        response = self.client.patch(
+            f"/api/lg/llm-configs/{self.config.id}/",
+            {"config_name": "Hacked"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

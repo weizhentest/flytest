@@ -3,6 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.shortcuts import get_object_or_404
 from django.db.utils import OperationalError
 from django.db.models import Q
+from django.conf import settings
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
@@ -10,10 +11,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from flytest_django.permissions import HasModelPermission, permission_required
+from flytest_django.jwt_cookies import clear_auth_cookies, set_auth_cookies
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView as BaseTokenObtainPairView,
+    TokenRefreshView as BaseTokenRefreshView,
 )
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from .throttles import LoginRateThrottle, RegisterRateThrottle
 from .serializers import (
     UserSerializer,
     UserDetailSerializer,
@@ -40,6 +45,7 @@ class UserCreateAPIView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [RegisterRateThrottle]
 
     def create(self, request, *args, **kwargs):
         # 直接复用通用创建流程，保持注册接口与统一序列化逻辑一致。
@@ -903,15 +909,69 @@ class MyTokenObtainPairView(BaseTokenObtainPairView):
     """
 
     serializer_class = MyTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request, *args, **kwargs):
         """
         当数据库尚未就绪时，返回可识别的友好错误，避免直接暴露 500 调试堆栈。
         """
         try:
-            return super().post(request, *args, **kwargs)
+            response = super().post(request, *args, **kwargs)
+            if response.status_code == status.HTTP_200_OK and isinstance(response.data, dict):
+                access_token = response.data.get("access")
+                refresh_token = response.data.get("refresh")
+                if access_token and refresh_token:
+                    set_auth_cookies(
+                        response,
+                        access_token=access_token,
+                        refresh_token=refresh_token,
+                    )
+            return response
         except OperationalError:
             return Response(
                 {"detail": "认证服务正在启动，请稍后重试。"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
+
+class CookieTokenRefreshView(BaseTokenRefreshView):
+    serializer_class = TokenRefreshSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.data.get("refresh") or request.COOKIES.get(settings.JWT_REFRESH_COOKIE_NAME)
+        if not refresh_token:
+            response = Response(
+                {"detail": "登录已过期，请重新登录。"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            clear_auth_cookies(response)
+            return response
+
+        serializer = self.get_serializer(data={"refresh": refresh_token})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            response = Response(
+                {"detail": "登录已过期，请重新登录。"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+            clear_auth_cookies(response)
+            return response
+
+        response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+        set_auth_cookies(
+            response,
+            access_token=serializer.validated_data["access"],
+            refresh_token=serializer.validated_data.get("refresh") or refresh_token,
+        )
+        return response
+
+
+class LogoutAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        response = Response({"message": "已退出登录。"}, status=status.HTTP_200_OK)
+        clear_auth_cookies(response)
+        return response

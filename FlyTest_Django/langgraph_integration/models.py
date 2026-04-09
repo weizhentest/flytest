@@ -1,5 +1,7 @@
 from django.db import models
 from django.conf import settings
+from django.contrib.auth.models import Group
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -14,8 +16,18 @@ class LLMConfig(models.Model):
         ('qwen', 'Qwen/通义千问'),
     ]
     
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owned_llm_configs",
+        verbose_name="归属用户",
+        help_text="该配置的所有者。为空时表示历史全局配置，仅超级管理员可管理。",
+    )
+
     # 配置标识字段（新增）
-    config_name = models.CharField(max_length=255, unique=True, verbose_name="配置名称",
+    config_name = models.CharField(max_length=255, verbose_name="配置名称",
                                   help_text="用户自定义的配置名称，如'生产环境OpenAI'、'测试Claude配置'")
     
     # 供应商字段（新增）
@@ -74,6 +86,18 @@ class LLMConfig(models.Model):
     # 状态字段（保持不变）
     is_active = models.BooleanField(default=False, verbose_name="是否激活",
                                    help_text="是否为当前激活的LLM配置")
+    shared_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        related_name="shared_llm_configs",
+        verbose_name="共享组织",
+    )
+    shared_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="shared_llm_configs",
+        verbose_name="共享成员",
+    )
     
     # 时间戳字段（保持不变）
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
@@ -86,12 +110,122 @@ class LLMConfig(models.Model):
         verbose_name = "LLM配置"
         verbose_name_plural = "LLM配置"
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "config_name"],
+                name="unique_llm_config_name_per_owner",
+            )
+        ]
 
     def save(self, *args, **kwargs):
-        # 确保只有一个配置可以激活
+        # 兼容旧逻辑：仅在同一所有者名下保留一个默认激活标记
         if self.is_active:
-            LLMConfig.objects.filter(is_active=True).exclude(pk=self.pk).update(is_active=False)
+            queryset = LLMConfig.objects.filter(is_active=True).exclude(pk=self.pk)
+            if self.owner_id:
+                queryset = queryset.filter(owner_id=self.owner_id)
+            else:
+                queryset = queryset.filter(owner__isnull=True)
+            queryset.update(is_active=False)
         super().save(*args, **kwargs)
+
+    @classmethod
+    def visible_to_user_queryset(cls, user):
+        if user is None or not getattr(user, "is_authenticated", False):
+            return cls.objects.none()
+        if getattr(user, "is_superuser", False):
+            return cls.objects.all()
+        queryset = cls.objects.filter(
+            Q(owner=user)
+            | Q(shared_users=user)
+            | Q(shared_groups__in=user.groups.all())
+        ).distinct()
+        if getattr(user, "is_staff", False):
+            queryset = cls.objects.filter(Q(pk__in=queryset.values("pk")) | Q(owner__isnull=True)).distinct()
+        return queryset
+
+    def can_manage(self, user) -> bool:
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_superuser", False):
+            return True
+        if self.owner_id is None and getattr(user, "is_staff", False):
+            return True
+        return self.owner_id == user.id
+
+    def can_view_sensitive(self, user) -> bool:
+        return self.can_manage(user)
+
+    def is_shared_with(self, user) -> bool:
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        if self.owner_id == user.id:
+            return False
+        return (
+            self.shared_users.filter(pk=user.pk).exists()
+            or self.shared_groups.filter(pk__in=user.groups.values_list("pk", flat=True)).exists()
+        )
+
+
+class UserLLMConfigPreference(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="llm_config_preference",
+        verbose_name="用户",
+    )
+    active_config = models.ForeignKey(
+        LLMConfig,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="preferred_by_users",
+        verbose_name="当前激活配置",
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "用户LLM偏好"
+        verbose_name_plural = "用户LLM偏好"
+
+
+def get_user_active_llm_config(user=None):
+    if user is not None and getattr(user, "is_authenticated", False):
+        visible = LLMConfig.visible_to_user_queryset(user)
+        preference = (
+            UserLLMConfigPreference.objects.select_related("active_config")
+            .filter(user=user)
+            .first()
+        )
+        if preference and preference.active_config_id and visible.filter(pk=preference.active_config_id).exists():
+            return preference.active_config
+
+        owned_default = visible.filter(owner=user, is_active=True).order_by("-updated_at").first()
+        if owned_default:
+            return owned_default
+
+        shared_default = visible.filter(is_active=True).order_by("-updated_at").first()
+        if shared_default:
+            return shared_default
+
+        return visible.order_by("-updated_at").first()
+
+    return LLMConfig.objects.filter(is_active=True).first()
+
+
+def set_user_active_llm_config(user, config: LLMConfig | None):
+    if user is None or not getattr(user, "is_authenticated", False):
+        raise ValueError("激活配置时必须提供已登录用户。")
+
+    preference, _ = UserLLMConfigPreference.objects.get_or_create(user=user)
+    preference.active_config = config
+    preference.save(update_fields=["active_config", "updated_at"])
+
+    if config and config.owner_id == user.id and not config.is_active:
+        LLMConfig.objects.filter(owner=user, is_active=True).exclude(pk=config.pk).update(is_active=False)
+        config.is_active = True
+        config.save(update_fields=["is_active", "updated_at"])
+
+    return preference
 
 
 class ChatSession(models.Model):

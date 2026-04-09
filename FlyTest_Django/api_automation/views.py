@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
+from django.conf import settings
 from django.db.models import Q
 from django.db.models import Avg, Count, Max
 from django.shortcuts import get_object_or_404
@@ -20,6 +21,10 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
+from flytest_django.upload_security import (
+    validate_uploaded_file_extension,
+    validate_uploaded_file_size,
+)
 from projects.models import Project
 from flytest_django.viewsets import BaseModelViewSet
 
@@ -35,6 +40,12 @@ from .ai_case_generator import (
 )
 from .ai_parser import get_import_ai_compatibility_status
 from .ai_report_summarizer import summarize_execution_report
+from .document_import import (
+    MARKER_EXTENSIONS,
+    NATIVE_DOCUMENT_EXTENSIONS,
+    STRUCTURED_EXTENSIONS,
+    TEXT_EXTENSIONS,
+)
 from .execution import ExecutionRunContext, execute_api_request
 from .import_service import process_document_import
 from .models import (
@@ -2345,6 +2356,24 @@ class ApiRequestViewSet(BaseModelViewSet):
             return Response({"error": "请上传接口文档文件"}, status=status.HTTP_400_BAD_REQUEST)
         if not collection_id:
             return Response({"error": "collection_id 参数必填"}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_extensions = (
+            STRUCTURED_EXTENSIONS
+            | TEXT_EXTENSIONS
+            | NATIVE_DOCUMENT_EXTENSIONS
+            | MARKER_EXTENSIONS
+        )
+        validation_error = validate_uploaded_file_size(
+            file,
+            max_size=settings.MAX_API_DOCUMENT_UPLOAD_BYTES,
+            label="接口文档",
+        ) or validate_uploaded_file_extension(
+            file,
+            allowed_extensions=allowed_extensions,
+            label="接口文档",
+        )
+        if validation_error:
+            return Response({"error": validation_error}, status=status.HTTP_400_BAD_REQUEST)
 
         collection = get_object_or_404(
             ApiCollection.objects.filter(project__in=get_accessible_projects(request.user)),

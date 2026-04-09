@@ -7,7 +7,7 @@ from rest_framework.routers import DefaultRouter
 # 导入账户模块下的视图。
 from .views import (
     UserCreateAPIView, CurrentUserAPIView,
-    GroupViewSet, PermissionViewSet, UserViewSet, ContentTypeViewSet
+    GroupViewSet, PermissionViewSet, UserViewSet, ContentTypeViewSet, LogoutAPIView
 )
 
 # 创建账户模块路由器实例。
@@ -22,4 +22,5 @@ urlpatterns = [
     path('', include(router.urls)),  # 挂载 ViewSet 自动路由。
     path('register/', UserCreateAPIView.as_view(), name='user-register'),  # 用户注册端点。
     path('me/', CurrentUserAPIView.as_view(), name='user-me'),  # 当前登录用户信息端点。
+    path('logout/', LogoutAPIView.as_view(), name='user-logout'),
 ]

@@ -36,6 +36,7 @@ function getApiBaseUrl() {
 const service = axios.create({
   baseURL: getApiBaseUrl(),
   timeout: 60000, // 请求超时时间
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -84,33 +85,30 @@ function onRefreshed(token: string) {
 // 刷新token
 async function refreshToken() {
   const authStore = useAuthStore();
-  const refreshToken = authStore.getRefreshToken;
-
-  if (!refreshToken) {
-    // 如果没有refreshToken，直接登出
-    authStore.logout();
-    return null;
-  }
 
   try {
-    // 使用配置好的 baseURL 来刷新 token
-    const response = await axios.post(`${getApiBaseUrl()}/token/refresh/`, {
-      refresh: refreshToken
-    });
+    const response = await axios.post(
+      `${getApiBaseUrl()}/token/refresh/`,
+      {},
+      {
+        withCredentials: true,
+        headers: {
+          Accept: 'application/json',
+        },
+      },
+    );
 
-    if (response.data && response.data.access) {
-      // 更新token
-      const newToken = response.data.access;
-      // 更新AuthStore中的token
-      localStorage.setItem('auth-accessToken', newToken);
+    const payload = response.data?.data ?? response.data;
+    if (payload && payload.access) {
+      const newToken = payload.access;
+      authStore.updateAccessToken(newToken);
+      authStore.updateRefreshToken(payload.refresh || null);
       return newToken;
     } else {
-      // 刷新失败，清除token并登出
       authStore.logout();
       return null;
     }
   } catch (error) {
-    // 刷新失败，清除token并登出
     authStore.logout();
     return null;
   }

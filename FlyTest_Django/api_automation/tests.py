@@ -2059,6 +2059,45 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["issue_code"], "gateway_incompatible_empty_content")
         self.assertIn("未返回正文", payload["title"])
 
+    def test_import_document_rejects_unsupported_extension(self):
+        upload = SimpleUploadedFile("shell.exe", b"MZ...", content_type="application/octet-stream")
+
+        response = self.client.post(
+            "/api/api-automation/requests/import-document/",
+            {
+                "collection_id": str(self.collection.id),
+                "generate_test_cases": "false",
+                "async_mode": "false",
+                "file": upload,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("不受支持", str(response.data["error"]))
+
+    @override_settings(MAX_API_DOCUMENT_UPLOAD_BYTES=32)
+    def test_import_document_rejects_oversized_file(self):
+        upload = SimpleUploadedFile(
+            "openapi.json",
+            json.dumps({"openapi": "3.0.0", "paths": {"/ping": {"get": {}}}}).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/import-document/",
+            {
+                "collection_id": str(self.collection.id),
+                "generate_test_cases": "false",
+                "async_mode": "false",
+                "file": upload,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("不能超过", str(response.data["error"]))
+
     def test_import_document_creates_requests_scripts_and_test_cases(self):
         openapi_document = {
             "openapi": "3.0.1",

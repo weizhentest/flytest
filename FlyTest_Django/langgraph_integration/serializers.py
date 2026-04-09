@@ -1,5 +1,6 @@
+from django.contrib.auth.models import Group, User
 from rest_framework import serializers
-from .models import LLMConfig, UserToolApproval
+from .models import LLMConfig, UserToolApproval, get_user_active_llm_config
 
 
 class LLMConfigSerializer(serializers.ModelSerializer):
@@ -9,11 +10,36 @@ class LLMConfigSerializer(serializers.ModelSerializer):
     """
 
     has_api_key = serializers.SerializerMethodField()
+    owner_id = serializers.IntegerField(source="owner.id", read_only=True)
+    owner_name = serializers.SerializerMethodField()
+    shared_group_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Group.objects.all(),
+        source="shared_groups",
+        required=False,
+        write_only=True,
+    )
+    shared_user_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=User.objects.filter(is_active=True),
+        source="shared_users",
+        required=False,
+        write_only=True,
+    )
+    shared_groups = serializers.SerializerMethodField()
+    shared_users = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
+    can_view_sensitive = serializers.SerializerMethodField()
+    is_shared = serializers.SerializerMethodField()
+    sharing_summary = serializers.SerializerMethodField()
+    sensitive_fields_hidden = serializers.SerializerMethodField()
 
     class Meta:
         model = LLMConfig
         fields = [
             "id",
+            "owner_id",
+            "owner_name",
             "config_name",
             "provider",
             "name",
@@ -27,6 +53,15 @@ class LLMConfigSerializer(serializers.ModelSerializer):
             "enable_hitl",
             "enable_streaming",
             "is_active",
+            "shared_group_ids",
+            "shared_user_ids",
+            "shared_groups",
+            "shared_users",
+            "can_edit",
+            "can_view_sensitive",
+            "is_shared",
+            "sharing_summary",
+            "sensitive_fields_hidden",
             "created_at",
             "updated_at",
         ]
@@ -40,16 +75,67 @@ class LLMConfigSerializer(serializers.ModelSerializer):
         自定义序列化输出，隐藏敏感字段
         """
         data = super().to_representation(instance)
-        # 移除 api_key 字段，或者用掩码替换
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        is_sensitive_visible = instance.can_view_sensitive(user) if request else True
+
         if "api_key" in data:
-            # 可以选择完全移除
             del data["api_key"]
-            # 或者用掩码显示（如果需要显示部分信息用于识别）
-            # 如需展示掩码，可在此将 api_key 替换为固定长度星号。
+
+        active_config = get_user_active_llm_config(user) if user and user.is_authenticated else None
+        data["is_active"] = bool(active_config and active_config.pk == instance.pk)
+
+        if not is_sensitive_visible:
+            data["api_url"] = ""
+            data["system_prompt"] = ""
         return data
 
     def get_has_api_key(self, obj):
         return bool(obj.api_key)
+
+    def get_owner_name(self, obj):
+        return obj.owner.username if obj.owner else "系统共享"
+
+    def get_shared_groups(self, obj):
+        return [{"id": group.id, "name": group.name} for group in obj.shared_groups.all().order_by("name")]
+
+    def get_shared_users(self, obj):
+        return [
+            {"id": user.id, "username": user.username, "email": user.email}
+            for user in obj.shared_users.all().order_by("username")
+        ]
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return obj.can_manage(user) if request else True
+
+    def get_can_view_sensitive(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return obj.can_view_sensitive(user) if request else True
+
+    def get_is_shared(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return obj.is_shared_with(user) if request else False
+
+    def get_sharing_summary(self, obj):
+        groups = obj.shared_groups.count()
+        users = obj.shared_users.count()
+        if not groups and not users:
+            return "仅自己可用"
+        parts = []
+        if groups:
+            parts.append(f"共享给 {groups} 个组织")
+        if users:
+            parts.append(f"共享给 {users} 名成员")
+        return "，".join(parts)
+
+    def get_sensitive_fields_hidden(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return not obj.can_view_sensitive(user) if request else False
 
     def validate_config_name(self, value):
         """验证配置名称"""
@@ -82,14 +168,25 @@ class LLMConfigSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """全局验证"""
+        request = self.context.get("request")
+        owner = getattr(self.instance, "owner", None)
+        if owner is None and request is not None:
+            owner = getattr(request, "user", None)
+
         # 检查是否存在同名配置（排除当前实例）
         config_name = attrs.get("config_name")
         if config_name:
-            queryset = LLMConfig.objects.filter(config_name=config_name)
+            queryset = LLMConfig.objects.filter(config_name=config_name, owner=owner)
             if self.instance:
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
-                raise serializers.ValidationError({"config_name": "配置名称已存在"})
+                raise serializers.ValidationError({"config_name": "当前用户下已存在同名配置"})
+
+        if request and request.user and not request.user.is_superuser and not request.user.is_staff:
+            shared_groups = attrs.get("shared_groups")
+            shared_users = attrs.get("shared_users")
+            if shared_groups or shared_users:
+                raise serializers.ValidationError("只有管理员可以将 AI 大模型配置共享给组织或其他成员。")
 
         return attrs
 

@@ -3,6 +3,8 @@
  */
 export interface LlmConfig {
   id: number;
+  owner_id?: number | null;
+  owner_name?: string;
   config_name: string; // 配置名称
   provider: string; // 供应商
   name: string; // 模型名称
@@ -17,6 +19,15 @@ export interface LlmConfig {
   enable_hitl?: boolean; // 启用人工审批（Human-in-the-Loop）
   enable_streaming?: boolean; // 启用流式输出
   is_active: boolean;
+  shared_group_ids?: number[];
+  shared_user_ids?: number[];
+  shared_groups?: Array<{ id: number; name: string }>;
+  shared_users?: Array<{ id: number; username: string; email?: string }>;
+  can_edit?: boolean;
+  can_view_sensitive?: boolean;
+  is_shared?: boolean;
+  sharing_summary?: string;
+  sensitive_fields_hidden?: boolean;
   created_at: string; // ISO 8601 date string
   updated_at: string; // ISO 8601 date string
 }
@@ -72,6 +83,8 @@ export interface CreateLlmConfigRequest {
   enable_hitl?: boolean; // 启用人工审批（可选，默认false）
   enable_streaming?: boolean; // 启用流式输出（可选，默认true）
   is_active?: boolean; // 可选,布尔值, 默认为 false
+  shared_group_ids?: number[];
+  shared_user_ids?: number[];
 }
 
 /**
@@ -96,4 +109,6 @@ export interface PartialUpdateLlmConfigRequest {
   enable_hitl?: boolean; // 启用人工审批
   enable_streaming?: boolean; // 启用流式输出
   is_active?: boolean;
+  shared_group_ids?: number[];
+  shared_user_ids?: number[];
 }

@@ -2,9 +2,11 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
+from django.conf import settings
 from django.db.utils import OperationalError
 from django.test import SimpleTestCase, TestCase
-from rest_framework.test import APIRequestFactory
+from rest_framework import status
+from rest_framework.test import APIClient, APIRequestFactory
 
 from accounts.serializers import ContentTypeSerializer
 from accounts.views import MyTokenObtainPairView, PermissionViewSet
@@ -100,3 +102,79 @@ class PermissionMenuMappingTests(TestCase):
         self.assertFalse(
             queryset.filter(content_type__app_label="testcase_templates").exists()
         )
+
+
+class AuthCookieFlowTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = self._create_user()
+
+    def _create_user(self):
+        from django.contrib.auth.models import User
+
+        return User.objects.create_user(
+            username="cookie-user",
+            email="cookie-user@example.com",
+            password="testpass123",
+        )
+
+    def _payload(self, response):
+        if isinstance(response.data, dict) and "data" in response.data:
+            return response.data["data"]
+        return response.data
+
+    def test_login_sets_http_only_auth_cookies(self):
+        response = self.client.post(
+            "/api/token/",
+            {"username": "cookie-user", "password": "testpass123"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(settings.JWT_ACCESS_COOKIE_NAME, response.cookies)
+        self.assertIn(settings.JWT_REFRESH_COOKIE_NAME, response.cookies)
+        self.assertTrue(response.cookies[settings.JWT_ACCESS_COOKIE_NAME]["httponly"])
+        self.assertTrue(response.cookies[settings.JWT_REFRESH_COOKIE_NAME]["httponly"])
+
+    def test_refresh_works_with_refresh_cookie_only(self):
+        login_response = self.client.post(
+            "/api/token/",
+            {"username": "cookie-user", "password": "testpass123"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+
+        response = self.client.post("/api/token/refresh/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertTrue(payload.get("access"))
+        self.assertIn(settings.JWT_ACCESS_COOKIE_NAME, response.cookies)
+
+    def test_current_user_endpoint_accepts_cookie_auth(self):
+        login_response = self.client.post(
+            "/api/token/",
+            {"username": "cookie-user", "password": "testpass123"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+
+        response = self.client.get("/api/accounts/me/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["username"], "cookie-user")
+
+    def test_logout_clears_auth_cookies(self):
+        login_response = self.client.post(
+            "/api/token/",
+            {"username": "cookie-user", "password": "testpass123"},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+
+        response = self.client.post("/api/accounts/logout/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.cookies[settings.JWT_ACCESS_COOKIE_NAME].value, "")
+        self.assertEqual(response.cookies[settings.JWT_REFRESH_COOKIE_NAME].value, "")

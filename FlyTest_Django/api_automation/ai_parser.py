@@ -16,7 +16,7 @@ import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from prompts.models import PromptType, UserPrompt
 from prompts.services import get_default_prompts
 
@@ -59,7 +59,7 @@ class AIEnhancementResult:
 
 
 def get_import_ai_compatibility_status(*, user) -> dict[str, Any]:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return {
             "compatible": False,
@@ -1018,7 +1018,7 @@ def enhance_import_result_with_ai(
     base_requests: list[ParsedRequestData],
     cancel_callback=None,
 ) -> AIEnhancementResult:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return AIEnhancementResult(
             requested=True,

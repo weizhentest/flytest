@@ -76,6 +76,18 @@ const formatStreamTime = (): string => {
   return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 };
 
+const buildAuthHeaders = (token: string | null, headers: Record<string, string>) =>
+  token ? { ...headers, Authorization: `Bearer ${token}` } : headers
+
+async function ensureAccessToken(): Promise<string | null> {
+  const authStore = useAuthStore()
+  if (authStore.getAccessToken) {
+    return authStore.getAccessToken
+  }
+  const restored = await authStore.bootstrapSession()
+  return restored ? authStore.getAccessToken : null
+}
+
 // 鏍煎紡鍖?ISO 鏃堕棿瀛楃涓蹭负鏄剧ず鏍煎紡
 const formatIsoTime = (isoString: string | null | undefined): string => {
   if (!isoString) return formatStreamTime();
@@ -361,7 +373,7 @@ export async function sendChatMessageNonStream(
   data: ChatRequest
 ): Promise<ApiResponse<AgentLoopNonStreamResponse>> {
   const authStore = useAuthStore();
-  const token = authStore.getAccessToken;
+  let token = await ensureAccessToken();
 
   if (!token) {
     return {
@@ -381,10 +393,10 @@ export async function sendChatMessageNonStream(
 
     const response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/`, {
       method: 'POST',
-      headers: {
+      headers: buildAuthHeaders(token, {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify(requestData)
     });
 
@@ -404,10 +416,10 @@ export async function sendChatMessageNonStream(
       // 浣跨敤鏂?token 閲嶈瘯
       const retryResponse = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/`, {
         method: 'POST',
-        headers: {
+        headers: buildAuthHeaders(newToken, {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${newToken}`
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify(requestData)
       });
 
@@ -467,12 +479,6 @@ export async function sendChatMessageNonStream(
  */
 async function refreshAccessToken(): Promise<string | null> {
   const authStore = useAuthStore();
-  const refreshToken = authStore.getRefreshToken;
-
-  if (!refreshToken) {
-    authStore.logout();
-    return null;
-  }
 
   try {
     const response = await fetch(`${getApiBaseUrl()}/token/refresh/`, {
@@ -480,17 +486,16 @@ async function refreshAccessToken(): Promise<string | null> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        refresh: refreshToken
-      }),
+      credentials: 'include',
     });
 
     if (response.ok) {
       const data = await response.json();
-      if (data.access) {
-        // 鏇存柊token
-        localStorage.setItem('auth-accessToken', data.access);
-        return data.access;
+      const payload = data?.data ?? data;
+      if (payload.access) {
+        authStore.updateAccessToken(payload.access);
+        authStore.updateRefreshToken(payload.refresh || null);
+        return payload.access;
       }
     }
 
@@ -512,8 +517,7 @@ export async function sendChatMessageStream(
   onStart: (sessionId: string) => void, // 绠€鍖栧洖璋冿紝鍙繚鐣?onStart
   signal?: AbortSignal
 ): Promise<void> {
-  const authStore = useAuthStore();
-  let token = authStore.getAccessToken;
+  let token = await ensureAccessToken();
   let streamSessionId: string | null = data.session_id || null;
 
   // 閿欒澶勭悊鍑芥暟锛岀敤浜庢洿鏂板叏灞€鐘舵€?
@@ -550,11 +554,11 @@ export async function sendChatMessageStream(
   try {
     let response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/`, {
       method: 'POST',
-      headers: {
+      headers: buildAuthHeaders(token, {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
-        'Authorization': `Bearer ${token}`,
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify(data),
       signal,
     });
@@ -565,11 +569,11 @@ export async function sendChatMessageStream(
         token = newToken;
         response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/`, {
           method: 'POST',
-          headers: {
+          headers: buildAuthHeaders(token, {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
-            'Authorization': `Bearer ${token}`,
-          },
+          }),
+          credentials: 'include',
           body: JSON.stringify(data),
           signal,
         });
@@ -1086,16 +1090,15 @@ export async function batchDeleteChatHistory(
 export async function stopAgentLoop(
   sessionId: string
 ): Promise<ApiResponse<{ success: boolean; session_id: string; message: string }>> {
-  const authStore = useAuthStore();
-  const token = authStore.getAccessToken;
+  const token = await ensureAccessToken();
 
   try {
     const response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_STOP_API_URL}/`, {
       method: 'POST',
-      headers: {
+      headers: buildAuthHeaders(token, {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify({ session_id: sessionId })
     });
 
@@ -1152,8 +1155,7 @@ export async function resumeAgentLoop(
   useKnowledgeBase?: boolean,
   actionCount?: number
 ): Promise<void> {
-  const authStore = useAuthStore();
-  let token = authStore.getAccessToken;
+  let token = await ensureAccessToken();
 
   // 纭繚 activeStreams 瀛樺湪锛屽鏋滀笉瀛樺湪鍒欏垵濮嬪寲
   if (!activeStreams.value[sessionId]) {
@@ -1229,11 +1231,11 @@ export async function resumeAgentLoop(
 
     let response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/resume/`, {
       method: 'POST',
-      headers: {
+      headers: buildAuthHeaders(token, {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
-        'Authorization': `Bearer ${token}`
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify(resumeData),
       signal
     });
@@ -1245,11 +1247,11 @@ export async function resumeAgentLoop(
         token = newToken;
         response = await fetch(`${getApiBaseUrl()}${AGENT_LOOP_API_URL}/resume/`, {
           method: 'POST',
-          headers: {
+          headers: buildAuthHeaders(token, {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
-            'Authorization': `Bearer ${token}`
-          },
+          }),
+          credentials: 'include',
           body: JSON.stringify(resumeData),
           signal
         });
@@ -1461,10 +1463,10 @@ export async function resumeChatStream(
   try {
     const response = await fetch(`${getApiBaseUrl()}/lg/chat/resume/`, {
       method: 'POST',
-      headers: {
+      headers: buildAuthHeaders(token, {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      }),
+      credentials: 'include',
       body: JSON.stringify(resumeData)
     });
 

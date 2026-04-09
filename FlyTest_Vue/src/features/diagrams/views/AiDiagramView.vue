@@ -156,6 +156,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { marked } from 'marked';
+import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useThemeStore } from '@/store/themeStore';
 import { getPromptByType, initializeUserPrompts } from '@/features/prompts/services/promptService';
@@ -176,6 +177,7 @@ interface ChatMessage {
 }
 
 const projectStore = useProjectStore();
+const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const messages = ref<ChatMessage[]>([]);
 const inputMessage = ref('');
@@ -430,14 +432,19 @@ const sendMessage = async () => {
     }
 
     // 调用后端 API (使用 orchestrator 端点)
-    const token = localStorage.getItem('auth-accessToken');
+    let token = authStore.getAccessToken;
+    if (!token) {
+      await authStore.bootstrapSession();
+      token = authStore.getAccessToken;
+    }
     const response = await fetch('/api/orchestrator/agent-loop/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'text/event-stream',
-        'Authorization': `Bearer ${token}`
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
+      credentials: 'include',
       body: JSON.stringify(requestBody)
     });
 
@@ -750,8 +757,9 @@ const handleToolDecision = async (decision: {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth-accessToken')}`
+        ...(authStore.getAccessToken ? { Authorization: `Bearer ${authStore.getAccessToken}` } : {})
       },
+      credentials: 'include',
       body: JSON.stringify(resumePayload)
     });
     

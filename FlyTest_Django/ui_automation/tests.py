@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -776,3 +777,51 @@ class UiAutomationApiTests(APITestCase):
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn(".pdf", response["Content-Disposition"])
         self.assertTrue(bytes(response.content).startswith(b"%PDF"))
+
+
+class UiAutomationUploadSecurityTests(APITestCase):
+    VALID_PNG = (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
+        b"\x90wS\xde"
+        b"\x00\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfeA\xd9\xa5\xc3"
+        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="uiupload",
+            email="uiupload@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(self.user)
+
+    def test_upload_screenshot_rejects_non_image_file(self):
+        upload = SimpleUploadedFile(
+            "malicious.svg",
+            b"<svg><script>alert(1)</script></svg>",
+            content_type="image/svg+xml",
+        )
+
+        response = self.client.post("/api/ui-automation/screenshots/upload/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("不受支持", str(response.data["error"]))
+
+    @override_settings(MAX_UI_SCREENSHOT_UPLOAD_BYTES=16)
+    def test_upload_screenshot_rejects_oversized_file(self):
+        upload = SimpleUploadedFile("shot.png", self.VALID_PNG, content_type="image/png")
+
+        response = self.client.post("/api/ui-automation/screenshots/upload/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("不能超过", str(response.data["error"]))
+
+    def test_upload_trace_rejects_non_zip_file(self):
+        upload = SimpleUploadedFile("trace.zip", b"not-a-real-zip", content_type="application/zip")
+
+        response = self.client.post("/api/ui-automation/traces/upload/", {"file": upload}, format="multipart")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("ZIP", str(response.data["error"]))

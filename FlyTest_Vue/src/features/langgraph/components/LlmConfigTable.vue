@@ -10,10 +10,21 @@
       @page-size-change="(pageSize: number) => emit('page-size-change', pageSize)"
     >
       <template #systemPrompt="{ record }">
-        <span v-if="record.system_prompt" :title="record.system_prompt">
+        <span v-if="record.sensitive_fields_hidden" class="text-gray-400">共享配置已隐藏</span>
+        <span v-else-if="record.system_prompt" :title="record.system_prompt">
           {{ record.system_prompt.length > 50 ? record.system_prompt.substring(0, 50) + '...' : record.system_prompt }}
         </span>
         <span v-else class="text-gray-400">未设置</span>
+      </template>
+      <template #owner="{ record }">
+        <a-space>
+          <span>{{ record.owner_name || '系统共享' }}</span>
+          <a-tag v-if="record.is_shared" size="small" color="arcoblue">共享</a-tag>
+          <a-tag v-else size="small" color="green">我的</a-tag>
+        </a-space>
+      </template>
+      <template #sharing="{ record }">
+        <span>{{ record.sharing_summary || '仅自己可用' }}</span>
       </template>
       <template #isActive="{ record }">
         <a-switch
@@ -27,7 +38,7 @@
       </template>
       <template #actions="{ record }">
         <a-space>
-          <a-button type="primary" size="small" @click="emit('edit', record)">
+          <a-button type="primary" size="small" :disabled="record.can_edit === false" @click="emit('edit', record)">
             <template #icon><icon-edit /></template>
             编辑
           </a-button>
@@ -36,7 +47,7 @@
             type="warning"
             @ok="emit('delete', record.id)"
           >
-            <a-button type="primary" status="danger" size="small">
+            <a-button type="primary" status="danger" size="small" :disabled="record.can_edit === false">
               <template #icon><icon-delete /></template>
               删除
             </a-button>
@@ -60,6 +71,7 @@ import {
   Space as ASpace,
   Popconfirm as APopconfirm,
   Switch as ASwitch,
+  Tag as ATag,
   type TableColumnData,
   type PaginationProps,
 } from '@arco-design/web-vue';
@@ -96,9 +108,11 @@ const emit = defineEmits<{
 const columns: TableColumnData[] = [
   { title: 'ID', dataIndex: 'id', width: 80, sortable: { sortDirections: ['ascend', 'descend'] } },
   { title: '配置名称', dataIndex: 'config_name', width: 150, ellipsis: true, tooltip: true },
+  { title: '归属', dataIndex: 'owner_name', slotName: 'owner', width: 150 },
   { title: '模型名称', dataIndex: 'name', width: 150, ellipsis: true, tooltip: true },
   { title: 'API URL', dataIndex: 'api_url', width: 200, ellipsis: true, tooltip: true },
   { title: '系统提示词', dataIndex: 'system_prompt', slotName: 'systemPrompt', width: 200, ellipsis: true, tooltip: true },
+  { title: '共享范围', dataIndex: 'sharing_summary', slotName: 'sharing', width: 180, ellipsis: true, tooltip: true },
   { title: '状态', dataIndex: 'is_active', slotName: 'isActive', width: 100, align: 'center' },
   { title: '创建时间', dataIndex: 'created_at', slotName: 'createdAt', width: 150, sortable: { sortDirections: ['ascend', 'descend'] } },
   { title: '更新时间', dataIndex: 'updated_at', slotName: 'updatedAt', width: 150, sortable: { sortDirections: ['ascend', 'descend'] } },

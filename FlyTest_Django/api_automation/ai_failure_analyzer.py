@@ -9,7 +9,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from prompts.models import UserPrompt
 
 from .ai_parser import create_llm_instance, extract_json_from_response, safe_llm_invoke
@@ -526,7 +526,7 @@ def _analyze_execution_failure_uncached(*, record: ApiExecutionRecord, user) -> 
     if record.passed:
         return fallback_result
 
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return replace(
             fallback_result,
@@ -591,7 +591,7 @@ def _analyze_execution_failure_uncached(*, record: ApiExecutionRecord, user) -> 
 
 
 def analyze_execution_failure(*, record: ApiExecutionRecord, user) -> ExecutionFailureAnalysisResult:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if record.passed or not active_config:
         return _analyze_execution_failure_uncached(record=record, user=user)
 

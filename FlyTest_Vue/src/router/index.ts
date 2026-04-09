@@ -215,11 +215,11 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
 
-  if (!authStore.isAuthenticated && typeof localStorage !== 'undefined') {
-    authStore.checkAuthStatus()
+  if (!authStore.isInitialized) {
+    await authStore.bootstrapSession()
   }
 
   const isLoggedIn = authStore.isAuthenticated

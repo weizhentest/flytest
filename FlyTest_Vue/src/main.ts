@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ArcoVue from '@arco-design/web-vue'
@@ -10,19 +11,26 @@ import './assets/wired-elements-custom.css'
 
 import App from './App.vue'
 import router, { preloadPrivateRouteComponents } from './router'
+import { useAuthStore } from './store/authStore'
 import { useThemeStore } from './store/themeStore'
 
 const app = createApp(App)
 const pinia = createPinia()
+
+axios.defaults.withCredentials = true
 
 app.use(pinia)
 app.use(router)
 app.use(ArcoVue)
 app.use(ArcoVueIcon)
 
-useThemeStore(pinia).initializeTheme()
+const bootstrapApp = async () => {
+  useThemeStore(pinia).initializeTheme()
+  await useAuthStore(pinia).bootstrapSession()
+  app.mount('#app')
+}
 
-app.mount('#app')
+void bootstrapApp()
 
 let hasScheduledRoutePreload = false
 

@@ -970,6 +970,12 @@ from django.conf import settings
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+from flytest_django.upload_security import (
+    validate_image_file,
+    validate_uploaded_file_extension,
+    validate_uploaded_file_size,
+    validate_zip_file,
+)
 
 
 from rest_framework.permissions import AllowAny
@@ -987,6 +993,21 @@ def upload_screenshot(request):
     file = request.FILES.get('file')
     if not file:
         return Response({'error': '未提供文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+    error = validate_uploaded_file_size(
+        file,
+        max_size=settings.MAX_UI_SCREENSHOT_UPLOAD_BYTES,
+        label='截图文件',
+    ) or validate_uploaded_file_extension(
+        file,
+        allowed_extensions={'.png', '.jpg', '.jpeg', '.webp', '.gif'},
+        label='截图文件',
+    ) or validate_image_file(
+        file,
+        allowed_formats={'PNG', 'JPEG', 'WEBP', 'GIF'},
+    )
+    if error:
+        return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
     
     # 保存到 media/ui_screenshots/{日期}/
     date_dir = datetime.now().strftime('%Y%m%d')
@@ -994,7 +1015,7 @@ def upload_screenshot(request):
     os.makedirs(upload_dir, exist_ok=True)
     
     # 生成唯一文件名
-    ext = os.path.splitext(file.name)[1] or '.png'
+    ext = os.path.splitext(file.name)[1].lower() or '.png'
     filename = f"{uuid.uuid4().hex[:12]}{ext}"
     file_path = os.path.join(upload_dir, filename)
     
@@ -1018,6 +1039,18 @@ def upload_trace(request):
     file = request.FILES.get('file')
     if not file:
         return Response({'error': '未提供文件'}, status=status.HTTP_400_BAD_REQUEST)
+
+    error = validate_uploaded_file_size(
+        file,
+        max_size=settings.MAX_UI_TRACE_UPLOAD_BYTES,
+        label='Trace 文件',
+    ) or validate_uploaded_file_extension(
+        file,
+        allowed_extensions={'.zip'},
+        label='Trace 文件',
+    ) or validate_zip_file(file)
+    if error:
+        return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
     
     # 保存到 media/ui_traces/{日期}/
     date_dir = datetime.now().strftime('%Y%m%d')
@@ -1025,7 +1058,7 @@ def upload_trace(request):
     os.makedirs(upload_dir, exist_ok=True)
     
     # 生成唯一文件名
-    ext = os.path.splitext(file.name)[1] or '.zip'
+    ext = os.path.splitext(file.name)[1].lower() or '.zip'
     filename = f"{uuid.uuid4().hex[:12]}{ext}"
     file_path = os.path.join(upload_dir, filename)
     

@@ -9,8 +9,14 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.exceptions import AuthenticationFailed
-from .models import LLMConfig, ChatSession, ChatMessage
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from .models import (
+    LLMConfig,
+    ChatSession,
+    ChatMessage,
+    get_user_active_llm_config,
+    set_user_active_llm_config,
+)
 from .serializers import LLMConfigSerializer
 import logging
 from asgiref.sync import sync_to_async
@@ -626,27 +632,63 @@ class LLMConfigViewSet(BaseModelViewSet):
     提供完整的CRUD操作
     """
 
-    queryset = LLMConfig.objects.all().order_by("-created_at")
     serializer_class = LLMConfigSerializer
+
+    def get_permissions(self):
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        return LLMConfig.visible_to_user_queryset(self.request.user).order_by("-created_at")
 
     def perform_create(self, serializer):
         """执行创建操作"""
+        config = serializer.save(owner=self.request.user)
         if serializer.validated_data.get("is_active", False):
-            LLMConfig.objects.filter(is_active=True).update(is_active=False)
-        serializer.save()
+            set_user_active_llm_config(self.request.user, config)
 
     def perform_update(self, serializer):
         """执行更新操作"""
-        if serializer.validated_data.get("is_active", False):
-            LLMConfig.objects.filter(is_active=True).exclude(
-                pk=serializer.instance.pk
-            ).update(is_active=False)
-        serializer.save()
+        config = serializer.instance
+        if not config.can_manage(self.request.user):
+            raise PermissionDenied("无权修改共享的大模型配置。")
+        updated = serializer.save()
+        if "is_active" in serializer.validated_data:
+            if serializer.validated_data.get("is_active", False):
+                set_user_active_llm_config(self.request.user, updated)
+            else:
+                active_config = get_user_active_llm_config(self.request.user)
+                if active_config and active_config.pk == updated.pk:
+                    set_user_active_llm_config(self.request.user, None)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.can_manage(request.user):
+            payload_keys = set(request.data.keys())
+            if payload_keys.issubset({"is_active"}) and "is_active" in request.data:
+                desired_active = str(request.data.get("is_active")).strip().lower() in {"1", "true", "yes", "on"}
+                if desired_active:
+                    set_user_active_llm_config(request.user, instance)
+                else:
+                    active_config = get_user_active_llm_config(request.user)
+                    if active_config and active_config.pk == instance.pk:
+                        set_user_active_llm_config(request.user, None)
+                serializer = self.get_serializer(instance)
+                return Response(serializer.data)
+            raise PermissionDenied("无权修改共享的大模型配置。")
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.can_manage(request.user):
+            raise PermissionDenied("无权删除共享的大模型配置。")
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"])
     def test_connection(self, request, pk=None):
         """测试LLM配置连接"""
         config = self.get_object()
+        if not config.can_view_sensitive(request.user):
+            raise PermissionDenied("共享配置不允许查看或测试敏感连接信息。")
 
         try:
             llm = create_llm_instance(config, temperature=0.1)
@@ -701,6 +743,8 @@ class LLMConfigViewSet(BaseModelViewSet):
     def probe_models(self, request, pk=None):
         """批量探测当前网关下哪些模型能正常返回聊天正文"""
         config = self.get_object()
+        if not config.can_view_sensitive(request.user):
+            raise PermissionDenied("共享配置不允许探测模型列表。")
         requested_models = request.data.get("models") or []
         limit = min(max(int(request.data.get("limit", 8)), 1), 20)
 
@@ -769,7 +813,9 @@ class LLMConfigViewSet(BaseModelViewSet):
         # 如果提供了 config_id，优先从数据库获取配置
         if config_id:
             try:
-                config = LLMConfig.objects.get(pk=config_id)
+                config = self.get_queryset().get(pk=config_id)
+                if not config.can_view_sensitive(request.user):
+                    raise PermissionDenied("共享配置不允许读取底层连接信息。")
                 if not api_url:
                     api_url = config.api_url.rstrip("/")
                 if not api_key:
@@ -893,10 +939,10 @@ def get_effective_system_prompt(user, prompt_id=None):
 
         # 3. 使用全局LLM配置的system_prompt
         try:
-            active_config = LLMConfig.objects.get(is_active=True)
+            active_config = get_user_active_llm_config(user)
             if active_config.system_prompt and active_config.system_prompt.strip():
                 return active_config.system_prompt.strip(), "global"
-        except LLMConfig.DoesNotExist:
+        except Exception:
             logger.warning("No active LLM configuration found")
 
         # 4. 没有任何提示词
@@ -906,7 +952,7 @@ def get_effective_system_prompt(user, prompt_id=None):
         logger.error(f"Error getting effective system prompt: {e}")
         # 降级到全局配置
         try:
-            active_config = LLMConfig.objects.get(is_active=True)
+            active_config = get_user_active_llm_config(user)
             if active_config.system_prompt and active_config.system_prompt.strip():
                 return active_config.system_prompt.strip(), "global"
         except:
@@ -1110,13 +1156,13 @@ async def get_effective_system_prompt_async(user, prompt_id=None, project=None):
 
         # 3. 使用全局LLM配置的system_prompt
         try:
-            active_config = await sync_to_async(LLMConfig.objects.get)(is_active=True)
+            active_config = await sync_to_async(get_user_active_llm_config)(user)
             if active_config.system_prompt and active_config.system_prompt.strip():
                 prompt_content = await _inject_project_context(
                     active_config.system_prompt.strip(), project
                 )
                 return prompt_content, "global"
-        except LLMConfig.DoesNotExist:
+        except Exception:
             logger.warning("No active LLM configuration found")
 
         # 4. 没有任何提示词时，至少注入项目作用域提示，确保默认按当前项目执行
@@ -1131,7 +1177,7 @@ async def get_effective_system_prompt_async(user, prompt_id=None, project=None):
         logger.error(f"Error getting effective system prompt: {e}")
         # 降级到全局配置
         try:
-            active_config = await sync_to_async(LLMConfig.objects.get)(is_active=True)
+            active_config = await sync_to_async(get_user_active_llm_config)(user)
             if active_config.system_prompt and active_config.system_prompt.strip():
                 return active_config.system_prompt.strip(), "global"
         except:
@@ -1285,8 +1331,10 @@ class ChatAPIView(APIView):
                         exc_info=True,
                     )
 
-            active_config = await sync_to_async(LLMConfig.objects.get)(is_active=True)
+            active_config = await sync_to_async(get_user_active_llm_config)(request.user)
             logger.info(f"ChatAPIView: Using active LLMConfig: {active_config.name}")
+            if not active_config:
+                raise LLMConfig.DoesNotExist()
         except LLMConfig.DoesNotExist:
             logger.error("ChatAPIView: No active LLM configuration found.")
             return Response(
@@ -1300,20 +1348,6 @@ class ChatAPIView(APIView):
                     },
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        except LLMConfig.MultipleObjectsReturned:
-            logger.error("ChatAPIView: Multiple active LLM configurations found.")
-            return Response(
-                {
-                    "status": "error",
-                    "code": status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    "message": "Multiple active LLM configurations found. Ensure only one is active.",
-                    "data": {},
-                    "errors": {
-                        "llm_config": ["Multiple active LLM configurations found."]
-                    },
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         # 验证图片输入是否支持
@@ -2384,7 +2418,7 @@ class ChatHistoryAPIView(APIView):
             context_token_count = 0
             context_limit = 128000
             try:
-                active_config = LLMConfig.objects.get(is_active=True)
+                active_config = get_user_active_llm_config(request.user)
                 context_limit = active_config.context_limit or 128000
 
                 # 获取最后一次 LLM 调用的 token 使用量
@@ -2948,10 +2982,12 @@ class ChatResumeAPIView(View):
         from langgraph.types import Command
 
         try:
-            active_config = await sync_to_async(LLMConfig.objects.get)(is_active=True)
+            active_config = await sync_to_async(get_user_active_llm_config)(request.user)
             logger.info(
                 f"ChatResumeAPIView: Using active LLMConfig: {active_config.name}"
             )
+            if not active_config:
+                raise LLMConfig.DoesNotExist()
         except LLMConfig.DoesNotExist:
             yield create_sse_data(
                 {"type": "error", "message": "No active LLM configuration found"}
@@ -3434,7 +3470,7 @@ class KnowledgeRAGAPIView(APIView):
 
             # 获取LLM配置
             try:
-                active_config = LLMConfig.objects.filter(is_active=True).first()
+                active_config = get_user_active_llm_config(request.user)
                 if not active_config:
                     return Response(
                         {"error": "没有可用的LLM配置"},

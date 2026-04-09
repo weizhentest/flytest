@@ -9,7 +9,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from langgraph_integration.models import LLMConfig
+from langgraph_integration.models import LLMConfig, get_user_active_llm_config
 from prompts.models import PromptType, UserPrompt
 from prompts.services import get_default_prompts
 
@@ -363,7 +363,7 @@ def _attach_runtime_meta(
 
 def _summarize_execution_report_uncached(*, report_payload: dict[str, Any], user) -> ExecutionReportSummaryResult:
     fallback_result = _build_rule_based_report_summary(report_payload)
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return fallback_result
 
@@ -422,7 +422,7 @@ def _summarize_execution_report_uncached(*, report_payload: dict[str, Any], user
 
 
 def summarize_execution_report(*, report_payload: dict[str, Any], user) -> ExecutionReportSummaryResult:
-    active_config = LLMConfig.objects.filter(is_active=True).first()
+    active_config = get_user_active_llm_config(user)
     if not active_config:
         return _build_rule_based_report_summary(report_payload)
 

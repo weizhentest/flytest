@@ -8,6 +8,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+from secrets import token_urlsafe
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -34,18 +36,41 @@ def setup_huggingface_env():
 setup_huggingface_env()
 
 
-# 核心设置
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-jsto-5oth_9(a_xfy#zg@$i$0w47h9a$rw0s&(v#1o5t+s-!*7",  # 仅用于本地开发
-)
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "True") == "True"
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# 核心设置
+DEBUG = env_bool("DJANGO_DEBUG", False)
+RUNNING_TESTS = any(arg in {"test", "pytest"} or "pytest" in arg for arg in sys.argv)
+RUNNING_DEV_SERVER = any(arg == "runserver" for arg in sys.argv)
+LOCAL_HTTP_RUNTIME = DEBUG or RUNNING_TESTS or RUNNING_DEV_SERVER
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if SECRET_KEY:
+    SECRET_KEY = SECRET_KEY.strip()
+elif DEBUG or RUNNING_TESTS or RUNNING_DEV_SERVER:
+    SECRET_KEY = token_urlsafe(64)
+else:
+    raise RuntimeError("DJANGO_SECRET_KEY 未配置，生产环境禁止使用默认密钥启动。")
 
 # ALLOWED_HOSTS
 ALLOWED_HOSTS_ENV = os.environ.get("DJANGO_ALLOWED_HOSTS")
 if ALLOWED_HOSTS_ENV:
-    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(",")]
+    ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(",") if host.strip()]
 elif DEBUG:
     ALLOWED_HOSTS = [
         "localhost",
@@ -57,6 +82,9 @@ else:
         "localhost",
         "127.0.0.1",
     ]
+
+if not DEBUG and "*" in ALLOWED_HOSTS:
+    raise RuntimeError("生产环境禁止将 DJANGO_ALLOWED_HOSTS 设置为 *。")
 
 
 # 应用定义
@@ -223,6 +251,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # DRF
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "flytest_django.authentication.CookieJWTAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "api_keys.authentication.APIKeyAuthentication",
     ],
@@ -243,6 +272,14 @@ REST_FRAMEWORK = {
     # ],
     # 'EXCEPTION_HANDLER': 'your_project_name.utils.custom_exception_handler',
 }
+
+REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {})
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"].update(
+    {
+        "login": os.environ.get("DJANGO_LOGIN_THROTTLE_RATE", "10/minute"),
+        "register": os.environ.get("DJANGO_REGISTER_THROTTLE_RATE", "5/hour"),
+    }
+)
 
 # CORS 配置
 # 生产环境建议通过 DJANGO_CORS_ALLOWED_ORIGINS 配置允许来源
@@ -322,6 +359,29 @@ else:
     CSRF_TRUSTED_ORIGINS = []
 
 
+USE_X_FORWARDED_HOST = env_bool("DJANGO_USE_X_FORWARDED_HOST", False)
+if env_bool("DJANGO_USE_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_REFERRER_POLICY = os.environ.get("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
+SESSION_COOKIE_SAMESITE = os.environ.get("DJANGO_SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.environ.get("DJANGO_CSRF_COOKIE_SAMESITE", "Lax")
+SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not LOCAL_HTTP_RUNTIME)
+CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not LOCAL_HTTP_RUNTIME)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not LOCAL_HTTP_RUNTIME)
+SECURE_HSTS_SECONDS = env_int("DJANGO_SECURE_HSTS_SECONDS", 0 if LOCAL_HTTP_RUNTIME else 3600)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", not LOCAL_HTTP_RUNTIME)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", not LOCAL_HTTP_RUNTIME)
+
+MAX_UI_SCREENSHOT_UPLOAD_BYTES = env_int("MAX_UI_SCREENSHOT_UPLOAD_BYTES", 5 * 1024 * 1024)
+MAX_UI_TRACE_UPLOAD_BYTES = env_int("MAX_UI_TRACE_UPLOAD_BYTES", 50 * 1024 * 1024)
+MAX_API_DOCUMENT_UPLOAD_BYTES = env_int("MAX_API_DOCUMENT_UPLOAD_BYTES", 20 * 1024 * 1024)
+
+
 # CORS 配置已在上方声明
 
 # Simple JWT 配置
@@ -339,6 +399,13 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+
+JWT_ACCESS_COOKIE_NAME = os.environ.get("DJANGO_JWT_ACCESS_COOKIE_NAME", "flytest_access_token")
+JWT_REFRESH_COOKIE_NAME = os.environ.get("DJANGO_JWT_REFRESH_COOKIE_NAME", "flytest_refresh_token")
+JWT_COOKIE_SECURE = env_bool("DJANGO_JWT_COOKIE_SECURE", not LOCAL_HTTP_RUNTIME)
+JWT_COOKIE_SAMESITE = os.environ.get("DJANGO_JWT_COOKIE_SAMESITE", "Lax")
+JWT_COOKIE_PATH = os.environ.get("DJANGO_JWT_COOKIE_PATH", "/")
+JWT_COOKIE_DOMAIN = os.environ.get("DJANGO_JWT_COOKIE_DOMAIN") or None
 
 # 日志输出目录
 LOGS_DIR = BASE_DIR / "data" / "logs"
@@ -568,5 +635,3 @@ CELERY_WORKER_TASK_LOG_FORMAT = "[%(asctime)s: %(levelname)s/%(processName)s][%(
 # 内部服务调用基准地址
 # Docker 环境下可设置为 http://backend:8000
 BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
-
-

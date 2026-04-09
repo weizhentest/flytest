@@ -1152,10 +1152,10 @@ def get_middleware_from_config(
         中间件列表
 
     Example:
-        from langgraph_integration.models import LLMConfig
+        from langgraph_integration.models import get_user_active_llm_config
         from orchestrator_integration.middleware_config import get_middleware_from_config
 
-        config = LLMConfig.objects.get(is_active=True)
+        config = get_user_active_llm_config(request.user)
         tool_names = [t.name for t in tools]  # 获取所有工具名
         middleware = get_middleware_from_config(config, llm=my_llm, user=request.user, all_tool_names=tool_names)
         agent = create_agent(llm, tools, middleware=middleware)

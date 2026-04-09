@@ -141,6 +141,41 @@
             </template>
           </a-alert>
         </a-col>
+        <a-col :span="24">
+          <a-alert type="info" :show-icon="true" class="llm-sharing-alert">
+            <template #title>共享范围</template>
+            <template #content>
+              管理员可以把当前 AI 大模型配置共享给组织或指定成员。被共享的成员可以直接使用，但看不到 API 地址、Key 和系统提示词等敏感内容。
+            </template>
+          </a-alert>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item field="shared_group_ids" label="共享给组织">
+            <a-select
+              v-model="formData.shared_group_ids"
+              :options="organizationOptions"
+              :loading="loadingOrganizations"
+              placeholder="可选择多个组织共享"
+              multiple
+              allow-search
+              allow-clear
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item field="shared_user_ids" label="共享给成员">
+            <a-select
+              v-model="formData.shared_user_ids"
+              :options="memberOptions"
+              :loading="loadingMembers"
+              placeholder="可选择单个或多个成员"
+              multiple
+              allow-search
+              allow-clear
+            />
+          </a-form-item>
+        </a-col>
+
         <!-- 第四行：系统提示词 (全宽) -->
         <a-col :span="24">
           <a-form-item field="system_prompt" label="系统提示词">
@@ -257,6 +292,8 @@ import {
 } from '@arco-design/web-vue';
 import { IconThunderbolt } from '@arco-design/web-vue/es/icon';
 import { createLlmConfig, partialUpdateLlmConfig, testLlmConnection, fetchModels, getProviders } from '@/features/langgraph/services/llmConfigService';
+import { getOrganizationList } from '@/services/organizationService';
+import { getUserList } from '@/services/userService';
 import type {
   LlmConfig,
   CreateLlmConfigRequest,
@@ -298,6 +335,10 @@ const lastConnectionStatus = ref<'success' | 'warning' | 'error' | ''>('');
 const lastConnectionDiagnostics = ref<LlmConnectionDiagnostics | null>(null);
 const showDiagnosticsDetails = ref(false);
 const hasPersistedApiKey = ref(false);
+const organizationOptions = ref<Array<{ label: string; value: number }>>([]);
+const memberOptions = ref<Array<{ label: string; value: number }>>([]);
+const loadingOrganizations = ref(false);
+const loadingMembers = ref(false);
 const QWEN_DEFAULT_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const defaultFormData: CreateLlmConfigRequest = {
   config_name: '',
@@ -312,6 +353,8 @@ const defaultFormData: CreateLlmConfigRequest = {
   enable_hitl: false,
   enable_streaming: true,
   is_active: false,
+  shared_group_ids: [],
+  shared_user_ids: [],
 };
 const formData = ref<CreateLlmConfigRequest>({ ...defaultFormData });
 const currentConfigId = ref<number | null>(null);
@@ -493,6 +536,34 @@ const handleProviderChange = (provider?: string) => {
   }
 };
 
+const loadShareTargets = async () => {
+  loadingOrganizations.value = true;
+  loadingMembers.value = true;
+  try {
+    const [orgResponse, userResponse] = await Promise.all([
+      getOrganizationList({ page: 1, pageSize: 200, search: '' }),
+      getUserList({ page: 1, pageSize: 200, search: '' }),
+    ]);
+
+    if (orgResponse.success && orgResponse.data) {
+      organizationOptions.value = orgResponse.data.map(item => ({
+        label: item.name,
+        value: item.id,
+      }));
+    }
+
+    if (userResponse.success && userResponse.data) {
+      memberOptions.value = userResponse.data.map(item => ({
+        label: `${item.username}${item.email ? ` (${item.email})` : ''}`,
+        value: item.id,
+      }));
+    }
+  } finally {
+    loadingOrganizations.value = false;
+    loadingMembers.value = false;
+  }
+};
+
 
 watch(
   () => props.visible,
@@ -501,6 +572,7 @@ watch(
       currentConfigId.value = null;
       hasPersistedApiKey.value = Boolean(props.configData?.has_api_key);
       void loadProviderOptions();
+      void loadShareTargets();
       if (props.configData && props.configData.id) {
         // 编辑模式：填充表单，但不包括 API Key（除非用户想修改）
         formData.value = {
@@ -516,6 +588,8 @@ watch(
           enable_hitl: props.configData.enable_hitl || false,
           enable_streaming: props.configData.enable_streaming ?? true,
           is_active: props.configData.is_active,
+          shared_group_ids: props.configData.shared_groups?.map(item => item.id) || [],
+          shared_user_ids: props.configData.shared_users?.map(item => item.id) || [],
         };
       } else {
         // 新增模式：重置表单
@@ -573,6 +647,8 @@ const handleSubmit = async () => {
       name: formData.value.name,
       api_url: formData.value.api_url,
       is_active: formData.value.is_active,
+      shared_group_ids: formData.value.shared_group_ids || [],
+      shared_user_ids: formData.value.shared_user_ids || [],
     };
     if (formData.value.api_key) { // 只有当用户输入了新的 API Key 时才包含它
       partialData.api_key = formData.value.api_key;
@@ -827,6 +903,10 @@ const filterModelOption = (inputValue: string, option: { value: string }) => {
 }
 
 .llm-diagnostic-alert {
+  margin-bottom: 16px;
+}
+
+.llm-sharing-alert {
   margin-bottom: 16px;
 }
 

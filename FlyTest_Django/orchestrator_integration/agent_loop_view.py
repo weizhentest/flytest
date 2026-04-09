@@ -49,7 +49,7 @@ from .middleware_config import (
 )
 from .playwright_instructions import PLAYWRIGHT_SCRIPT_INSTRUCTION
 from .stop_signal import should_stop, clear_stop_signal
-from langgraph_integration.models import ChatSession, LLMConfig
+from langgraph_integration.models import ChatSession, LLMConfig, get_user_active_llm_config
 from langgraph_integration.views import (
     create_llm_instance,
     create_sse_data,
@@ -717,8 +717,10 @@ class AgentLoopStreamAPIView(View):
 
         # 1. 获取 LLM 配置
         try:
-            active_config = await sync_to_async(LLMConfig.objects.get)(is_active=True)
+            active_config = await sync_to_async(get_user_active_llm_config)(request.user)
             logger.info(f"AgentLoopStreamAPI: Using LLM config: {active_config.name}")
+            if not active_config:
+                raise LLMConfig.DoesNotExist()
             context_limit = active_config.context_limit or 128000
             model_name = active_config.name or "gpt-4o"
         except LLMConfig.DoesNotExist:
@@ -1727,9 +1729,7 @@ class AgentLoopResumeAPIView(View):
         try:
             async with get_async_checkpointer() as checkpointer:
                 # 3. 获取 LLM 配置
-                active_config = await sync_to_async(
-                    LLMConfig.objects.filter(is_active=True).first
-                )()
+                active_config = await sync_to_async(get_user_active_llm_config)(user)
 
                 if not active_config:
                     yield create_sse_data(
