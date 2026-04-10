@@ -253,6 +253,15 @@
           </a-col>
         </a-row>
 
+        <a-alert
+          v-if="localModel.body_mode === 'none'"
+          type="info"
+          class="body-mode-hint"
+        >
+          <template #title>当前还没有请求体</template>
+          先选择 `JSON / form-data / raw / xml / graphql` 等 Body 类型，下面就会出现可自由编辑的请求体输入框。
+        </a-alert>
+
         <a-form-item v-if="localModel.body_mode === 'json'" label="JSON Body">
           <a-textarea
             v-model="localModel.body_json_text"
@@ -643,11 +652,13 @@ const props = withDefaults(
     showRequestTarget?: boolean
     allowEmptyAuth?: boolean
     allowInheritedTransport?: boolean
+    preferredTab?: string
   }>(),
   {
     showRequestTarget: true,
     allowEmptyAuth: false,
     allowInheritedTransport: false,
+    preferredTab: 'headers',
   }
 )
 
@@ -672,7 +683,7 @@ const assertionTypeOptions = [
   { value: 'json_schema', label: 'JSON Schema' },
   { value: 'openapi_contract', label: 'OpenAPI Contract' },
 ] as const
-const activeTab = ref('headers')
+const activeTab = ref(props.preferredTab || 'headers')
 const localModel = ref<ApiHttpEditorModel>(createEmptyHttpEditorModel())
 const projectStore = useProjectStore()
 const referencePickerVisible = ref(false)
@@ -747,6 +758,16 @@ watch(
     })
   },
   { deep: true, immediate: true }
+)
+
+watch(
+  () => props.preferredTab,
+  value => {
+    if (value) {
+      activeTab.value = value
+    }
+  },
+  { immediate: true }
 )
 
 watch(

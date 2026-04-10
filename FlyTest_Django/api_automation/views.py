@@ -8,10 +8,12 @@ import json
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.db.models import Avg, Count, Max
 from django.db.models.functions import Coalesce
@@ -116,6 +118,20 @@ WORKFLOW_STAGE_LABELS = {
 }
 STALE_IMPORT_JOB_TIMEOUT_SECONDS = 5 * 60
 logger = logging.getLogger(__name__)
+INLINE_IMPORT_DEFAULT_NAME = "inline-api-document.md"
+INLINE_IMPORT_ALLOWED_SUFFIXES = {".md", ".txt", ".html", ".htm"}
+
+
+def _normalize_inline_import_source_name(source_name: str | None) -> str:
+    candidate = Path(str(source_name or "").strip()).name
+    if not candidate:
+        return INLINE_IMPORT_DEFAULT_NAME
+
+    stem = Path(candidate).stem.strip() or "inline-api-document"
+    suffix = Path(candidate).suffix.lower()
+    if suffix not in INLINE_IMPORT_ALLOWED_SUFFIXES:
+        suffix = ".md"
+    return f"{stem[:120]}{suffix}"
 
 
 class ImportJobCancelled(Exception):
@@ -2490,9 +2506,10 @@ class ApiRequestViewSet(BaseModelViewSet):
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser], url_path="import-document")
     def import_document(self, request):
         file = request.FILES.get("file")
+        raw_text = str(request.data.get("raw_text") or "")
         collection_id = request.data.get("collection_id")
 
-        if not file:
+        if not file and not raw_text.strip():
             return Response({"error": "请上传接口文档文件"}, status=status.HTTP_400_BAD_REQUEST)
         if not collection_id:
             return Response({"error": "collection_id 参数必填"}, status=status.HTTP_400_BAD_REQUEST)
@@ -2503,12 +2520,18 @@ class ApiRequestViewSet(BaseModelViewSet):
             | NATIVE_DOCUMENT_EXTENSIONS
             | MARKER_EXTENSIONS
         )
+        source_name = file.name if file else _normalize_inline_import_source_name(request.data.get("source_name"))
+        source_bytes = raw_text.encode("utf-8") if not file else None
+        validation_target = file or SimpleNamespace(
+            size=len(source_bytes or b""),
+            name=source_name,
+        )
         validation_error = validate_uploaded_file_size(
-            file,
+            validation_target,
             max_size=settings.MAX_API_DOCUMENT_UPLOAD_BYTES,
             label="接口文档",
         ) or validate_uploaded_file_extension(
-            file,
+            validation_target,
             allowed_extensions=allowed_extensions,
             label="接口文档",
         )
@@ -2520,7 +2543,7 @@ class ApiRequestViewSet(BaseModelViewSet):
             pk=collection_id,
         )
         generate_test_cases = str(request.data.get("generate_test_cases", "true")).lower() in {"1", "true", "yes", "on"}
-        enable_ai_parse = str(request.data.get("enable_ai_parse", "true")).lower() in {"1", "true", "yes", "on"}
+        enable_ai_parse = True if not file else str(request.data.get("enable_ai_parse", "true")).lower() in {"1", "true", "yes", "on"}
         async_mode = str(request.data.get("async_mode", "true")).lower() in {"1", "true", "yes", "on"}
 
         if async_mode:
@@ -2528,8 +2551,7 @@ class ApiRequestViewSet(BaseModelViewSet):
                 project=collection.project,
                 collection=collection,
                 creator=request.user,
-                source_name=file.name,
-                source_file=file,
+                source_name=source_name,
                 status="pending",
                 progress_percent=4,
                 progress_stage="uploaded",
@@ -2537,14 +2559,22 @@ class ApiRequestViewSet(BaseModelViewSet):
                 generate_test_cases=generate_test_cases,
                 enable_ai_parse=enable_ai_parse,
             )
+            if file:
+                job.source_file = file
+            else:
+                job.source_file.save(source_name, ContentFile(source_bytes or b""), save=False)
+            job.save(update_fields=["source_file", "updated_at"])
             _start_import_job(job.id)
             serializer = ApiImportJobSerializer(job)
             return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
 
-        suffix = Path(file.name).suffix or ""
+        suffix = Path(source_name).suffix or ".md"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            for chunk in file.chunks():
-                temp_file.write(chunk)
+            if file:
+                for chunk in file.chunks():
+                    temp_file.write(chunk)
+            else:
+                temp_file.write(source_bytes or b"")
             temp_path = temp_file.name
 
         try:
@@ -2935,7 +2965,7 @@ def _recover_stale_import_job_legacy_failed_only(job: ApiImportJob) -> ApiImport
         )
 
 
-def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
+def _recover_stale_import_job_legacy_failed_only_v3(job: ApiImportJob) -> ApiImportJob:
     if job.status not in {"pending", "running"}:
         return job
 

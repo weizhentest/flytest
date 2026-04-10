@@ -292,12 +292,50 @@ const normalizeExtractors = (items?: ApiExtractorSpec[] | null) => {
   )
 }
 
-const requestBodyToEditorState = (bodyType: string, body: any) => {
-  const body_mode = (bodyType || 'none') as ApiBodyMode
+const extractContentType = (
+  headers?: ApiNamedValueSpec[] | Record<string, any> | null
+) => {
+  if (Array.isArray(headers)) {
+    const header = headers.find(item => String(item?.name || '').toLowerCase() === 'content-type' && item.enabled !== false)
+    return String(header?.value || '').trim().toLowerCase()
+  }
+  if (headers && typeof headers === 'object') {
+    const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')
+    return String(entry?.[1] || '').trim().toLowerCase()
+  }
+  return ''
+}
+
+const inferBodyModeFromContentType = (
+  contentType: string,
+  fallback: ApiBodyMode = 'none'
+): ApiBodyMode => {
+  if (!contentType) return fallback
+  if (contentType.includes('graphql')) return 'graphql'
+  if (contentType.includes('application/x-www-form-urlencoded')) return 'urlencoded'
+  if (contentType.startsWith('multipart/')) return 'multipart'
+  if (contentType.includes('application/json') || contentType.endsWith('+json')) return 'json'
+  if (
+    contentType.includes('application/xml') ||
+    contentType.includes('text/xml') ||
+    contentType.endsWith('+xml')
+  ) return 'xml'
+  if (contentType.startsWith('text/')) return 'raw'
+  return fallback
+}
+
+const requestBodyToEditorState = (
+  bodyType: string,
+  body: any,
+  headers?: ApiNamedValueSpec[] | Record<string, any> | null
+) => {
+  const fallbackMode = ((bodyType || 'none') as ApiBodyMode)
+  const body_mode = inferBodyModeFromContentType(extractContentType(headers), fallbackMode)
   return {
     body_mode,
     body_json_text: body_mode === 'json' ? stringifyJson(body, '{}') : '{}',
     raw_text: body_mode === 'raw' ? String(body ?? '') : '',
+    xml_text: body_mode === 'xml' ? String(body ?? '') : '',
   }
 }
 
@@ -306,14 +344,14 @@ const overrideFromLegacyScript = (testCase: ApiTestCase): ApiTestCaseOverrideSpe
   const overrides = script?.request_overrides && typeof script.request_overrides === 'object' ? script.request_overrides : {}
   const bodyType = String(overrides.body_type || '')
   const body = overrides.body
-  const bodyState = requestBodyToEditorState(bodyType, body)
+  const bodyState = requestBodyToEditorState(bodyType, body, overrides.headers || {})
   return {
     method: String(overrides.method || testCase.request_method || 'GET'),
     url: String(overrides.url || testCase.request_url || ''),
     body_mode: bodyState.body_mode,
     body_json: bodyState.body_mode === 'json' ? parseJsonText(bodyState.body_json_text, {}) : {},
     raw_text: bodyState.raw_text,
-    xml_text: '',
+    xml_text: bodyState.xml_text,
     binary_base64: '',
     graphql_query: '',
     graphql_operation_name: '',
@@ -445,13 +483,14 @@ const mergeRequestEditorModel = (
 export const requestToHttpEditorModel = (request?: ApiRequest | null): ApiHttpEditorModel => {
   if (!request) return createEmptyHttpEditorModel()
 
+  const fallbackBodyState = requestBodyToEditorState(request.body_type || 'none', request.body, request.headers)
   const spec = request.request_spec || {
     method: request.method,
     url: request.url,
-    body_mode: (request.body_type || 'none') as ApiBodyMode,
-    body_json: request.body_type === 'json' ? request.body || {} : {},
-    raw_text: request.body_type === 'raw' ? String(request.body ?? '') : '',
-    xml_text: '',
+    body_mode: fallbackBodyState.body_mode,
+    body_json: fallbackBodyState.body_mode === 'json' ? request.body || {} : {},
+    raw_text: fallbackBodyState.body_mode === 'raw' ? String(request.body ?? '') : '',
+    xml_text: fallbackBodyState.xml_text,
     binary_base64: '',
     graphql_query: '',
     graphql_operation_name: '',
@@ -460,8 +499,8 @@ export const requestToHttpEditorModel = (request?: ApiRequest | null): ApiHttpEd
     headers: normalizeNamedItems(request.headers),
     query: normalizeNamedItems(request.params),
     cookies: [],
-    form_fields: request.body_type === 'form' ? normalizeNamedItems(request.body || {}) : [],
-    multipart_parts: [],
+    form_fields: ['form', 'urlencoded'].includes(fallbackBodyState.body_mode) ? normalizeNamedItems(request.body || {}) : [],
+    multipart_parts: fallbackBodyState.body_mode === 'multipart' ? normalizeNamedItems(request.body || {}) : [],
     files: [],
     auth: createRequestAuthSpec(),
     transport: createRequestTransportSpec(),
@@ -493,7 +532,7 @@ export const requestToHttpEditorModel = (request?: ApiRequest | null): ApiHttpEd
 }
 
 export const requestFormToHttpEditorModel = (form: ApiRequestForm): ApiHttpEditorModel => {
-  const bodyState = requestBodyToEditorState(form.body_type, form.body)
+  const bodyState = requestBodyToEditorState(form.body_type, form.body, form.headers || {})
   return createEmptyHttpEditorModel({
     method: form.method,
     url: form.url,
@@ -501,14 +540,19 @@ export const requestFormToHttpEditorModel = (form: ApiRequestForm): ApiHttpEdito
     timeout_ms: form.timeout_ms || 30000,
     headers: normalizeNamedItems(form.headers || {}),
     query: normalizeNamedItems(form.params || {}),
-    form_fields: form.body_type === 'form' ? normalizeNamedItems(form.body || {}) : [],
+    form_fields: ['form', 'urlencoded'].includes(bodyState.body_mode) ? normalizeNamedItems(form.body || {}) : [],
+    multipart_parts: bodyState.body_mode === 'multipart' ? normalizeNamedItems(form.body || {}) : [],
     assertions: normalizeAssertions(form.assertions as ApiAssertionSpec[]),
     body_json_text: bodyState.body_mode === 'json' ? stringifyJson(form.body, '{}') : '{}',
     raw_text: bodyState.raw_text,
+    xml_text: bodyState.xml_text,
   })
 }
 
-export const testCaseToHttpEditorModel = (testCase?: ApiTestCase | null): ApiHttpEditorModel => {
+export const testCaseToHttpEditorModel = (
+  testCase?: ApiTestCase | null,
+  baseRequest?: ApiRequest | null
+): ApiHttpEditorModel => {
   if (!testCase) {
     return createEmptyHttpEditorModel({
       auth: createOverrideAuthSpec(),
@@ -518,28 +562,46 @@ export const testCaseToHttpEditorModel = (testCase?: ApiTestCase | null): ApiHtt
   }
 
   const spec = testCase.request_override_spec || overrideFromLegacyScript(testCase)
+  const fallbackRequest: ApiRequest | null =
+    baseRequest ||
+    (testCase.request_method && testCase.request_url
+      ? ({
+          id: testCase.request || 0,
+          collection: testCase.collection_id || 0,
+          collection_name: testCase.collection_name || '',
+          name: testCase.request_name || '',
+          description: '',
+          method: testCase.request_method || 'GET',
+          url: testCase.request_url || '',
+          headers: {},
+          params: {},
+          body_type: 'none',
+          body: {},
+          assertions: [],
+          timeout_ms: 30000,
+          order: 0,
+          created_by: null,
+          created_at: testCase.created_at,
+          updated_at: testCase.updated_at,
+        } as ApiRequest)
+      : null)
+
+  const baseModel = fallbackRequest
+    ? requestToHttpEditorModel(fallbackRequest)
+    : createEmptyHttpEditorModel({
+        method: testCase.request_method || 'GET',
+        url: testCase.request_url || '',
+        auth: createOverrideAuthSpec(),
+        transport: createOverrideTransportSpec(),
+      })
+
+  const mergedModel = mergeRequestEditorModel(baseModel, spec)
   return createEmptyHttpEditorModel({
-    method: spec.method || testCase.request_method || 'GET',
-    url: spec.url || testCase.request_url || '',
-    body_mode: spec.body_mode || 'none',
-    timeout_ms: spec.timeout_ms || 30000,
-    headers: normalizeNamedItems(spec.headers),
-    query: normalizeNamedItems(spec.query),
-    cookies: normalizeNamedItems(spec.cookies),
-    form_fields: normalizeNamedItems(spec.form_fields),
-    multipart_parts: normalizeNamedItems(spec.multipart_parts),
-    files: normalizeFiles(spec.files),
-    auth: createOverrideAuthSpec(spec.auth || {}),
-    transport: createOverrideTransportSpec(spec.transport || {}),
+    ...cloneJson(mergedModel),
+    auth: createOverrideAuthSpec(mergedModel.auth || {}),
+    transport: createOverrideTransportSpec(mergedModel.transport || {}),
     assertions: normalizeAssertions(testCase.assertion_specs || testCase.assertions),
     extractors: normalizeExtractors(testCase.extractor_specs),
-    body_json_text: stringifyJson(spec.body_json, '{}'),
-    raw_text: spec.raw_text || '',
-    xml_text: spec.xml_text || '',
-    binary_base64: spec.binary_base64 || '',
-    graphql_query: spec.graphql_query || '',
-    graphql_operation_name: spec.graphql_operation_name || '',
-    graphql_variables_text: stringifyJson(spec.graphql_variables, '{}'),
   })
 }
 
@@ -660,10 +722,39 @@ export const httpEditorModelToRequestSpec = (model: ApiHttpEditorModel): ApiRequ
 })
 
 export const httpEditorModelToTestCaseOverrideSpec = (
-  model: ApiHttpEditorModel
-): ApiTestCaseOverrideSpecPayload => ({
-  ...httpEditorModelToRequestSpec(model),
-})
+  model: ApiHttpEditorModel,
+  baseRequest?: ApiRequest | null
+): ApiTestCaseOverrideSpecPayload => {
+  const currentRequestSpec = httpEditorModelToRequestSpec(model)
+  if (!baseRequest) {
+    return currentRequestSpec
+  }
+
+  const baseRequestSpec = httpEditorModelToRequestSpec(requestToHttpEditorModel(baseRequest))
+  const replaceFields = [
+    'headers',
+    'query',
+    'cookies',
+    'form_fields',
+    'multipart_parts',
+    'files',
+    'body_mode',
+    'body_json',
+    'raw_text',
+    'xml_text',
+    'binary_base64',
+    'graphql_query',
+    'graphql_operation_name',
+    'graphql_variables',
+    'auth',
+    'transport',
+  ].filter(field => !isDeepEqual((currentRequestSpec as Record<string, any>)[field], (baseRequestSpec as Record<string, any>)[field]))
+
+  return {
+    ...currentRequestSpec,
+    ...(replaceFields.length ? { replace_fields: replaceFields } : {}),
+  }
+}
 
 export const httpEditorModelToAssertionSpecs = (model: ApiHttpEditorModel) => normalizeAssertionsForSubmit(model.assertions)
 

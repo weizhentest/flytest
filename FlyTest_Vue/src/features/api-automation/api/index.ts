@@ -49,7 +49,12 @@ export const apiRequestApi = {
 
   importDocument: (
     collectionId: number,
-    file: File,
+    source:
+      | { file: File }
+      | {
+          rawText: string
+          sourceName?: string
+        },
     options?: {
       generateTestCases?: boolean
       enableAiParse?: boolean
@@ -59,7 +64,14 @@ export const apiRequestApi = {
   ) => {
     const formData = new FormData()
     formData.append('collection_id', String(collectionId))
-    formData.append('file', file)
+    if ('file' in source) {
+      formData.append('file', source.file)
+    } else {
+      formData.append('raw_text', source.rawText)
+      if (source.sourceName) {
+        formData.append('source_name', source.sourceName)
+      }
+    }
     if (options?.generateTestCases !== undefined) {
       formData.append('generate_test_cases', String(options.generateTestCases))
     }

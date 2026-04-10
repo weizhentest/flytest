@@ -394,11 +394,21 @@ def _legacy_test_case_override_payload(test_case: ApiTestCase) -> dict[str, Any]
 
 def serialize_test_case_override(test_case: ApiTestCase) -> dict[str, Any]:
     override_spec = getattr(test_case, "override_spec", None)
+    legacy_script = test_case.script if isinstance(test_case.script, dict) else {}
+    replace_fields = legacy_script.get("request_override_replace_fields")
+    normalized_replace_fields = [
+        str(item).strip()
+        for item in (replace_fields or [])
+        if str(item).strip()
+    ]
     if not override_spec:
-        return _legacy_test_case_override_payload(test_case)
+        payload = _legacy_test_case_override_payload(test_case)
+        if normalized_replace_fields:
+            payload["replace_fields"] = normalized_replace_fields
+        return payload
 
     grouped = _group_items(list(override_spec.field_specs.all()))
-    return {
+    payload = {
         "id": override_spec.id,
         "method": override_spec.method,
         "url": override_spec.url,
@@ -451,6 +461,9 @@ def serialize_test_case_override(test_case: ApiTestCase) -> dict[str, Any]:
             else _serialize_blank_override_transport()
         ),
     }
+    if normalized_replace_fields:
+        payload["replace_fields"] = normalized_replace_fields
+    return payload
 
 
 def serialize_environment_specs(environment: ApiEnvironment) -> dict[str, Any]:
@@ -738,6 +751,11 @@ def apply_request_spec_payload(api_request: ApiRequest, payload: dict[str, Any] 
 @transaction.atomic
 def apply_test_case_override_payload(test_case: ApiTestCase, payload: dict[str, Any] | None):
     payload = payload or _legacy_test_case_override_payload(test_case)
+    replace_fields = [
+        str(item).strip()
+        for item in (payload.get("replace_fields") or [])
+        if str(item).strip()
+    ]
     override_spec, _ = ApiTestCaseOverrideSpec.objects.get_or_create(test_case=test_case)
     override_spec.method = str(payload.get("method") or "")
     override_spec.url = str(payload.get("url") or "")
@@ -757,6 +775,12 @@ def apply_test_case_override_payload(test_case: ApiTestCase, payload: dict[str, 
     _replace_test_case_file_specs(override_spec, payload)
     _upsert_test_case_auth_spec(override_spec, payload.get("auth"))
     _upsert_test_case_transport_spec(override_spec, payload.get("transport"))
+    legacy_script = test_case.script if isinstance(test_case.script, dict) else {}
+    if replace_fields:
+        legacy_script["request_override_replace_fields"] = replace_fields
+    else:
+        legacy_script.pop("request_override_replace_fields", None)
+    test_case.script = legacy_script
     sync_legacy_test_case_from_specs(test_case)
     return override_spec
 
@@ -956,6 +980,11 @@ def sync_legacy_test_case_from_specs(test_case: ApiTestCase):
     legacy_script = test_case.script if isinstance(test_case.script, dict) else {}
     override_payload = serialize_test_case_override(test_case)
     request_payload = serialize_request_spec(test_case.request)
+    replace_fields = {
+        str(item).strip()
+        for item in (override_payload.get("replace_fields") or [])
+        if str(item).strip()
+    }
     effective_method = str(override_payload.get("method") or request_payload.get("method") or test_case.request.method).upper()
     effective_url = str(override_payload.get("url") or request_payload.get("url") or test_case.request.url)
 
@@ -977,14 +1006,20 @@ def sync_legacy_test_case_from_specs(test_case: ApiTestCase):
 
     merged_spec_payload = dict(request_payload)
     for key, value in override_payload.items():
-        if key in {"headers", "query", "cookies", "form_fields", "multipart_parts", "files", "auth", "transport"}:
+        if key in {"headers", "query", "cookies", "form_fields", "multipart_parts", "files", "auth", "transport", "replace_fields"}:
             continue
-        if value not in (None, "", [], {}):
+        if key in replace_fields or value not in (None, "", [], {}):
             merged_spec_payload[key] = value
-    if override_payload.get("form_fields"):
-        merged_spec_payload["form_fields"] = override_payload["form_fields"]
-    if override_payload.get("multipart_parts"):
-        merged_spec_payload["multipart_parts"] = override_payload["multipart_parts"]
+    for bucket in ("headers", "query", "cookies", "form_fields", "multipart_parts", "files"):
+        if bucket in replace_fields:
+            merged_spec_payload[bucket] = override_payload.get(bucket) or []
+        elif override_payload.get(bucket):
+            merged_spec_payload[bucket] = override_payload[bucket]
+    for bucket in ("auth", "transport"):
+        if bucket in replace_fields:
+            merged_spec_payload[bucket] = override_payload.get(bucket) or {}
+        elif override_payload.get(bucket):
+            merged_spec_payload[bucket] = override_payload[bucket]
     body_type, body = _body_from_request_spec_payload(merged_spec_payload)
     timeout_ms = override_payload.get("timeout_ms") or request_payload.get("timeout_ms") or test_case.request.timeout_ms or 30000
     assertions = assertion_specs_to_legacy(test_case) or test_case.request.assertions or []

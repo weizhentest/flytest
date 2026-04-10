@@ -141,7 +141,33 @@
 
         <a-divider orientation="left">主请求覆盖</a-divider>
         <div class="section-note">配置该测试用例对主接口的请求覆盖、断言和提取器。</div>
-        <StructuredHttpEditor v-model="formState.editor" :allow-empty-auth="true" :allow-inherited-transport="true" />
+        <div v-if="requestBodyOverrideState" class="request-body-hint">
+          <div class="request-body-hint__copy">
+            <div class="request-body-hint__title">
+              {{ requestBodyOverrideState.isCustom ? '当前已使用自定义请求体' : '当前继承主请求体' }}
+            </div>
+            <div class="request-body-hint__desc">
+              {{
+                requestBodyOverrideState.isCustom
+                  ? `保存后会以当前编辑内容覆盖主请求“${requestBodyOverrideState.mainRequestName}”的请求体。`
+                  : `当前默认继承主请求“${requestBodyOverrideState.mainRequestName}”的请求体，你在下方修改后会自动转成自定义请求体。`
+              }}
+            </div>
+          </div>
+          <a-button
+            size="small"
+            :disabled="!requestBodyOverrideState.isCustom"
+            @click="resetRequestBodyToMainRequest"
+          >
+            恢复主请求体
+          </a-button>
+        </div>
+        <StructuredHttpEditor
+          v-model="formState.editor"
+          :allow-empty-auth="true"
+          :allow-inherited-transport="true"
+          preferred-tab="body"
+        />
 
         <a-divider orientation="left">工作流步骤</a-divider>
         <div class="section-note">工作流步骤和主请求共用同一次执行上下文、变量和 Cookie 会话。</div>
@@ -186,7 +212,7 @@ import StructuredHttpEditor from '../components/StructuredHttpEditor.vue'
 import WorkflowStepEditor from '../components/WorkflowStepEditor.vue'
 import { apiRequestApi, environmentApi, testCaseApi } from '../api'
 import { useApiCaseGenerationJobs } from '../state/caseGenerationJobs'
-import { createEmptyHttpEditorModel, httpEditorModelToAssertionSpecs, httpEditorModelToExtractorSpecs, httpEditorModelToTestCaseOverrideSpec, testCaseToHttpEditorModel, workflowEditorStepToPayload, workflowStepToEditorStep } from '../state/httpEditor'
+import { createEmptyHttpEditorModel, httpEditorModelToAssertionSpecs, httpEditorModelToExtractorSpecs, httpEditorModelToTestCaseOverrideSpec, requestToHttpEditorModel, testCaseToHttpEditorModel, workflowEditorStepToPayload, workflowStepToEditorStep } from '../state/httpEditor'
 import type { ApiCaseGenerationJob, ApiEnvironment, ApiExecutionBatchResult, ApiHttpEditorModel, ApiRequest, ApiTestCase, ApiTestCaseForm, ApiTestCaseGenerationResult, ApiTestCaseWorkflowEditorStep, ApiTestCaseWorkflowStep } from '../types'
 
 interface TestCaseGroup { key: string; requestId: number | null; requestName: string; requestMethod: string; requestUrl: string; totalCount: number; readyCount: number; updatedAt?: string; cases: ApiTestCase[] }
@@ -220,6 +246,7 @@ const currentTestCase = ref<ApiTestCase | null>(null)
 const editingTestCase = ref<ApiTestCase | null>(null)
 const environments = ref<ApiEnvironment[]>([])
 const availableRequests = ref<ApiRequest[]>([])
+const requestDetailCache = ref<Record<number, ApiRequest>>({})
 const selectedEnvironmentId = ref<number | undefined>()
 const selectedTestCaseIds = ref<number[]>([])
 
@@ -237,6 +264,31 @@ const selectedIdSet = computed(() => new Set(selectedTestCaseIds.value))
 const requestMap = computed(() => new Map(availableRequests.value.map(item => [item.id, item])))
 const editingMainRequest = computed(() => editingTestCase.value ? resolveRequestById(editingTestCase.value.request) : null)
 const currentWorkflowSteps = computed<ApiTestCaseWorkflowStep[]>(() => Array.isArray(currentTestCase.value?.script?.workflow_steps) ? currentTestCase.value!.script.workflow_steps as ApiTestCaseWorkflowStep[] : [])
+const requestBodyOverrideState = computed(() => {
+  const mainRequest = editingMainRequest.value
+  const currentCase = editingTestCase.value
+  if (!mainRequest || !currentCase) return null
+
+  const overrideSpec = httpEditorModelToTestCaseOverrideSpec(formState.value.editor, mainRequest)
+  const replaceFields = new Set((overrideSpec.replace_fields || []).filter(Boolean))
+  const bodyFields = [
+    'body_mode',
+    'body_json',
+    'raw_text',
+    'xml_text',
+    'binary_base64',
+    'graphql_query',
+    'graphql_operation_name',
+    'graphql_variables',
+    'form_fields',
+    'multipart_parts',
+    'files',
+  ]
+  return {
+    isCustom: bodyFields.some(field => replaceFields.has(field)),
+    mainRequestName: mainRequest.name || currentCase.request_name || '主请求',
+  }
+})
 
 const filteredTestCases = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -295,6 +347,27 @@ const toggleGroupSelection = (group: TestCaseGroup) => {
 }
 
 let requestLoadPromise: Promise<void> | null = null
+const ensureRequestDetail = async (requestId?: number | null) => {
+  if (requestId === null || requestId === undefined) return null
+  const numericId = Number(requestId)
+  if (!Number.isFinite(numericId)) return null
+  if (requestDetailCache.value[numericId]?.request_spec) return requestDetailCache.value[numericId]
+  const existing = availableRequests.value.find(item => item.id === numericId)
+  if (existing?.request_spec) {
+    requestDetailCache.value = { ...requestDetailCache.value, [numericId]: existing }
+    return existing
+  }
+  const res = await apiRequestApi.get(numericId)
+  const detail = res.data?.data || null
+  if (detail) {
+    requestDetailCache.value = { ...requestDetailCache.value, [numericId]: detail }
+    availableRequests.value = availableRequests.value.some(item => item.id === numericId)
+      ? availableRequests.value.map(item => (item.id === numericId ? { ...item, ...detail } : item))
+      : [...availableRequests.value, detail]
+  }
+  return detail
+}
+
 const loadAvailableRequests = async () => {
   if (!projectId.value) { availableRequests.value = []; return }
   if (requestLoadPromise) { await requestLoadPromise; return }
@@ -358,12 +431,36 @@ const loadTestCases = async () => {
 const resetEditor = () => { editorVisible.value = false; editingTestCase.value = null; formState.value = createInitialFormState() }
 const viewTestCase = (record: ApiTestCase) => { currentTestCase.value = record; detailVisible.value = true }
 
+const resetRequestBodyToMainRequest = () => {
+  const mainRequest = editingMainRequest.value
+  if (!mainRequest) return
+  const baseEditor = requestToHttpEditorModel(mainRequest)
+  formState.value = {
+    ...formState.value,
+    editor: {
+      ...formState.value.editor,
+      body_mode: baseEditor.body_mode,
+      body_json_text: baseEditor.body_json_text,
+      raw_text: baseEditor.raw_text,
+      xml_text: baseEditor.xml_text,
+      binary_base64: baseEditor.binary_base64,
+      graphql_query: baseEditor.graphql_query,
+      graphql_operation_name: baseEditor.graphql_operation_name,
+      graphql_variables_text: baseEditor.graphql_variables_text,
+      form_fields: cloneJson(baseEditor.form_fields),
+      multipart_parts: cloneJson(baseEditor.multipart_parts),
+      files: cloneJson(baseEditor.files),
+    },
+  }
+}
+
 const openEditModal = async (record: ApiTestCase) => {
   await loadAvailableRequests()
+  const mainRequest = await ensureRequestDetail(record.request)
   editingTestCase.value = record
   const scriptExtras = isPlainObject(record.script) ? cloneJson(record.script) : {}
   delete scriptExtras.workflow_steps
-  formState.value = { name: record.name, description: record.description || '', status: record.status, tagsText: (record.tags || []).join(', '), editor: testCaseToHttpEditorModel(record), workflow_steps: buildWorkflowEditorSteps(record), scriptExtras }
+  formState.value = { name: record.name, description: record.description || '', status: record.status, tagsText: (record.tags || []).join(', '), editor: testCaseToHttpEditorModel(record, mainRequest), workflow_steps: buildWorkflowEditorSteps(record), scriptExtras }
   editorVisible.value = true
 }
 
@@ -375,7 +472,7 @@ const submitTestCase = async (done: (closed: boolean) => void) => {
 
   editorSubmitting.value = true
   try {
-    const mainRequest = resolveRequestById(editingTestCase.value.request)
+    const mainRequest = (await ensureRequestDetail(editingTestCase.value.request)) || resolveRequestById(editingTestCase.value.request)
     const script = cloneJson(formState.value.scriptExtras || {})
     const workflowSteps = formState.value.workflow_steps.map(step => workflowEditorStepToPayload(step, { request: step.request_id ? resolveRequestById(step.request_id) : mainRequest, mainRequest }))
     if (workflowSteps.length) script.workflow_steps = workflowSteps
@@ -389,7 +486,7 @@ const submitTestCase = async (done: (closed: boolean) => void) => {
       status: formState.value.status,
       tags: parseTagsText(formState.value.tagsText),
       script,
-      request_override_spec: httpEditorModelToTestCaseOverrideSpec(formState.value.editor),
+      request_override_spec: httpEditorModelToTestCaseOverrideSpec(formState.value.editor, mainRequest),
       assertion_specs: httpEditorModelToAssertionSpecs(formState.value.editor),
       extractor_specs: httpEditorModelToExtractorSpecs(formState.value.editor),
     }

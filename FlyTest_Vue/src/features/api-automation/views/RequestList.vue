@@ -300,7 +300,15 @@
           </div>
         </div>
 
+        <div class="document-source-switch">
+          <a-radio-group v-model="documentImportMode" type="button" @change="handleDocumentImportModeChange">
+            <a-radio value="file">文件上传</a-radio>
+            <a-radio value="text">直接输入</a-radio>
+          </a-radio-group>
+        </div>
+
         <div
+          v-if="documentImportMode === 'file'"
           class="document-dropzone"
           :class="{ 'is-dragging': documentDragging, 'has-file': !!documentFile }"
           @click="triggerDocumentSelect"
@@ -331,6 +339,30 @@
             </div>
             <a-button type="text" size="small" @click="clearDocumentFile">重新选择</a-button>
           </div>
+        </div>
+
+        <div v-if="documentImportMode === 'text'" class="document-text-panel">
+          <div class="document-text-panel__header">
+            <div>
+              <div class="document-text-panel__title">直接粘贴接口文档正文</div>
+              <div class="document-text-panel__description">
+                支持单个或多个接口说明直接输入。提交后会和文件导入一样走 AI 切片解析，内容过长时会自动分片并发处理。
+              </div>
+            </div>
+            <div class="document-text-panel__summary">{{ documentTextSummary }}</div>
+          </div>
+          <a-input
+            v-model="documentSourceName"
+            class="document-text-name"
+            placeholder="文档名称（选填），例如：CMS接口文档.md"
+            allow-clear
+          />
+          <a-textarea
+            v-model="documentText"
+            class="document-textarea"
+            :auto-size="{ minRows: 14, maxRows: 22 }"
+            placeholder="直接粘贴接口文档正文。可以是单个接口，也可以一次粘贴多个接口说明、请求示例、参数表、返回说明等内容。"
+          />
         </div>
 
         <div class="import-option-grid">
@@ -625,6 +657,9 @@ const importAiCompatibilityLoading = ref(false)
 const documentFile = ref<File | null>(null)
 const documentInputRef = ref<HTMLInputElement | null>(null)
 const documentDragging = ref(false)
+const documentImportMode = ref<'file' | 'text'>('file')
+const documentText = ref('')
+const documentSourceName = ref('')
 const createMode = ref<'manual' | 'document'>('manual')
 const generateTestCases = ref(true)
 const enableAiParse = ref(true)
@@ -705,6 +740,12 @@ const documentFileSummary = computed(() => {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(2)} MB`
+})
+
+const documentTextSummary = computed(() => {
+  const text = documentText.value.trim()
+  if (!text) return '未输入接口文档内容'
+  return `已输入 ${text.length} 个字符，将按正文切片后交给 AI 解析`
 })
 
 const importAiCompatibilityAlertType = computed(() => {
@@ -1138,6 +1179,9 @@ const resetEditor = () => {
   editingRequest.value = null
   documentFile.value = null
   documentDragging.value = false
+  documentImportMode.value = 'file'
+  documentText.value = ''
+  documentSourceName.value = ''
   createMode.value = 'manual'
   generateTestCases.value = true
   enableAiParse.value = true
@@ -1199,6 +1243,19 @@ const clearDraftsAndReset = () => {
   resetEditor()
 }
 
+const handleDocumentImportModeChange = (value?: string | number | boolean) => {
+  const nextMode = value === 'text' ? 'text' : 'file'
+  documentImportMode.value = nextMode
+  documentDragging.value = false
+  if (nextMode === 'text') {
+    clearDocumentFile()
+    enableAiParse.value = true
+    return
+  }
+  documentText.value = ''
+  documentSourceName.value = ''
+}
+
 const handleDocumentChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   documentFile.value = input.files?.[0] || null
@@ -1215,6 +1272,12 @@ const clearDocumentFile = () => {
   if (documentInputRef.value) {
     documentInputRef.value.value = ''
   }
+}
+
+const buildInlineDocumentSourceName = () => {
+  const raw = documentSourceName.value.trim()
+  if (!raw) return 'inline-api-document.md'
+  return raw
 }
 
 const handleDocumentDrop = (event: DragEvent) => {
@@ -1314,14 +1377,14 @@ const getErrorMessage = (error: any) => {
   return rawMessage
 }
 
-const submitDocumentImport = async () => {
+const _submitDocumentImportLegacy = async () => {
   if (!documentFile.value) {
     throw new Error('请先选择接口文档')
   }
 
   startImportProgress(documentFile.value.name)
   try {
-    const res = await apiRequestApi.importDocument(props.selectedCollectionId!, documentFile.value, {
+    const res = await apiRequestApi.importDocument(props.selectedCollectionId!, { file: documentFile.value }, {
       generateTestCases: generateTestCases.value,
       enableAiParse: enableAiParse.value,
       onUploadProgress: handleImportUploadProgress,
@@ -1332,6 +1395,45 @@ const submitDocumentImport = async () => {
     resetImportProgress()
     trackImportJob(job)
     Message.success('接口文档解析任务已提交，后台会继续执行，完成后会自动提示你。')
+  } catch (error: any) {
+    failImportProgress(getErrorMessage(error))
+    throw error
+  }
+}
+
+const submitDocumentImport = async () => {
+  const inlineText = documentText.value.trim()
+
+  if (documentImportMode.value === 'file' && !documentFile.value) {
+    throw new Error('璇峰厛閫夋嫨鎺ュ彛鏂囨。')
+  }
+  if (documentImportMode.value === 'text' && !inlineText) {
+    throw new Error('请先输入接口文档内容')
+  }
+  if (documentImportMode.value === 'text' && importAiParseBlocked.value) {
+    throw new Error(importAiCompatibility.value?.message || '当前 AI 配置暂不支持直接输入解析，请先切换可用模型')
+  }
+
+  const sourceName = documentImportMode.value === 'file' ? documentFile.value!.name : buildInlineDocumentSourceName()
+  startImportProgress(sourceName)
+  try {
+    const res = await apiRequestApi.importDocument(
+      props.selectedCollectionId!,
+      documentImportMode.value === 'file'
+        ? { file: documentFile.value! }
+        : { rawText: inlineText, sourceName },
+      {
+        generateTestCases: generateTestCases.value,
+        enableAiParse: documentImportMode.value === 'text' ? true : enableAiParse.value,
+        onUploadProgress: handleImportUploadProgress,
+        asyncMode: true,
+      }
+    )
+    const job = res.data.data as ApiImportJob
+    clearImportProgressTimer()
+    resetImportProgress()
+    trackImportJob(job)
+    Message.success('鎺ュ彛鏂囨。瑙ｆ瀽浠诲姟宸叉彁浜わ紝鍚庡彴浼氱户缁墽琛岋紝瀹屾垚鍚庝細鑷姩鎻愮ず浣犮€?')
   } catch (error: any) {
     failImportProgress(getErrorMessage(error))
     throw error
@@ -2062,6 +2164,11 @@ defineExpose({
   gap: 16px;
 }
 
+.document-source-switch {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .import-alert {
   margin-bottom: 0;
 }
@@ -2355,6 +2462,59 @@ defineExpose({
   margin-top: 4px;
   font-size: 12px;
   color: #64748b;
+}
+
+.document-text-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(13, 148, 136, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 250, 249, 0.88));
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+}
+
+.document-text-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.document-text-panel__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.document-text-panel__description {
+  margin-top: 6px;
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.document-text-panel__summary {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.08);
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.document-text-name {
+  max-width: 420px;
+}
+
+.document-textarea :deep(textarea) {
+  font-family: 'JetBrains Mono', 'Consolas', 'Microsoft YaHei UI', monospace;
+  line-height: 1.7;
 }
 
 .import-option-grid {

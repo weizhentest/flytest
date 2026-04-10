@@ -68,6 +68,37 @@ class ApiRequestSerializer(serializers.ModelSerializer):
     def get_test_case_count(self, obj) -> int:
         return obj.test_cases.count()
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        collection = attrs.get("collection") or getattr(self.instance, "collection", None)
+        method = str(attrs.get("method") or getattr(self.instance, "method", "")).upper().strip()
+        url = str(attrs.get("url") or getattr(self.instance, "url", "")).strip()
+
+        if not collection or not method or not url:
+            return attrs
+
+        duplicate_queryset = ApiRequest.objects.filter(
+            collection__project=collection.project,
+            method=method,
+            url=url,
+        )
+        if self.instance is not None:
+            duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+
+        duplicate = duplicate_queryset.select_related("collection").first()
+        if duplicate:
+            raise serializers.ValidationError(
+                {
+                    "url": (
+                        f"当前项目中已存在相同请求方法和路径的接口："
+                        f"{duplicate.method} {duplicate.url}（目录：{duplicate.collection.name}）。"
+                    )
+                }
+            )
+
+        return attrs
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["request_spec"] = serialize_request_spec(instance)

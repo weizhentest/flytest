@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -45,7 +46,7 @@ from .ai_report_summarizer import _get_report_summary_prompt
 from .import_service import _build_environment_suggestions
 from .models import ApiCaseGenerationJob, ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
 from .services import VariableResolver, build_request_url, find_missing_variables
-from .specs import apply_request_spec_payload, serialize_assertion_specs, serialize_extractor_specs, serialize_test_case_override
+from .specs import apply_request_spec_payload, apply_test_case_override_payload, serialize_assertion_specs, serialize_extractor_specs, serialize_test_case_override
 from .views import _apply_case_generation_job, _recover_stale_import_job, _run_case_generation_job
 
 
@@ -2303,6 +2304,66 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(payload["test_cases"][0]["request_name"], "AI Login")
         self.assertEqual(payload["generated_scripts"][0]["script"]["assertions"][1]["assertion_type"], "json_path")
 
+    @patch("api_automation.import_service.enhance_import_result_with_ai")
+    def test_import_document_accepts_inline_text_input(self, mock_enhance):
+        mock_enhance.return_value = AIEnhancementResult(
+            requested=True,
+            used=True,
+            note="AI parsed inline document",
+            prompt_source="user_prompt",
+            prompt_name="API自动化解析",
+            model_name="gpt-4.1",
+            requests=[
+                ParsedRequestData(
+                    name="Inline Login",
+                    method="POST",
+                    url="/api/login",
+                    description="AI parsed from inline document",
+                    headers={"Authorization": "Bearer {{token}}"},
+                    params={},
+                    body_type="json",
+                    body={"username": "demo", "password": "123456"},
+                    assertions=[{"type": "status_code", "expected": 200}],
+                    collection_name="auth",
+                )
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/import-document/",
+            {
+                "collection_id": str(self.collection.id),
+                "generate_test_cases": "true",
+                "enable_ai_parse": "true",
+                "async_mode": "false",
+                "source_name": "inline-login.md",
+                "raw_text": "## Login\nPOST /api/login\nAuthorization: Bearer {{token}}\n```json\n{\"username\":\"demo\"}\n```",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        payload = self._payload(response)
+        self.assertTrue(payload["ai_requested"])
+        self.assertTrue(payload["ai_used"])
+        self.assertEqual(payload["created_count"], 1)
+        self.assertEqual(payload["items"][0]["name"], "Inline Login")
+        self.assertEqual(ApiRequest.objects.count(), 1)
+
+    def test_import_document_rejects_empty_inline_text(self):
+        response = self.client.post(
+            "/api/api-automation/requests/import-document/",
+            {
+                "collection_id": str(self.collection.id),
+                "async_mode": "false",
+                "raw_text": "   \n\t",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ApiRequest.objects.count(), 0)
+
     @patch("api_automation.import_service._build_environment_drafts", return_value=[])
     @patch("api_automation.import_service.import_requests_from_document")
     @patch("api_automation.import_service.enhance_import_result_with_ai")
@@ -2434,6 +2495,71 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(len(testcase_payload), 1)
         self.assertEqual(testcase_payload[0]["name"], "Nested login case")
 
+    def test_create_request_reuses_duplicate_from_child_or_parent_collection(self):
+        child = ApiCollection.objects.create(
+            project=self.project,
+            parent=self.collection,
+            name="Auth APIs",
+            creator=self.user,
+        )
+        existing = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Login",
+            method="POST",
+            url="/api/login",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            "/api/api-automation/requests/",
+            {
+                "collection": child.id,
+                "name": "Child Login",
+                "method": "POST",
+                "url": "/api/login",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = self._payload(response)
+        self.assertEqual(payload["id"], existing.id)
+        self.assertEqual(ApiRequest.objects.filter(method="POST", url="/api/login").count(), 1)
+
+    def test_update_request_rejects_duplicate_method_and_url_across_project(self):
+        child = ApiCollection.objects.create(
+            project=self.project,
+            parent=self.collection,
+            name="Order APIs",
+            creator=self.user,
+        )
+        ApiRequest.objects.create(
+            collection=self.collection,
+            name="Login",
+            method="POST",
+            url="/api/login",
+            created_by=self.user,
+        )
+        editable = ApiRequest.objects.create(
+            collection=child,
+            name="Profile",
+            method="GET",
+            url="/api/profile",
+            created_by=self.user,
+        )
+
+        response = self.client.patch(
+            f"/api/api-automation/requests/{editable.id}/",
+            {
+                "method": "POST",
+                "url": "/api/login",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("已存在相同请求方法和路径的接口", str(response.data))
+
     def test_import_document_returns_400_for_malformed_json(self):
         upload = SimpleUploadedFile(
             "broken.json",
@@ -2524,6 +2650,32 @@ class ApiAutomationImportDocumentTests(TestCase):
             job = ApiImportJob.objects.get(pk=payload["id"])
             self.assertTrue(bool(job.source_file))
             self.assertTrue(os.path.exists(job.source_file.path))
+            mock_start_import_job.assert_called_once_with(job.id)
+
+    @patch("api_automation.views._start_import_job")
+    def test_async_import_job_accepts_inline_text_source(self, mock_start_import_job):
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            raw_text = "## Login\nPOST /api/login\n```json\n{\"username\":\"demo\"}\n```"
+
+            response = self.client.post(
+                "/api/api-automation/requests/import-document/",
+                {
+                    "collection_id": str(self.collection.id),
+                    "generate_test_cases": "true",
+                    "async_mode": "true",
+                    "source_name": "inline-api.md",
+                    "raw_text": raw_text,
+                },
+                format="multipart",
+            )
+
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            payload = self._payload(response)
+            job = ApiImportJob.objects.get(pk=payload["id"])
+            self.assertEqual(job.source_name, "inline-api.md")
+            self.assertTrue(bool(job.source_file))
+            self.assertTrue(os.path.exists(job.source_file.path))
+            self.assertEqual(Path(job.source_file.path).read_text(encoding="utf-8"), raw_text)
             mock_start_import_job.assert_called_once_with(job.id)
 
     @patch("api_automation.views._start_import_job")
@@ -4656,4 +4808,65 @@ def _patched_test_ai_parse_job_is_not_recovered_too_early(self):
 
 ApiAutomationImportDocumentTests.test_ai_parse_job_is_not_recovered_too_early = (
     _patched_test_ai_parse_job_is_not_recovered_too_early
+)
+
+
+def _patched_test_test_case_override_body_replaces_request_body(self):
+    api_request = ApiRequest.objects.create(
+        collection=self.collection,
+        name="Update profile",
+        method="POST",
+        url="/api/profile/update",
+        headers={"Content-Type": "application/json"},
+        params={},
+        body_type="json",
+        body={"nickname": "old", "profile": "old profile"},
+        assertions=[{"type": "status_code", "expected": 200}],
+        created_by=self.user,
+    )
+    test_case = ApiTestCase.objects.create(
+        project=self.project,
+        request=api_request,
+        name="Update profile case",
+        status="ready",
+        script={"request": {"method": "POST", "url": "/api/profile/update"}},
+        assertions=[{"type": "status_code", "expected": 200}],
+        creator=self.user,
+    )
+
+    apply_test_case_override_payload(
+        test_case,
+        {
+            "method": "POST",
+            "url": "/api/profile/update",
+            "body_mode": "json",
+            "body_json": {"nickname": "new"},
+            "raw_text": "",
+            "xml_text": "",
+            "binary_base64": "",
+            "graphql_query": "",
+            "graphql_operation_name": "",
+            "graphql_variables": {},
+            "timeout_ms": 30000,
+            "headers": [],
+            "query": [],
+            "cookies": [],
+            "form_fields": [],
+            "multipart_parts": [],
+            "files": [],
+            "auth": {},
+            "transport": {},
+            "replace_fields": ["body_mode", "body_json", "raw_text", "xml_text", "binary_base64", "graphql_query", "graphql_operation_name", "graphql_variables"],
+        },
+    )
+
+    test_case.refresh_from_db()
+    override_payload = serialize_test_case_override(test_case)
+    self.assertEqual(override_payload["body_json"], {"nickname": "new"})
+    self.assertIn("body_json", override_payload.get("replace_fields") or [])
+    self.assertEqual(test_case.script["request"]["body"], {"nickname": "new"})
+
+
+ApiAutomationImportDocumentTests.test_test_case_override_body_replaces_request_body = (
+    _patched_test_test_case_override_body_replaces_request_body
 )
