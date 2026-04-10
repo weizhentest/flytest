@@ -157,7 +157,7 @@
 
           <a-sub-menu key="api-automation" v-if="hasApiAutomationMenuItems">
             <template #icon><icon-code-block /></template>
-            <template #title>API自动化</template>
+            <template #title>AI接口自动化</template>
             <a-menu-item key="api-automation-requests" v-if="hasApiAutomationRequestsPermission">
               <template #icon><icon-code-block /></template>
               <span class="menu-link">请求管理</span>

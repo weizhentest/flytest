@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -9,6 +10,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 from knowledge.models import Document as KnowledgeDocument
 from knowledge.models import DocumentChunk, KnowledgeBase
 from requirements.models import RequirementDocument, RequirementModule
@@ -44,7 +46,7 @@ from .import_service import _build_environment_suggestions
 from .models import ApiCaseGenerationJob, ApiCollection, ApiEnvironment, ApiExecutionRecord, ApiImportJob, ApiRequest, ApiTestCase
 from .services import VariableResolver, build_request_url, find_missing_variables
 from .specs import apply_request_spec_payload, serialize_assertion_specs, serialize_extractor_specs, serialize_test_case_override
-from .views import _apply_case_generation_job, _run_case_generation_job
+from .views import _apply_case_generation_job, _recover_stale_import_job, _run_case_generation_job
 
 
 class ApiAutomationAIParserTests(SimpleTestCase):
@@ -4576,4 +4578,82 @@ ApiAutomationAIParserTests.test_build_ai_failure_note_for_timeout_is_friendly = 
 )
 ApiAutomationAIParserTests.test_build_ai_failure_note_for_connection_error_is_friendly = (
     _patched_test_build_ai_failure_note_for_connection_error_is_friendly
+)
+
+
+def _patched_test_request_list_is_lightweight(self):
+    api_request = ApiRequest.objects.create(
+        collection=self.collection,
+        name="List users",
+        method="GET",
+        url="/api/users",
+        headers={"Accept": "application/json"},
+        params={"page": 1},
+        body_type="json",
+        body={"demo": True},
+        assertions=[{"type": "status_code", "expected": 200}, {"type": "body_contains", "expected": "ok"}],
+        created_by=self.user,
+    )
+    ApiTestCase.objects.create(
+        project=self.project,
+        request=api_request,
+        name="List users case",
+        status="ready",
+        script={"request": {"method": "GET", "url": "/api/users"}},
+        assertions=[{"type": "status_code", "expected": 200}],
+        creator=self.user,
+    )
+
+    response = self.client.get(
+        "/api/api-automation/requests/",
+        {
+            "project": self.project.id,
+            "collection": self.collection.id,
+        },
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_200_OK)
+    payload = self._payload(response)
+    self.assertEqual(len(payload), 1)
+    self.assertEqual(payload[0]["test_case_count"], 1)
+    self.assertEqual(payload[0]["assertion_count"], 2)
+    self.assertNotIn("generated_script", payload[0])
+    self.assertNotIn("request_spec", payload[0])
+    self.assertNotIn("assertion_specs", payload[0])
+    self.assertNotIn("extractor_specs", payload[0])
+
+
+ApiAutomationImportDocumentTests.test_request_list_is_lightweight = _patched_test_request_list_is_lightweight
+
+
+def _patched_test_ai_parse_job_is_not_recovered_too_early(self):
+    with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+        job = ApiImportJob.objects.create(
+            project=self.project,
+            collection=self.collection,
+            creator=self.user,
+            source_name="demo.md",
+            source_file=SimpleUploadedFile(
+                "demo.md",
+                "## Login\n接口地址: /api/login\n请求方式: POST\n参数: username,password".encode("utf-8"),
+                content_type="text/markdown",
+            ),
+            status="running",
+            progress_percent=48,
+            progress_stage="ai_parse",
+            progress_message="正在使用 AI 解析接口文档正文。",
+            generate_test_cases=True,
+            enable_ai_parse=True,
+        )
+        ApiImportJob.objects.filter(pk=job.id).update(updated_at=timezone.now() - timedelta(seconds=310))
+        job.refresh_from_db()
+
+        recovered = _recover_stale_import_job(job)
+
+        self.assertEqual(recovered.status, "running")
+        self.assertEqual(recovered.progress_stage, "ai_parse")
+
+
+ApiAutomationImportDocumentTests.test_ai_parse_job_is_not_recovered_too_early = (
+    _patched_test_ai_parse_job_is_not_recovered_too_early
 )

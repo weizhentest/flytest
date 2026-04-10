@@ -3,6 +3,7 @@
     <CollectionPanel ref="collectionPanelRef" @select="onCollectionSelect" @updated="onCollectionUpdated" />
     <div class="layout-content">
       <RequestList
+        v-if="mountedTabs.includes('requests')"
         v-show="activeTab === 'requests'"
         ref="requestListRef"
         :selected-collection-id="selectedCollectionId"
@@ -11,6 +12,7 @@
         @updated="onRequestUpdated"
       />
       <TestCaseList
+        v-if="mountedTabs.includes('test-cases')"
         v-show="activeTab === 'test-cases'"
         ref="testCaseListRef"
         :selected-collection-id="selectedCollectionId"
@@ -20,16 +22,19 @@
         @executed="handleExecutionUpdated"
       />
       <EnvironmentList
+        v-if="mountedTabs.includes('environments')"
         v-show="activeTab === 'environments'"
         ref="environmentListRef"
       />
       <ExecutionRecordList
+        v-if="mountedTabs.includes('execution-records')"
         v-show="activeTab === 'execution-records'"
         ref="executionRecordListRef"
         :selected-collection-id="selectedCollectionId"
         :selected-collection-name="selectedCollection?.name"
       />
       <TestReportView
+        v-if="mountedTabs.includes('execution-report')"
         v-show="activeTab === 'execution-report'"
         ref="testReportViewRef"
         :project-id="currentProjectId"
@@ -80,6 +85,7 @@ const normalizeTab = (value: unknown): ApiAutomationTab => {
 }
 
 const activeTab = computed<ApiAutomationTab>(() => normalizeTab(route.query.tab))
+const mountedTabs = ref<ApiAutomationTab[]>(['requests'])
 
 const onCollectionSelect = (selection: ApiAutomationSelection) => {
   selectedCollectionId.value = selection.collection?.id
@@ -134,22 +140,8 @@ watch(
 )
 
 watch(activeTab, newTab => {
-  switch (newTab) {
-    case 'requests':
-      requestListRef.value?.refresh?.()
-      break
-    case 'test-cases':
-      testCaseListRef.value?.refresh?.()
-      break
-    case 'environments':
-      environmentListRef.value?.refresh?.()
-      break
-    case 'execution-records':
-      executionRecordListRef.value?.refresh?.()
-      break
-    case 'execution-report':
-      testReportViewRef.value?.refresh?.()
-      break
+  if (!mountedTabs.value.includes(newTab)) {
+    mountedTabs.value = [...mountedTabs.value, newTab]
   }
 })
 </script>

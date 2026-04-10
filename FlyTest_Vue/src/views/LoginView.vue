@@ -207,7 +207,7 @@ const featureTags: FeatureTag[] = [
     description: '把高频测试经验沉淀成可复用的 AI 技能单元，让模型在不同项目中持续扩展可执行能力。',
   },
   {
-    label: 'API自动化',
+          label: 'AI接口自动化',
     description: '由 AI 辅助解析接口语义、补全断言与生成调用链，帮助团队快速扩展 API 自动化覆盖。',
   },
   {

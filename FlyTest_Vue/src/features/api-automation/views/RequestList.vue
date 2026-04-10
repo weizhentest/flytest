@@ -17,8 +17,8 @@
           class="toolbar-search"
           placeholder="搜索接口名称或 URL"
           allow-clear
-          @search="loadRequests"
-          @clear="loadRequests"
+          @search="handleSearch"
+          @clear="handleSearchClear"
         />
         <div class="toolbar-group toolbar-group--filter">
           <a-select
@@ -68,13 +68,15 @@
         v-model:expanded-keys="expandedRequestKeys"
         :data="filteredRequests"
         :loading="loading"
-        :pagination="false"
+        :pagination="requestPagination"
         row-key="id"
         size="large"
         :scroll="{ x: 1240 }"
         :row-selection="requestRowSelection"
         :expandable="{ width: 48 }"
         @expand="handleRequestExpand"
+        @page-change="handlePageChange"
+        @page-size-change="handlePageSizeChange"
       >
         <template #columns>
           <a-table-column title="方法" :width="90">
@@ -86,7 +88,7 @@
           <a-table-column title="请求地址" data-index="url" ellipsis tooltip />
           <a-table-column title="断言" :width="90" align="center">
             <template #cell="{ record }">
-              <a-tag color="cyan">{{ record.assertions?.length || 0 }}</a-tag>
+              <a-tag color="cyan">{{ record.assertion_count ?? (record.assertions?.length || 0) }}</a-tag>
             </template>
           </a-table-column>
           <a-table-column title="测试用例" :width="110" align="center">
@@ -109,8 +111,8 @@
                     <a-doption value="append">追加生成</a-doption>
                   </template>
                 </a-dropdown>
-                <a-button type="text" size="small" @click="openEditModal(record)">编辑</a-button>
-                <a-button type="text" size="small" @click="viewRequest(record)">详情</a-button>
+                <a-button type="text" size="small" @click="void openEditModal(record)">编辑</a-button>
+                <a-button type="text" size="small" @click="void viewRequest(record)">详情</a-button>
                 <a-popconfirm content="确认删除该接口吗？" @ok="deleteRequest(record.id)">
                   <a-button type="text" size="small" status="danger">删除</a-button>
                 </a-popconfirm>
@@ -601,6 +603,17 @@ const selectedRequestIds = ref<number[]>([])
 const expandedRequestKeys = ref<number[]>([])
 const requestTestCaseMap = ref<Record<number, ApiTestCase[]>>({})
 const requestTestCaseLoadingMap = ref<Record<number, boolean>>({})
+const requestDetailCache = ref<Record<number, ApiRequest>>({})
+const requestListCache = ref<Record<string, { items: ApiRequest[]; total: number; ts: number }>>({})
+const requestPagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  showTotal: true,
+  showPageSize: true,
+  pageSizeOptions: [20, 50, 100, 200],
+})
+const REQUEST_LIST_CACHE_TTL_MS = 30_000
 const editorVisible = ref(false)
 const resultVisible = ref(false)
 const importResultVisible = ref(false)
@@ -663,11 +676,7 @@ const createInitialFormState = (): RequestEditorForm => ({
 const formState = ref<RequestEditorForm>(createInitialFormState())
 
 const filteredRequests = computed(() => {
-  const keyword = searchKeyword.value.trim().toLowerCase()
-  if (!keyword) return requests.value
-  return requests.value.filter(item => {
-    return item.name.toLowerCase().includes(keyword) || item.url.toLowerCase().includes(keyword)
-  })
+  return requests.value
 })
 
 const requestCaseTotal = computed(() =>
@@ -927,7 +936,20 @@ const loadEnvironments = async () => {
   }
 }
 
-const loadRequests = async () => {
+const buildRequestListCacheKey = () =>
+  JSON.stringify({
+    project: projectId.value || null,
+    collection: props.selectedCollectionId || null,
+    search: searchKeyword.value.trim() || '',
+    page: requestPagination.value.current,
+    pageSize: requestPagination.value.pageSize,
+  })
+
+const clearRequestListCache = () => {
+  requestListCache.value = {}
+}
+
+const loadRequests = async (force = false) => {
   if (!projectId.value || !props.selectedCollectionId) {
     requests.value = []
     selectedRequestIds.value = []
@@ -935,14 +957,47 @@ const loadRequests = async () => {
     requestTestCaseMap.value = {}
     return
   }
+
+  const cacheKey = buildRequestListCacheKey()
+  const cached = requestListCache.value[cacheKey]
+  if (!force && cached && Date.now() - cached.ts < REQUEST_LIST_CACHE_TTL_MS) {
+    requests.value = cached.items.map(item => ({
+      ...item,
+      ...(requestDetailCache.value[item.id] || {}),
+    }))
+    requestPagination.value = {
+      ...requestPagination.value,
+      total: cached.total,
+    }
+    return
+  }
+
   loading.value = true
   try {
     const res = await apiRequestApi.list({
       project: projectId.value,
       collection: props.selectedCollectionId,
+      search: searchKeyword.value.trim() || undefined,
+      page: requestPagination.value.current,
+      page_size: requestPagination.value.pageSize,
     })
     const data = res.data?.data || []
-    requests.value = Array.isArray(data) ? data : []
+    requests.value = (Array.isArray(data) ? data : []).map(item => ({
+      ...item,
+      ...(requestDetailCache.value[item.id] || {}),
+    }))
+    requestListCache.value = {
+      ...requestListCache.value,
+      [cacheKey]: {
+        items: requests.value,
+        total: Number(res.data?.total || 0),
+        ts: Date.now(),
+      },
+    }
+    requestPagination.value = {
+      ...requestPagination.value,
+      total: Number(res.data?.total || 0),
+    }
     const availableIds = new Set(requests.value.map(item => item.id))
     selectedRequestIds.value = selectedRequestIds.value.filter(id => availableIds.has(id))
     expandedRequestKeys.value = expandedRequestKeys.value.filter(id => availableIds.has(id))
@@ -953,9 +1008,68 @@ const loadRequests = async () => {
     selectedRequestIds.value = []
     expandedRequestKeys.value = []
     requestTestCaseMap.value = {}
+    requestPagination.value = {
+      ...requestPagination.value,
+      total: 0,
+    }
   } finally {
     loading.value = false
   }
+}
+
+const handleSearch = async () => {
+  requestPagination.value = {
+    ...requestPagination.value,
+    current: 1,
+  }
+  await loadRequests()
+}
+
+const handleSearchClear = async () => {
+  searchKeyword.value = ''
+  requestPagination.value = {
+    ...requestPagination.value,
+    current: 1,
+  }
+  await loadRequests()
+}
+
+const handlePageChange = async (page: number) => {
+  requestPagination.value = {
+    ...requestPagination.value,
+    current: page,
+  }
+  await loadRequests()
+}
+
+const handlePageSizeChange = async (pageSize: number) => {
+  requestPagination.value = {
+    ...requestPagination.value,
+    current: 1,
+    pageSize,
+  }
+  await loadRequests()
+}
+
+const cacheRequestDetail = (detail: ApiRequest) => {
+  requestDetailCache.value = {
+    ...requestDetailCache.value,
+    [detail.id]: detail,
+  }
+  requests.value = requests.value.map(item => (item.id === detail.id ? { ...item, ...detail } : item))
+  return detail
+}
+
+const ensureRequestDetail = async (record: ApiRequest) => {
+  const cached = requestDetailCache.value[record.id]
+  if (cached?.request_spec) return cached
+  if (record.request_spec) return cacheRequestDetail(record)
+  const res = await apiRequestApi.get(record.id)
+  const detail = res.data?.data
+  if (!detail) {
+    throw new Error('获取接口详情失败')
+  }
+  return cacheRequestDetail(detail)
 }
 
 const loadRequestTestCases = async (requestId: number, force = false) => {
@@ -1015,7 +1129,8 @@ const unregisterImportFinishedHandler = registerFinishedHandler(async job => {
   importResult.value = result
   importResultVisible.value = true
   saveDraftsFromImport(result, projectId.value || job.project, job.collection)
-  await loadRequests()
+  clearRequestListCache()
+  await loadRequests(true)
   emit('updated')
 })
 
@@ -1054,15 +1169,24 @@ const openCreateModal = () => {
   editorVisible.value = true
 }
 
-const openEditModal = (record: ApiRequest) => {
-  editingRequest.value = record
-  createMode.value = 'manual'
-  formState.value = {
-    name: record.name,
-    description: record.description || '',
-    editor: requestToHttpEditorModel(record),
+const openEditModal = async (record: ApiRequest) => {
+  try {
+    loading.value = true
+    const detail = await ensureRequestDetail(record)
+    editingRequest.value = detail
+    createMode.value = 'manual'
+    formState.value = {
+      name: detail.name,
+      description: detail.description || '',
+      editor: requestToHttpEditorModel(detail),
+    }
+    editorVisible.value = true
+  } catch (error) {
+    console.error('[RequestList] 获取接口详情失败:', error)
+    Message.error(getErrorMessage(error))
+  } finally {
+    loading.value = false
   }
-  editorVisible.value = true
 }
 
 const applySelectedRequestDraft = (value?: string | number | boolean) => {
@@ -1105,37 +1229,46 @@ const handleDocumentDrop = (event: DragEvent) => {
   }
 }
 
-const viewRequest = (record: ApiRequest) => {
-  const requestSpec = record.request_spec || httpEditorModelToRequestSpec(requestToHttpEditorModel(record))
-  currentResult.value = {
-    id: 0,
-    project: record.project_id || projectId.value || 0,
-    request: record.id,
-    environment: null,
-    request_name: record.name,
-    method: record.method,
-    url: record.url,
-    status: 'success',
-    passed: false,
-    status_code: null,
-    response_time: null,
-    request_snapshot: {
-      headers: requestSpecToLegacyHeaders(requestSpec),
-      params: requestSpecToLegacyParams(requestSpec),
-      body_type: bodyModeToLegacyBodyType(requestSpec.body_mode),
-      body: requestSpecToLegacyBody(requestSpec),
-      assertions: record.assertion_specs || record.assertions,
-      request_spec: requestSpec,
-      assertion_specs: record.assertion_specs || [],
-      extractor_specs: record.extractor_specs || [],
-      generated_script: record.generated_script,
-    },
-    response_snapshot: {},
-    assertions_results: [],
-    created_at: record.updated_at,
-    executor: null,
+const viewRequest = async (record: ApiRequest) => {
+  try {
+    loading.value = true
+    const detail = await ensureRequestDetail(record)
+    const requestSpec = detail.request_spec || httpEditorModelToRequestSpec(requestToHttpEditorModel(detail))
+    currentResult.value = {
+      id: 0,
+      project: detail.project_id || projectId.value || 0,
+      request: detail.id,
+      environment: null,
+      request_name: detail.name,
+      method: detail.method,
+      url: detail.url,
+      status: 'success',
+      passed: false,
+      status_code: null,
+      response_time: null,
+      request_snapshot: {
+        headers: requestSpecToLegacyHeaders(requestSpec),
+        params: requestSpecToLegacyParams(requestSpec),
+        body_type: bodyModeToLegacyBodyType(requestSpec.body_mode),
+        body: requestSpecToLegacyBody(requestSpec),
+        assertions: detail.assertion_specs || detail.assertions,
+        request_spec: requestSpec,
+        assertion_specs: detail.assertion_specs || [],
+        extractor_specs: detail.extractor_specs || [],
+        generated_script: detail.generated_script,
+      },
+      response_snapshot: {},
+      assertions_results: [],
+      created_at: detail.updated_at,
+      executor: null,
+    }
+    resultVisible.value = true
+  } catch (error) {
+    console.error('[RequestList] 获取接口详情失败:', error)
+    Message.error(getErrorMessage(error))
+  } finally {
+    loading.value = false
   }
-  resultVisible.value = true
 }
 
 const submitManualRequest = async () => {
@@ -1220,7 +1353,8 @@ const submitRequest = async (done: (closed: boolean) => void) => {
       editorVisible.value = false
       resetEditor()
       emit('updated')
-      loadRequests()
+      clearRequestListCache()
+      loadRequests(true)
     } else {
       await submitDocumentImport()
       done(true)
@@ -1241,7 +1375,8 @@ const deleteRequest = async (id: number) => {
     await apiRequestApi.delete(id)
     Message.success('接口删除成功')
     emit('updated')
-    loadRequests()
+    clearRequestListCache()
+    loadRequests(true)
   } catch (error: any) {
     Message.error(error?.error || '删除接口失败')
   }
@@ -1442,7 +1577,8 @@ const generateCasesByScope = async (
     if (!summary) return
     showCaseGenerationMessage(summary, payload.mode)
     showCaseGenerationInsight(summary, payload.mode)
-    await loadRequests()
+    clearRequestListCache()
+    await loadRequests(true)
     const requestIdsToRefresh = targetRequestIds.length
       ? targetRequestIds
       : summary.items.map(item => item.request_id)
@@ -1577,24 +1713,27 @@ watch(
 )
 
 watch(
-  () => projectId.value,
-  value => {
-    syncImportProject(value)
-    syncCaseGenerationProject(value)
-    selectedRequestIds.value = []
-    loadEnvironments()
-    loadRequests()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => props.selectedCollectionId,
-  () => {
+  [() => projectId.value, () => props.selectedCollectionId],
+  ([nextProjectId, nextCollectionId], [prevProjectId, prevCollectionId]) => {
+    syncImportProject(nextProjectId)
+    syncCaseGenerationProject(nextProjectId)
     selectedRequestIds.value = []
     expandedRequestKeys.value = []
     requestTestCaseMap.value = {}
-    loadRequests()
+    requestDetailCache.value = {}
+    requestPagination.value = {
+      ...requestPagination.value,
+      current: 1,
+      total: 0,
+    }
+
+    if (nextProjectId !== prevProjectId) {
+      loadEnvironments()
+    }
+
+    if (nextProjectId !== prevProjectId || nextCollectionId !== prevCollectionId) {
+      loadRequests()
+    }
   },
   { immediate: true }
 )

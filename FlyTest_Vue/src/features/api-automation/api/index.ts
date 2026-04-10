@@ -40,8 +40,10 @@ export const collectionApi = {
 }
 
 export const apiRequestApi = {
-  list: (params?: { project?: number; collection?: number; method?: string }) =>
+  list: (params?: { project?: number; collection?: number; method?: string; search?: string; page?: number; page_size?: number }) =>
     request.get<ApiResponse<ApiRequest[]>>(`${BASE_URL}/requests/`, { params }),
+
+  get: (id: number) => request.get<ApiResponse<ApiRequest>>(`${BASE_URL}/requests/${id}/`),
 
   create: (data: ApiRequestForm) => request.post<ApiResponse<ApiRequest>>(`${BASE_URL}/requests/`, data),
 

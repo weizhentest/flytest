@@ -256,6 +256,7 @@ export interface ApiRequest {
   body_type: 'none' | 'json' | 'form' | 'raw'
   body: any
   assertions: Array<Record<string, any>>
+  assertion_count?: number
   request_spec?: ApiRequestSpecPayload
   assertion_specs?: ApiAssertionSpec[]
   extractor_specs?: ApiExtractorSpec[]

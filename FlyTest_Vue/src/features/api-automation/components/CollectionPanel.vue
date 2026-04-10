@@ -19,7 +19,7 @@
             @input="onSearch"
           />
           <div class="collection-actions">
-            <a-dropdown @select="handleAction" trigger="hover" position="bottom">
+            <a-dropdown @select="handleAction" trigger="click" position="bottom">
               <a-button type="primary" size="small" class="collection-action-button">操作</a-button>
               <template #content>
                 <a-doption value="addRoot">新增根目录</a-doption>

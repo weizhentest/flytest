@@ -109,6 +109,40 @@ class ApiRequestSerializer(serializers.ModelSerializer):
         return instance
 
 
+class ApiRequestListSerializer(serializers.ModelSerializer):
+    collection_name = serializers.CharField(source="collection.name", read_only=True)
+    project_id = serializers.IntegerField(source="collection.project_id", read_only=True)
+    creator_name = serializers.CharField(source="created_by.username", read_only=True)
+    test_case_count = serializers.IntegerField(source="test_case_count_value", read_only=True, default=0)
+    assertion_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApiRequest
+        fields = (
+            "id",
+            "collection",
+            "collection_name",
+            "project_id",
+            "name",
+            "description",
+            "method",
+            "url",
+            "assertion_count",
+            "test_case_count",
+            "timeout_ms",
+            "order",
+            "created_by",
+            "creator_name",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+    def get_assertion_count(self, obj) -> int:
+        assertions = getattr(obj, "assertions", None)
+        return len(assertions) if isinstance(assertions, list) else 0
+
+
 class ApiEnvironmentSerializer(serializers.ModelSerializer):
     environment_specs = serializers.JSONField(write_only=True, required=False)
     creator_name = serializers.CharField(source="creator.username", read_only=True)

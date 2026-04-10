@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import logging
 import os
 import tempfile
 import threading
@@ -13,6 +14,7 @@ import httpx
 from django.conf import settings
 from django.db.models import Q
 from django.db.models import Avg, Count, Max
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models.functions import TruncDate
@@ -47,7 +49,7 @@ from .document_import import (
     TEXT_EXTENSIONS,
 )
 from .execution import ExecutionRunContext, execute_api_request
-from .import_service import process_document_import
+from .import_service import _get_import_ai_stage_timeout_seconds, process_document_import
 from .models import (
     ApiCaseGenerationJob,
     ApiCollection,
@@ -63,6 +65,7 @@ from .serializers import (
     ApiEnvironmentSerializer,
     ApiExecutionRecordSerializer,
     ApiImportJobSerializer,
+    ApiRequestListSerializer,
     ApiRequestSerializer,
     ApiTestCaseSerializer,
 )
@@ -112,6 +115,7 @@ WORKFLOW_STAGE_LABELS = {
     "teardown": "Teardown",
 }
 STALE_IMPORT_JOB_TIMEOUT_SECONDS = 5 * 60
+logger = logging.getLogger(__name__)
 
 
 class ImportJobCancelled(Exception):
@@ -181,7 +185,21 @@ def _clear_import_job_source_file(job_id: int):
     ApiImportJob.objects.filter(pk=job_id).update(source_file="", updated_at=timezone.now())
 
 
-def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
+def _get_stale_import_job_timeout_seconds(job: ApiImportJob) -> int:
+    if job.progress_stage != "ai_parse":
+        return STALE_IMPORT_JOB_TIMEOUT_SECONDS
+
+    source_path = None
+    try:
+        source_path = _resolve_import_job_source_path(job)
+    except Exception:  # noqa: BLE001
+        source_path = None
+
+    dynamic_timeout = _get_import_ai_stage_timeout_seconds(job.creator, source_path)
+    return max(STALE_IMPORT_JOB_TIMEOUT_SECONDS, min(dynamic_timeout + 180, 30 * 60))
+
+
+def _recover_stale_import_job_legacy_do_not_use(job: ApiImportJob) -> ApiImportJob:
     if job.status not in {"pending", "running"}:
         return job
 
@@ -190,7 +208,8 @@ def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
         return job
 
     age_seconds = max((timezone.now() - updated_at).total_seconds(), 0)
-    if age_seconds < STALE_IMPORT_JOB_TIMEOUT_SECONDS:
+    stale_timeout = _get_stale_import_job_timeout_seconds(job)
+    if age_seconds < stale_timeout:
         return job
 
     if job.progress_stage == "ai_parse" and job.result_payload:
@@ -2359,6 +2378,11 @@ class ApiRequestViewSet(BaseModelViewSet):
     ordering_fields = ["order", "created_at", "updated_at", "name"]
     ordering = ["order", "created_at"]
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ApiRequestListSerializer
+        return super().get_serializer_class()
+
     def get_queryset(self):
         queryset = super().get_queryset().filter(collection__project__in=get_accessible_projects(self.request.user))
         project_id = self.request.query_params.get("project")
@@ -2377,7 +2401,52 @@ class ApiRequestViewSet(BaseModelViewSet):
                 queryset = queryset.none()
         if method:
             queryset = queryset.filter(method=method.upper())
+        if self.action == "list":
+            queryset = queryset.annotate(
+                test_case_count_value=Coalesce(Count("test_cases", distinct=True), 0)
+            ).only(
+                "id",
+                "collection_id",
+                "name",
+                "description",
+                "method",
+                "url",
+                "assertions",
+                "timeout_ms",
+                "order",
+                "created_by_id",
+                "created_at",
+                "updated_at",
+                "collection__name",
+                "collection__project_id",
+                "created_by__username",
+            )
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page_raw = request.query_params.get("page")
+        page_size_raw = request.query_params.get("page_size")
+        if page_raw or page_size_raw:
+            try:
+                page = max(int(page_raw or 1), 1)
+            except ValueError:
+                page = 1
+            try:
+                page_size = min(max(int(page_size_raw or 50), 10), 200)
+            except ValueError:
+                page_size = 50
+
+            total_count = queryset.count()
+            start = (page - 1) * page_size
+            end = start + page_size
+            serializer = self.get_serializer(queryset[start:end], many=True)
+            response = Response(serializer.data)
+            response["X-Total-Count"] = str(total_count)
+            return response
+
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -2511,6 +2580,72 @@ class ApiRequestViewSet(BaseModelViewSet):
         serializer = ApiExecutionRecordSerializer(record)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["post"], url_path="generate-test-cases")
+    def generate_test_cases(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        mode = str(request.data.get("mode") or "generate").strip().lower()
+        count_per_request = max(1, min(int(request.data.get("count_per_request") or 3), 10))
+        apply_changes = bool(_coerce_bool(request.data.get("apply_changes"), False))
+
+        if mode not in {"generate", "append", "regenerate"}:
+            return Response({"error": "mode 仅支持 generate、append、regenerate"}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_requests = _collect_request_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not api_requests:
+            return Response({"error": "未找到可生成测试用例的接口"}, status=status.HTTP_400_BAD_REQUEST)
+
+        items = []
+        created_total = 0
+        skipped_count = 0
+        ai_used_count = 0
+        ai_cache_hit_count = 0
+        preview_only_count = 0
+        notes: list[str] = []
+
+        for api_request in api_requests:
+            item = _generate_request_test_cases(
+                api_request=api_request,
+                user=request.user,
+                mode=mode,
+                count_per_request=count_per_request,
+                apply_changes=apply_changes,
+            )
+            items.append(item)
+            created_total += item["created_count"]
+            skipped_count += 1 if item.get("skipped") else 0
+            ai_used_count += 1 if item.get("ai_used") else 0
+            ai_cache_hit_count += 1 if item.get("ai_cache_hit") else 0
+            preview_only_count += 1 if item.get("preview_only") else 0
+            if item.get("note"):
+                notes.append(str(item["note"]))
+
+        return Response(
+            {
+                "scope": scope,
+                "mode": mode,
+                "total_requests": len(api_requests),
+                "processed_requests": len(api_requests) - skipped_count,
+                "skipped_requests": skipped_count,
+                "created_testcase_count": created_total,
+                "ai_used_count": ai_used_count,
+                "ai_cache_hit_count": ai_cache_hit_count,
+                "preview_only": bool(preview_only_count),
+                "requires_confirmation": bool(preview_only_count),
+                "preview_request_count": preview_only_count,
+                "note": " ".join(notes[:5]),
+                "items": items,
+            }
+        )
+
     @action(detail=False, methods=["post"], url_path="execute-batch")
     def execute_batch(self, request):
         scope = str(request.data.get("scope") or "selected")
@@ -2554,6 +2689,250 @@ class ApiRequestViewSet(BaseModelViewSet):
                 run_execution_context.close()
                 runtime_context.pop("_execution_run_context", None)
         return Response(_serialize_execution_batch(records))
+
+
+if False:
+    @action(detail=False, methods=["post"], url_path="generate-test-cases")
+    def generate_test_cases(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        mode = str(request.data.get("mode") or "generate").strip().lower()
+        count_per_request = max(1, min(int(request.data.get("count_per_request") or 3), 10))
+        apply_changes = bool(_coerce_bool(request.data.get("apply_changes"), False))
+
+        if mode not in {"generate", "append", "regenerate"}:
+            return Response({"error": "mode 仅支持 generate、append、regenerate"}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_requests = _collect_request_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not api_requests:
+            return Response({"error": "未找到可生成测试用例的接口"}, status=status.HTTP_400_BAD_REQUEST)
+
+        items = []
+        created_total = 0
+        skipped_count = 0
+        ai_used_count = 0
+        ai_cache_hit_count = 0
+        preview_only_count = 0
+        notes: list[str] = []
+
+        for api_request in api_requests:
+            item = _generate_request_test_cases(
+                api_request=api_request,
+                user=request.user,
+                mode=mode,
+                count_per_request=count_per_request,
+                apply_changes=apply_changes,
+            )
+            items.append(item)
+            created_total += item["created_count"]
+            skipped_count += 1 if item.get("skipped") else 0
+            ai_used_count += 1 if item.get("ai_used") else 0
+            ai_cache_hit_count += 1 if item.get("ai_cache_hit") else 0
+            preview_only_count += 1 if item.get("preview_only") else 0
+            if item.get("note"):
+                notes.append(str(item["note"]))
+
+        return Response(
+            {
+                "scope": scope,
+                "mode": mode,
+                "total_requests": len(api_requests),
+                "processed_requests": len(api_requests) - skipped_count,
+                "skipped_requests": skipped_count,
+                "created_testcase_count": created_total,
+                "ai_used_count": ai_used_count,
+                "ai_cache_hit_count": ai_cache_hit_count,
+                "preview_only": bool(preview_only_count),
+                "requires_confirmation": bool(preview_only_count),
+                "preview_request_count": preview_only_count,
+                "note": " ".join(notes[:5]),
+                "items": items,
+            }
+        )
+
+
+def _recover_stale_import_job_legacy_failed_only_v2(job: ApiImportJob) -> ApiImportJob:
+    if job.status not in {"pending", "running"}:
+        return job
+
+    updated_at = job.updated_at or job.created_at
+    if not updated_at:
+        return job
+
+    age_seconds = max((timezone.now() - updated_at).total_seconds(), 0)
+    stale_timeout = _get_stale_import_job_timeout_seconds(job)
+    if age_seconds < stale_timeout:
+        return job
+
+    if job.progress_stage == "ai_parse" and job.result_payload:
+        payload = dict(job.result_payload or {})
+        fallback_message = "AI 文档解析长时间未完成，已自动结束当前 AI 补全并保留已完成的导入结果。"
+        payload["ai_requested"] = True
+        payload["ai_used"] = bool(payload.get("ai_used"))
+        payload["ai_issue_code"] = payload.get("ai_issue_code") or "llm_timeout"
+        payload["ai_user_message"] = fallback_message
+        payload["ai_action_hint"] = "如需更完整的 AI 补全，可缩小文档范围、切换更快的模型，或稍后重试。"
+        existing_note = str(payload.get("ai_note") or "").strip()
+        payload["ai_note"] = f"{existing_note} {fallback_message}".strip() if existing_note else fallback_message
+        _save_job(
+            job.id,
+            force=True,
+            status="success",
+            progress_percent=100,
+            progress_stage="completed",
+            progress_message="接口文档解析完成（AI 文档解析超时，已结束当前任务）。",
+            result_payload=payload,
+            error_message="",
+            completed_at=timezone.now(),
+        )
+    else:
+        failure_message = "AI 文档解析长时间未完成，任务已自动结束。请缩小文档规模或稍后重试。"
+        _save_job(
+            job.id,
+            force=True,
+            status="failed",
+            progress_stage="failed",
+            progress_message=failure_message,
+            error_message=job.error_message or failure_message,
+            completed_at=timezone.now(),
+        )
+    logger.warning(
+        "Recovered stale API import job: job_id=%s stage=%s age_seconds=%.1f timeout=%s",
+        job.id,
+        job.progress_stage,
+        age_seconds,
+        stale_timeout,
+    )
+    return ApiImportJob.objects.get(pk=job.id)
+
+
+def _recover_stale_import_job_legacy_failed_only(job: ApiImportJob) -> ApiImportJob:
+    if job.status not in {"pending", "running"}:
+        return job
+
+    updated_at = job.updated_at or job.created_at
+    if not updated_at:
+        return job
+
+    age_seconds = max((timezone.now() - updated_at).total_seconds(), 0)
+    stale_timeout = _get_stale_import_job_timeout_seconds(job)
+    if age_seconds < stale_timeout:
+        return job
+
+    if job.progress_stage == "ai_parse" and job.result_payload:
+        payload = dict(job.result_payload or {})
+        fallback_message = "AI 文档解析长时间未完成，已自动结束当前 AI 补全并保留已完成的导入结果。"
+        payload["ai_requested"] = True
+        payload["ai_used"] = bool(payload.get("ai_used"))
+        payload["ai_issue_code"] = payload.get("ai_issue_code") or "llm_timeout"
+        payload["ai_user_message"] = fallback_message
+        payload["ai_action_hint"] = "如需更完整的 AI 补全，可缩小文档范围、切换更快的模型，或稍后重试。"
+        existing_note = str(payload.get("ai_note") or "").strip()
+        payload["ai_note"] = f"{existing_note} {fallback_message}".strip() if existing_note else fallback_message
+        _save_job(
+            job.id,
+            force=True,
+            status="success",
+            progress_percent=100,
+            progress_stage="completed",
+            progress_message="接口文档解析完成（AI 文档解析超时，已结束当前任务）。",
+            result_payload=payload,
+            error_message="",
+            completed_at=timezone.now(),
+        )
+    else:
+        failure_message = "AI 文档解析长时间未完成，任务已自动结束。请缩小文档规模或稍后重试。"
+        _save_job(
+            job.id,
+            force=True,
+            status="failed",
+            progress_stage="failed",
+            progress_message=failure_message,
+            error_message=job.error_message or failure_message,
+            completed_at=timezone.now(),
+        )
+    logger.warning(
+        "Recovered stale API import job: job_id=%s stage=%s age_seconds=%.1f timeout=%s",
+        job.id,
+        job.progress_stage,
+        age_seconds,
+        stale_timeout,
+    )
+    return ApiImportJob.objects.get(pk=job.id)
+
+    @action(detail=False, methods=["post"], url_path="generate-test-cases")
+    def generate_test_cases(self, request):
+        scope = str(request.data.get("scope") or "selected")
+        ids = request.data.get("ids") or []
+        project_id = request.data.get("project_id")
+        collection_id = request.data.get("collection_id")
+        mode = str(request.data.get("mode") or "generate").strip().lower()
+        count_per_request = max(1, min(int(request.data.get("count_per_request") or 3), 10))
+        apply_changes = bool(_coerce_bool(request.data.get("apply_changes"), False))
+
+        if mode not in {"generate", "append", "regenerate"}:
+            return Response({"error": "mode 仅支持 generate、append、regenerate"}, status=status.HTTP_400_BAD_REQUEST)
+
+        api_requests = _collect_request_scope(
+            request.user,
+            scope,
+            project_id=project_id,
+            collection_id=collection_id,
+            ids=ids,
+        )
+        if not api_requests:
+            return Response({"error": "未找到可生成测试用例的接口"}, status=status.HTTP_400_BAD_REQUEST)
+
+        items = []
+        created_total = 0
+        skipped_count = 0
+        ai_used_count = 0
+        ai_cache_hit_count = 0
+        preview_only_count = 0
+        notes: list[str] = []
+
+        for api_request in api_requests:
+            item = _generate_request_test_cases(
+                api_request=api_request,
+                user=request.user,
+                mode=mode,
+                count_per_request=count_per_request,
+                apply_changes=apply_changes,
+            )
+            items.append(item)
+            created_total += item["created_count"]
+            skipped_count += 1 if item.get("skipped") else 0
+            ai_used_count += 1 if item.get("ai_used") else 0
+            ai_cache_hit_count += 1 if item.get("ai_cache_hit") else 0
+            preview_only_count += 1 if item.get("preview_only") else 0
+            if item.get("note"):
+                notes.append(str(item["note"]))
+
+        return Response(
+            {
+                "scope": scope,
+                "mode": mode,
+                "total_requests": len(api_requests),
+                "processed_requests": len(api_requests) - skipped_count,
+                "skipped_requests": skipped_count,
+                "created_testcase_count": created_total,
+                "ai_used_count": ai_used_count,
+                "ai_cache_hit_count": ai_cache_hit_count,
+                "preview_only": bool(preview_only_count),
+                "requires_confirmation": bool(preview_only_count),
+                "preview_request_count": preview_only_count,
+                "note": " ".join(notes[:5]),
+                "items": items,
+            }
+        )
 
 
 def _recover_stale_import_job(job: ApiImportJob) -> ApiImportJob:
@@ -2976,3 +3355,6 @@ class ApiTestCaseViewSet(BaseModelViewSet):
                 run_execution_context.close()
                 runtime_context.pop("_execution_run_context", None)
         return Response(_serialize_execution_batch(records))
+
+
+_recover_stale_import_job = _recover_stale_import_job_legacy_failed_only_v2
