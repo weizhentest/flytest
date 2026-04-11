@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { Notification } from '@arco-design/web-vue'
+
 import { importJobApi } from '../api'
 import type { ApiImportJob } from '../types'
 
@@ -72,8 +73,8 @@ const notifyJobFailed = (job: ApiImportJob) => {
 
 const notifyJobCanceled = (job: ApiImportJob) => {
   Notification.info({
-    title: '接口文档解析已暂停',
-    content: job.progress_message || '后台解析任务已手动暂停。',
+    title: '接口文档解析已取消',
+    content: job.progress_message || '后台解析任务已手动取消。',
   })
 }
 

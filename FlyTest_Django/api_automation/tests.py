@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import tempfile
 from datetime import timedelta
@@ -119,7 +119,7 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {
-            "content": [{"type": "text", "text": "你好"}],
+            "content": [{"type": "text", "text": "浣犲ソ"}],
             "usage": {"input_tokens": 8, "output_tokens": 12},
             "stop_reason": "end_turn",
         }
@@ -252,14 +252,14 @@ class ApiAutomationAIParserTests(SimpleTestCase):
 
         self.assertIn("并发限流", note)
         self.assertIn("429", note)
-        self.assertIn("回退", note)
+        self.assertIn("鍥為€€", note)
 
     def test_build_ai_failure_note_for_timeout_is_friendly(self):
         note = _build_ai_failure_note(Exception("Request timed out."))
 
         self.assertIn("请求超时", note)
-        self.assertIn("缩小文档分片", note)
-        self.assertIn("回退", note)
+        self.assertIn("缂╁皬鏂囨。鍒嗙墖", note)
+        self.assertIn("鍥為€€", note)
 
 
     def test_build_ai_failure_note_for_connection_error_is_friendly(self):
@@ -267,8 +267,8 @@ class ApiAutomationAIParserTests(SimpleTestCase):
 
         self.assertIn("AI 网关连接异常", note)
         self.assertIn("Connection error", note)
-        self.assertIn("缩小文档分片", note)
-        self.assertIn("回退", note)
+        self.assertIn("缂╁皬鏂囨。鍒嗙墖", note)
+        self.assertIn("鍥為€€", note)
 
     @patch("api_automation.ai_parser._invoke_ai_for_chunk_with_timeout_fallback")
     @patch("api_automation.ai_parser.load_document_content_for_ai")
@@ -453,7 +453,7 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
             title="CMS订单接口需求说明",
             description="覆盖订单创建、鉴权、幂等与库存校验。",
             document_type="md",
-            content="创建订单接口需要校验登录态、库存余量、SKU合法性，并返回订单号。",
+            content="创建订单接口需要校验登录态、库存余量、SKU 合法性，并返回订单号。",
             status="review_completed",
             uploader=self.user,
         )
@@ -461,7 +461,7 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
             document=requirement_document,
             title="创建订单接口规则",
             content=(
-                "接口 /api/orders 必须校验 token 是否有效；成功后返回 data.orderNo；"
+                "接口 /api/orders 必须校验 token 是否有效；成功后返回 data.orderNo。"
                 "库存不足时返回 409，并给出明确错误信息。"
             ),
             order=1,
@@ -1142,7 +1142,7 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
         for index in range(2, 6):
             RequirementModule.objects.create(
                 document=requirement_document,
-                title=f"创建订单补充规则 {index}",
+                title=f"鍒涘缓璁㈠崟琛ュ厖瑙勫垯 {index}",
                 content=f"/api/orders additional rule {index}: verify sku and qty boundary {index}.",
                 order=index,
                 is_auto_generated=False,
@@ -1341,7 +1341,7 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
                 "references": [
                     {
                         "source": "knowledge_chunk",
-                        "title": "订单语义片段A",
+                        "title": "璁㈠崟璇箟鐗囨A",
                         "container_title": "CMS接口知识库",
                         "snippet": "first semantic retrieval context",
                         "score": 88,
@@ -1364,7 +1364,7 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
                 "references": [
                     {
                         "source": "knowledge_chunk",
-                        "title": "订单语义片段B",
+                        "title": "璁㈠崟璇箟鐗囨B",
                         "container_title": "CMS接口知识库",
                         "snippet": "second semantic retrieval context",
                         "score": 90,
@@ -1433,38 +1433,38 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
     def test_environment_suggestions_include_auth_and_variable_recommendations(self):
         parsed_requests = [
             ParsedRequestData(
-                name="用户登录",
+                name="鐢ㄦ埛鐧诲綍",
                 method="POST",
                 url="/api/login",
                 body_type="json",
                 body={"phone": "{{phone}}", "password": "{{password}}"},
             ),
             ParsedRequestData(
-                name="查询用户信息",
+                name="鏌ヨ鐢ㄦ埛淇℃伅",
                 method="GET",
                 url="/api/user/profile",
                 headers={"Authorization": "Bearer {{token}}"},
             ),
         ]
         created_requests = [
-            SimpleNamespace(id=11, name="用户登录", method="POST", url="/api/login", collection=SimpleNamespace(name="auth")),
-            SimpleNamespace(id=12, name="查询用户信息", method="GET", url="/api/user/profile", collection=SimpleNamespace(name="user")),
+            SimpleNamespace(id=11, name="鐢ㄦ埛鐧诲綍", method="POST", url="/api/login", collection=SimpleNamespace(name="auth")),
+            SimpleNamespace(id=12, name="鏌ヨ鐢ㄦ埛淇℃伅", method="GET", url="/api/user/profile", collection=SimpleNamespace(name="user")),
         ]
 
         suggestions = _build_environment_suggestions(
             parsed_requests=parsed_requests,
             created_requests=created_requests,
-            environment_drafts=[{"name": "测试环境", "base_url": "https://cms-test.example.com/api"}],
+            environment_drafts=[{"name": "娴嬭瘯鐜", "base_url": "https://cms-test.example.com/api"}],
             saved_environments=[],
             primary_environment_draft={"base_url": "https://cms-test.example.com/api"},
             primary_environment=None,
         )
 
         self.assertEqual(suggestions["base_url_candidates"][0]["base_url"], "https://cms-test.example.com/api")
-        self.assertEqual(suggestions["auth_suggestions"][0]["request_name"], "用户登录")
+        self.assertEqual(suggestions["auth_suggestions"][0]["request_name"], "鐢ㄦ埛鐧诲綍")
         self.assertEqual(suggestions["auth_suggestions"][0]["token_path"], "data.token")
         patch_variables = {item["name"]: item["value"] for item in suggestions["environment_patch"]["variables"]}
-        self.assertEqual(patch_variables["auth_request_name"], "用户登录")
+        self.assertEqual(patch_variables["auth_request_name"], "鐢ㄦ埛鐧诲綍")
         self.assertEqual(patch_variables["auth_token_path"], "data.token")
         self.assertIn("phone", patch_variables)
         self.assertIn("password", patch_variables)
@@ -1519,7 +1519,7 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
             },
             "item": [
                 {
-                    "name": "用户模块",
+                    "name": "鐢ㄦ埛妯″潡",
                     "auth": {
                         "type": "basic",
                         "basic": [
@@ -1529,14 +1529,14 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
                     },
                     "item": [
                         {
-                            "name": "登录接口",
+                            "name": "鐧诲綍鎺ュ彛",
                             "request": {
                                 "method": "POST",
                                 "url": "https://example.com/api/login",
                             },
                         },
                         {
-                            "name": "公开信息",
+                            "name": "鍏紑淇℃伅",
                             "request": {
                                 "method": "GET",
                                 "url": {
@@ -1556,7 +1556,7 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
                     ],
                 },
                 {
-                    "name": "资料接口",
+                    "name": "璧勬枡鎺ュ彛",
                     "request": {
                         "method": "GET",
                         "url": "https://example.com/api/profile",
@@ -1567,9 +1567,9 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
 
         requests = parse_postman_collection(collection)
 
-        login_request = next(item for item in requests if item.name == "登录接口")
-        public_request = next(item for item in requests if item.name == "公开信息")
-        profile_request = next(item for item in requests if item.name == "资料接口")
+        login_request = next(item for item in requests if item.name == "鐧诲綍鎺ュ彛")
+        public_request = next(item for item in requests if item.name == "鍏紑淇℃伅")
+        profile_request = next(item for item in requests if item.name == "璧勬枡鎺ュ彛")
 
         self.assertEqual(login_request.request_spec["auth"]["auth_type"], "basic")
         self.assertEqual(login_request.request_spec["auth"]["username"], "demo")
@@ -2208,7 +2208,7 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(len(payload["test_cases"]), 2)
         self.assertFalse(payload["ai_requested"])
         self.assertFalse(payload["ai_used"])
-        self.assertIn("回退", payload["ai_note"])
+        self.assertIn("鍥為€€", payload["ai_note"])
         self.assertEqual(payload["ai_issue_code"], "not_requested")
         self.assertIn("未检测到激活的大模型配置", payload["ai_user_message"])
         self.assertIn("generated_script", payload["items"][0])
@@ -2613,7 +2613,7 @@ class ApiAutomationImportDocumentTests(TestCase):
             status="pending",
             progress_percent=4,
             progress_stage="uploaded",
-            progress_message="等待解析",
+            progress_message="绛夊緟瑙ｆ瀽",
             generate_test_cases=True,
             enable_ai_parse=True,
         )
@@ -2788,8 +2788,8 @@ class ApiAutomationImportDocumentTests(TestCase):
             model_name="demo-model",
             cases=[
                 GeneratedCaseDraft(
-                    name="Create order - 成功校验",
-                    description="验证下单成功",
+                    name="Create order - 鎴愬姛鏍￠獙",
+                    description="楠岃瘉涓嬪崟鎴愬姛",
                     status="ready",
                     tags=["ai-generated", "positive"],
                     assertions=[{"assertion_type": "status_code", "expected_number": 200}],
@@ -2817,8 +2817,8 @@ class ApiAutomationImportDocumentTests(TestCase):
                     },
                 ),
                 GeneratedCaseDraft(
-                    name="Create order - 关键字段校验",
-                    description="验证关键响应字段",
+                    name="Create order - 鍏抽敭瀛楁鏍￠獙",
+                    description="楠岃瘉鍏抽敭鍝嶅簲瀛楁",
                     status="ready",
                     tags=["ai-generated", "regression"],
                     assertions=[{"assertion_type": "status_code", "expected_number": 200}],
@@ -3333,13 +3333,13 @@ class ApiAutomationExecutionTests(TestCase):
         environment = self.project.api_environments.create(
             name="Execution Env",
             base_url="https://cms-test.9635.com.cn/api",
-            variables={"token": "", "nkey": "", "auth_request_name": "APP密码登录"},
+            variables={"token": "", "nkey": "", "auth_request_name": "APP瀵嗙爜鐧诲綍"},
             creator=self.user,
             is_default=True,
         )
         ApiRequest.objects.create(
             collection=self.collection,
-            name="APP密码登录",
+            name="APP瀵嗙爜鐧诲綍",
             method="POST",
             url="user/appLogin",
             params={"phone": "{{phone}}", "password": "{{password}}"},
@@ -3383,14 +3383,14 @@ class ApiAutomationExecutionTests(TestCase):
                 "token": "",
                 "phone": "13800138000",
                 "password": "secret123",
-                "auth_request_name": "APP密码登录",
+                "auth_request_name": "APP瀵嗙爜鐧诲綍",
             },
             creator=self.user,
             is_default=True,
         )
         ApiRequest.objects.create(
             collection=self.collection,
-            name="APP密码登录",
+            name="APP瀵嗙爜鐧诲綍",
             method="POST",
             url="user/appLogin",
             params={"phone": "{{phone}}", "password": "{{password}}"},
@@ -3490,7 +3490,7 @@ class ApiAutomationExecutionTests(TestCase):
     def test_execute_batch_reuses_run_level_cookie_jar(self, mock_client_cls):
         login_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="登录接口",
+            name="鐧诲綍鎺ュ彛",
             method="POST",
             url="/api/login",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -3499,7 +3499,7 @@ class ApiAutomationExecutionTests(TestCase):
         )
         profile_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="获取资料",
+            name="鑾峰彇璧勬枡",
             method="GET",
             url="/api/profile",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -3576,7 +3576,7 @@ class ApiAutomationExecutionTests(TestCase):
     def test_execute_batch_async_mode_reuses_run_level_cookie_jar(self, mock_async_client_cls):
         login_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="Async 鐧诲綍鎺ュ彛",
+            name="Async 登录接口",
             method="POST",
             url="/api/login",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -3585,7 +3585,7 @@ class ApiAutomationExecutionTests(TestCase):
         )
         profile_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="Async 鑾峰彇璧勬枡",
+            name="Async 閼惧嘲褰囩挧鍕灐",
             method="GET",
             url="/api/profile",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -3674,7 +3674,7 @@ class ApiAutomationExecutionTests(TestCase):
             request=request,
             environment=None,
             run_id="run-report-1",
-            run_name="接口批量执行",
+            run_name="鎺ュ彛鎵归噺鎵ц",
             request_name=request.name,
             method=request.method,
             url=request.url,
@@ -3717,7 +3717,7 @@ class ApiAutomationExecutionTests(TestCase):
             request=request,
             environment=None,
             run_id="run-report-summary-1",
-            run_name="报告摘要批次",
+            run_name="鎶ュ憡鎽樿鎵规",
             request_name=request.name,
             method=request.method,
             url=request.url,
@@ -3767,7 +3767,7 @@ class ApiAutomationExecutionTests(TestCase):
             request=request,
             environment=None,
             run_id="run-report-summary-cache",
-            run_name="报告摘要缓存批次",
+            run_name="鎶ュ憡鎽樿缂撳瓨鎵规",
             request_name=request.name,
             method=request.method,
             url=request.url,
@@ -3856,7 +3856,7 @@ class ApiAutomationExecutionTests(TestCase):
             test_case=test_case,
             environment=None,
             run_id="run-ai-analysis-1",
-            run_name="登录失败复盘",
+            run_name="鐧诲綍澶辫触澶嶇洏",
             request_name=test_case.name,
             method="POST",
             url="/api/login",
@@ -3921,7 +3921,7 @@ class ApiAutomationExecutionTests(TestCase):
     def test_rule_based_failure_analysis_marks_workflow_blocked_record(self):
         api_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="读取用户信息",
+            name="璇诲彇鐢ㄦ埛淇℃伅",
             method="GET",
             url="/api/profile",
             created_by=self.user,
@@ -3929,11 +3929,11 @@ class ApiAutomationExecutionTests(TestCase):
         test_case = ApiTestCase.objects.create(
             project=self.project,
             request=api_request,
-            name="用户信息-前置失败阻断",
+            name="鐢ㄦ埛淇℃伅-鍓嶇疆澶辫触闃绘柇",
             status="ready",
             script={
                 "workflow_steps": [
-                    {"name": "登录获取 token", "stage": "prepare", "request_id": 9999},
+                    {"name": "鐧诲綍鑾峰彇 token", "stage": "prepare", "request_id": 9999},
                 ]
             },
             assertions=[],
@@ -3945,7 +3945,7 @@ class ApiAutomationExecutionTests(TestCase):
             test_case=test_case,
             environment=None,
             run_id="run-rule-analysis-1",
-            run_name="规则复盘",
+            run_name="瑙勫垯澶嶇洏",
             request_name=test_case.name,
             method="GET",
             url="/api/profile",
@@ -3966,7 +3966,7 @@ class ApiAutomationExecutionTests(TestCase):
                 "workflow_steps": [
                     {
                         "index": 0,
-                        "name": "登录获取 token",
+                        "name": "鐧诲綍鑾峰彇 token",
                         "stage": "prepare",
                         "status": "failed",
                         "status_code": 401,
@@ -3976,9 +3976,9 @@ class ApiAutomationExecutionTests(TestCase):
             },
             response_snapshot={},
             assertions_results=[
-                {"type": "workflow_step", "passed": False, "message": "Workflow step failed: 登录获取 token"}
+                {"type": "workflow_step", "passed": False, "message": "Workflow step failed: 鐧诲綍鑾峰彇 token"}
             ],
-            error_message="Workflow step failed: 登录获取 token",
+            error_message="Workflow step failed: 鐧诲綍鑾峰彇 token",
             executor=self.user,
         )
 
@@ -4067,7 +4067,7 @@ class ApiAutomationExecutionTests(TestCase):
         test_case = ApiTestCase.objects.create(
             project=self.project,
             request=profile_request,
-            name="用户信息-工作流取 token",
+            name="鐢ㄦ埛淇℃伅-宸ヤ綔娴佸彇 token",
             status="ready",
             script={
                 "workflow_steps": [
@@ -4149,7 +4149,7 @@ class ApiAutomationExecutionTests(TestCase):
     def test_execute_test_case_workflow_teardown_failure_marks_case_failed(self, mock_client_cls):
         profile_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="读取用户信息",
+            name="璇诲彇鐢ㄦ埛淇℃伅",
             method="GET",
             url="/api/profile",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -4243,7 +4243,7 @@ class ApiAutomationExecutionTests(TestCase):
         )
         profile_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="读取用户信息",
+            name="璇诲彇鐢ㄦ埛淇℃伅",
             method="GET",
             url="/api/profile",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -4258,7 +4258,7 @@ class ApiAutomationExecutionTests(TestCase):
         test_case = ApiTestCase.objects.create(
             project=self.project,
             request=profile_request,
-            name="用户信息-前置失败阻断",
+            name="鐢ㄦ埛淇℃伅-鍓嶇疆澶辫触闃绘柇",
             status="ready",
             script={
                 "workflow_steps": [
@@ -4336,7 +4336,7 @@ class ApiAutomationExecutionTests(TestCase):
         )
         profile_request = ApiRequest.objects.create(
             collection=self.collection,
-            name="读取用户信息",
+            name="璇诲彇鐢ㄦ埛淇℃伅",
             method="GET",
             url="/api/profile",
             assertions=[{"type": "status_code", "expected": 200}],
@@ -4351,7 +4351,7 @@ class ApiAutomationExecutionTests(TestCase):
         test_case = ApiTestCase.objects.create(
             project=self.project,
             request=profile_request,
-            name="用户信息-前置失败继续执行",
+            name="鐢ㄦ埛淇℃伅-鍓嶇疆澶辫触缁х画鎵ц",
             status="ready",
             script={
                 "workflow_steps": [
@@ -4439,7 +4439,7 @@ class ApiAutomationExecutionTests(TestCase):
             test_case=failed_case,
             environment=None,
             run_id="run-cms-1",
-            run_name="CMS 回归执行",
+            run_name="CMS 鍥炲綊鎵ц",
             request_name=failed_case.name,
             method="POST",
             url="/api/login",
@@ -4454,9 +4454,9 @@ class ApiAutomationExecutionTests(TestCase):
                 "test_case_id": failed_case.id,
                 "test_case_name": failed_case.name,
             },
-            response_snapshot={"body": {"message": "用户名或密码错误"}},
+            response_snapshot={"body": {"message": "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒"}},
             assertions_results=[{"index": 0, "type": "status_code", "expected": 200, "actual": 401, "passed": False}],
-            error_message="用户名或密码错误",
+            error_message="鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒",
             executor=self.user,
         )
 
@@ -4472,7 +4472,7 @@ class ApiAutomationExecutionTests(TestCase):
         self.assertEqual(len(payload["run_groups"]), 1)
 
         run_group = payload["run_groups"][0]
-        self.assertEqual(run_group["run_name"], "CMS 回归执行")
+        self.assertEqual(run_group["run_name"], "CMS 鍥炲綊鎵ц")
         self.assertEqual(run_group["failed_test_case_count"], 1)
         self.assertEqual(run_group["interface_count"], 1)
 
@@ -4484,8 +4484,8 @@ class ApiAutomationExecutionTests(TestCase):
         case_group = interface_group["failed_test_cases"][0]
         self.assertEqual(case_group["test_case_name"], "会员登录-错误密码")
         self.assertEqual(case_group["latest_status_code"], 401)
-        self.assertEqual(case_group["latest_error_message"], "用户名或密码错误")
-        self.assertEqual(case_group["failed_records"][0]["error_message"], "用户名或密码错误")
+        self.assertEqual(case_group["latest_error_message"], "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒")
+        self.assertEqual(case_group["failed_records"][0]["error_message"], "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒")
 
 
 class ApiAutomationDataFactoryReferenceTests(TestCase):
@@ -4518,7 +4518,7 @@ class ApiAutomationDataFactoryReferenceTests(TestCase):
             },
             is_saved=True,
         )
-        tag = self.project.data_factory_tags.create(name="登录凭证", code="login_payload", creator=self.user)
+        tag = self.project.data_factory_tags.create(name="鐧诲綍鍑瘉", code="login_payload", creator=self.user)
         record.tags.add(tag)
 
         resolver = VariableResolver({"df": build_reference_tree(self.project.id)})
@@ -4787,7 +4787,7 @@ def _patched_test_ai_parse_job_is_not_recovered_too_early(self):
             source_name="demo.md",
             source_file=SimpleUploadedFile(
                 "demo.md",
-                "## Login\n接口地址: /api/login\n请求方式: POST\n参数: username,password".encode("utf-8"),
+                "## Login\n鎺ュ彛鍦板潃: /api/login\n璇锋眰鏂瑰紡: POST\n鍙傛暟: username,password".encode("utf-8"),
                 content_type="text/markdown",
             ),
             status="running",

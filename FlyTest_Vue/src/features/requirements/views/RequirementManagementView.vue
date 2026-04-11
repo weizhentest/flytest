@@ -27,7 +27,6 @@
       <div class="workspace-hero-orb" aria-hidden="true"></div>
     </section>
 
-    <!-- 鎼滅储鍜岀瓫閫?-->
     <div class="filter-section">
       <div class="filter-row">
         <a-input-search
@@ -77,7 +76,6 @@
       </div>
     </div>
 
-    <!-- 鏂囨。鍒楄〃 -->
     <div class="content-section">
       <a-table
         :columns="columns"
@@ -89,19 +87,16 @@
         @page-size-change="handlePageSizeChange"
         row-key="id"
       >
-        <!-- 鐘舵€佸垪 -->
         <template #status="{ record }">
           <a-tag :color="getStatusColor(record.status)">
             {{ getStatusText(record.status) }}
           </a-tag>
         </template>
 
-        <!-- 鏂囨。绫诲瀷鍒?-->
         <template #document_type="{ record }">
           <a-tag color="blue">{{ getTypeText(record.document_type) }}</a-tag>
         </template>
 
-        <!-- 缁熻淇℃伅鍒?-->
         <template #stats="{ record }">
           <div class="stats-info">
             <span class="stat-item">{{ record.word_count || 0 }} 字</span>
@@ -110,7 +105,6 @@
           </div>
         </template>
 
-        <!-- 鎿嶄綔鍒?-->
         <template #actions="{ record }">
           <div class="actions-wrapper">
             <a-button type="text" size="small" @click="viewDocument(record)">
@@ -178,7 +172,6 @@
       </a-table>
     </div>
 
-    <!-- 涓婁紶鏂囨。妯℃€佹 -->
     <a-modal
       v-model:visible="uploadModalVisible"
       title="上传需求文档"
@@ -263,7 +256,6 @@
       </a-form>
     </a-modal>
 
-    <!-- 璇勫閰嶇疆妯℃€佹 -->
     <a-modal
       v-model:visible="reviewConfigVisible"
       :title="reviewAction === 'restart' ? '重新评审配置' : '评审配置'"
@@ -311,18 +303,15 @@ import {
   DocumentTypeDisplay
 } from '../types';
 
-// 鐘舵€佷粨搴撲笌璺敱
 const projectStore = useProjectStore();
 const router = useRouter();
 
-// 鍝嶅簲寮忔暟鎹?
 const loading = ref(false);
 const documentList = ref<RequirementDocument[]>([]);
 const searchKeyword = ref('');
 const statusFilter = ref<DocumentStatus | ''>('');
 const typeFilter = ref<DocumentType | ''>('');
 
-// 鍒嗛〉
 const pagination = reactive({
   current: 1,
   pageSize: 10,
@@ -331,7 +320,6 @@ const pagination = reactive({
   showPageSize: true,
 });
 
-// 涓婁紶鐩稿叧
 const uploadModalVisible = ref(false);
 const uploadLoading = ref(false);
 const uploadFormRef = ref();
@@ -348,7 +336,6 @@ const uploadForm = reactive<CreateDocumentRequest & { uploadType: 'file' | 'cont
   content: ''
 });
 
-// 璇勫閰嶇疆鐩稿叧
 const reviewConfigVisible = ref(false);
 const reviewAction = ref<'start' | 'restart' | 'retry'>('start');
 const currentDocument = ref<RequirementDocument | null>(null);
@@ -361,7 +348,6 @@ let reviewPollTimer: ReturnType<typeof setTimeout> | null = null;
 let reviewPollAttempts = 0;
 const trackedReviewingDocumentIds = new Set<string>();
 
-// 琛ㄥ崟楠岃瘉瑙勫垯
 const uploadRules = {
   title: [
     { required: true, message: '请输入文档标题' },
@@ -398,7 +384,6 @@ const uploadRules = {
   ]
 };
 
-// 琛ㄦ牸鍒楀畾涔?
 const columns = [
   {
     title: '文档标题',
@@ -447,7 +432,6 @@ const columns = [
   }
 ];
 
-// 璁＄畻灞炴€?
 const currentProjectId = computed(() => projectStore.currentProjectId);
 
 const hasReviewingDocuments = (documents: RequirementDocument[] = documentList.value) => {
@@ -617,7 +601,6 @@ const scheduleReviewPolling = () => {
   }, REVIEW_POLL_INTERVAL_MS);
 };
 
-// 鏂规硶
 const getStatusColor = (status: DocumentStatus) => {
   const colorMap = {
     uploaded: 'blue',
@@ -640,7 +623,6 @@ const getTypeText = (type: DocumentType) => {
   return DocumentTypeDisplay[type] || type;
 };
 
-// 鍔犺浇鏂囨。鍒楄〃
 const loadDocuments = async ({ silent = false }: { silent?: boolean } = {}) => {
   if (!currentProjectId.value) {
     stopReviewPolling();
@@ -677,16 +659,13 @@ const loadDocuments = async ({ silent = false }: { silent?: boolean } = {}) => {
 
     const response = await RequirementDocumentService.getDocumentList(params);
 
-    console.log('API鍝嶅簲:', response); // 璋冭瘯鏃ュ織
+    console.log('API响应:', response);
 
     if (response.status === 'success') {
-      // 閫傞厤鍚庣杩斿洖鐨勬暟鎹粨鏋?
       if (Array.isArray(response.data)) {
-        // 濡傛灉鐩存帴杩斿洖鏁扮粍
         documentList.value = response.data;
         pagination.total = response.data.length;
       } else if (response.data.results) {
-        // 濡傛灉鏄垎椤垫牸寮?
         documentList.value = response.data.results;
         pagination.total = response.data.count;
       } else {
@@ -720,13 +699,11 @@ const loadDocuments = async ({ silent = false }: { silent?: boolean } = {}) => {
   return false;
 };
 
-// 鎼滅储澶勭悊
 const handleSearch = () => {
   pagination.current = 1;
   loadDocuments();
 };
 
-// 鍒嗛〉澶勭悊
 const handlePageChange = (page: number) => {
   pagination.current = page;
   loadDocuments();
@@ -738,65 +715,52 @@ const handlePageSizeChange = (pageSize: number) => {
   loadDocuments();
 };
 
-// 鏄剧ず涓婁紶妯℃€佹
 const showUploadModal = () => {
   if (!currentProjectId.value) {
     Message.warning('请先选择项目');
     return;
   }
   uploadForm.project = String(currentProjectId.value);
-  console.log('鎵撳紑涓婁紶妯℃€佹锛岄」鐩甀D:', uploadForm.project); // 璋冭瘯鏃ュ織
+  console.log('鎵撳紑涓婁紶妯℃€佹锛岄」鐩甀D:', uploadForm.project);
   uploadModalVisible.value = true;
 };
 
-// 鏂囦欢閫夋嫨澶勭悊
 const handleFileChange = (fileListParam: any[], file: any) => {
-  console.log('鏂囦欢閫夋嫨鍙樺寲:', fileListParam, file); // 璋冭瘯鏃ュ織
+  console.log('文件选择变化:', fileListParam, file);
 
-  // 鏇存柊鏂囦欢鍒楄〃
   fileList.value = fileListParam;
 
   if (file && file.file) {
     uploadForm.file = file.file;
-    console.log('璁剧疆鏂囦欢鍒拌〃鍗?', file.file); // 璋冭瘯鏃ュ織
+    console.log('设置文件列表项:', file.file);
 
-    // 鑷姩璁剧疆鏂囨。绫诲瀷
     const fileName = file.file.name;
     const extension = fileName.split('.').pop()?.toLowerCase();
     if (extension && ['pdf', 'doc', 'docx', 'txt', 'md'].includes(extension)) {
       uploadForm.document_type = extension as DocumentType;
     }
-    // 濡傛灉娌℃湁鏍囬锛屼娇鐢ㄦ枃浠跺悕
     if (!uploadForm.title) {
       uploadForm.title = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
     }
   } else if (fileListParam.length === 0) {
-    // 鏂囦欢琚Щ闄?
     uploadForm.file = undefined;
-    console.log('文件被移除'); // 调试日志
+    console.log('文件被移除');
   }
 };
 
-// 澶勭悊涓婁紶绫诲瀷鍙樺寲
 const handleUploadTypeChange = () => {
   if (uploadForm.uploadType === 'content') {
-    // 鍒囨崲鍒扮洿鎺ヨ緭鍏ユ椂锛岃缃枃妗ｇ被鍨嬩负txt
     uploadForm.document_type = 'txt';
-    // 娓呯┖鏂囦欢鐩稿叧鏁版嵁
     uploadForm.file = undefined;
     fileList.value = [];
   } else if (uploadForm.uploadType === 'file') {
-    // 鍒囨崲鍒版枃浠朵笂浼犳椂锛岄噸缃枃妗ｇ被鍨嬩负pdf
     uploadForm.document_type = 'pdf';
-    // 娓呯┖鍐呭
     uploadForm.content = '';
   }
 };
 
-// 涓婁紶澶勭悊
 const handleUpload = async () => {
   try {
-    // 鎵嬪姩楠岃瘉蹇呭～瀛楁
     if (!uploadForm.title.trim()) {
       Message.error('请输入文档标题');
       return;
@@ -819,11 +783,11 @@ const handleUpload = async () => {
 
     uploadLoading.value = true;
 
-    console.log('涓婁紶鏁版嵁:', uploadForm); // 璋冭瘯鏃ュ織
+    console.log('涓婁紶鏁版嵁:', uploadForm);
 
     const response = await RequirementDocumentService.uploadDocument(uploadForm);
 
-    console.log('涓婁紶鍝嶅簲:', response); // 璋冭瘯鏃ュ織
+    console.log('涓婁紶鍝嶅簲:', response);
 
     if (response.status === 'success') {
       Message.success('文档上传成功');
@@ -841,7 +805,6 @@ const handleUpload = async () => {
   }
 };
 
-// 閲嶇疆涓婁紶琛ㄥ崟
 const resetUploadForm = () => {
   uploadFormRef.value?.resetFields();
   fileList.value = [];
@@ -856,7 +819,6 @@ const resetUploadForm = () => {
   });
 };
 
-// 鏍煎紡鍖栨枃浠跺ぇ灏?
 const formatFileSize = (size: number | undefined): string => {
   if (!size || isNaN(size)) return '未知大小';
   if (size < 1024) return size + ' B';
@@ -864,41 +826,34 @@ const formatFileSize = (size: number | undefined): string => {
   return (size / (1024 * 1024)).toFixed(1) + ' MB';
 };
 
-// 绉婚櫎鏂囦欢
 const removeFile = (index: number) => {
   fileList.value.splice(index, 1);
   uploadForm.file = undefined;
 };
 
-// 鏂囨。鎿嶄綔
 const viewDocument = (document: RequirementDocument) => {
   router.push(`/requirements/${document.id}`);
 };
 
-// 绉婚櫎浜唖tartModuleSplit鏂规硶锛岀幇鍦ㄧ粺涓€鍦ㄨ鎯呴〉闈㈣繘琛屾媶鍒嗛厤缃?
 
-// 寮€濮嬭瘎瀹?- 鎵撳紑閰嶇疆瀵硅瘽妗?
 const startReview = (document: RequirementDocument) => {
   currentDocument.value = document;
   reviewAction.value = 'start';
   reviewConfigVisible.value = true;
 };
 
-// 閲嶆柊璇勫 - 鎵撳紑閰嶇疆瀵硅瘽妗?
 const restartReview = (document: RequirementDocument) => {
   currentDocument.value = document;
   reviewAction.value = 'restart';
   reviewConfigVisible.value = true;
 };
 
-// 澶辫触鍚庨噸璇曡瘎瀹?- 鎵撳紑閰嶇疆瀵硅瘽妗?
 const retryReview = (document: RequirementDocument) => {
   currentDocument.value = document;
   reviewAction.value = 'retry';
   reviewConfigVisible.value = true;
 };
 
-// 纭璇勫
 const confirmReview = async () => {
   if (!currentDocument.value) return;
   
@@ -918,7 +873,6 @@ const confirmReview = async () => {
     if (reviewAction.value === 'restart') {
       response = await RequirementDocumentService.restartReview(documentId, options);
     } else {
-      // start 鍜?retry 閮借皟鐢?startReview
       response = await RequirementDocumentService.startReview(documentId, options);
     }
 
@@ -942,7 +896,6 @@ const confirmReview = async () => {
 };
 
 const viewReports = (document: RequirementDocument) => {
-  // 璺宠浆鍒颁笓闂ㄧ殑鎶ュ憡椤甸潰
   if (document.id) {
     router.push(`/requirements/${document.id}/report`);
   } else {
@@ -969,7 +922,6 @@ const deleteDocument = async (document: RequirementDocument) => {
   }
 };
 
-// 鐢熷懡鍛ㄦ湡
 onMounted(() => {
   window.addEventListener('focus', handleWindowFocus);
   document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -985,7 +937,6 @@ onUnmounted(() => {
   resetTrackedReviewingDocuments();
 });
 
-// 鐩戝惉椤圭洰鍙樺寲
 projectStore.$subscribe((_mutation, state) => {
   const projectId = state.currentProject?.id;
   if (projectId && String(projectId) !== uploadForm.project) {
@@ -1296,6 +1247,7 @@ projectStore.$subscribe((_mutation, state) => {
   }
 }
 </style>
+
 
 
 

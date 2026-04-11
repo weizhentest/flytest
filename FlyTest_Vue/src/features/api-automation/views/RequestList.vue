@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="request-list">
     <div class="page-header api-page-header">
       <div class="page-summary">
@@ -107,7 +107,7 @@
                   <a-button type="text" size="small">AI用例</a-button>
                   <template #content>
                     <a-doption value="generate">生成</a-doption>
-                    <a-doption value="regenerate">重生成</a-doption>
+                    <a-doption value="regenerate">重新生成</a-doption>
                     <a-doption value="append">追加生成</a-doption>
                   </template>
                 </a-dropdown>
@@ -202,8 +202,8 @@
                 :label="draft.label"
               />
             </a-select>
-            <a-button @click="applySelectedRequestDraft()">回填字段</a-button>
-            <a-button type="text" @click="clearDraftsAndReset">清除草稿</a-button>
+            <a-button @click="applySelectedRequestDraft()">鍥炲～瀛楁</a-button>
+            <a-button type="text" @click="clearDraftsAndReset">娓呴櫎鑽夌</a-button>
           </div>
         </div>
 
@@ -361,14 +361,14 @@
             v-model="documentText"
             class="document-textarea"
             :auto-size="{ minRows: 14, maxRows: 22 }"
-            placeholder="直接粘贴接口文档正文。可以是单个接口，也可以一次粘贴多个接口说明、请求示例、参数表、返回说明等内容。"
+            placeholder="直接粘贴接口文档正文。可以是单个接口，也可以一次粘贴多个接口说明、请求示例、参数表和返回说明等内容。"
           />
         </div>
 
         <div class="import-option-grid">
           <div class="import-option-card import-option-card-primary">
             <div class="option-copy">
-              <div class="option-title">AI文档解析</div>
+              <div class="option-title">AI 文档解析</div>
               <div class="option-description">
                 使用系统设置中当前激活的 AI 接口，并读取“提示词管理”中的 API 自动化解析提示词；长文档会自动切片后并发解析，再统一汇总。
               </div>
@@ -384,7 +384,7 @@
                 </div>
               </a-alert>
               <div v-else-if="importAiCompatibilityLoading" class="import-option-status__loading">
-                正在检测当前 AI 配置与文档导入的兼容性...
+                姝ｅ湪妫€娴嬪綋鍓?AI 閰嶇疆涓庢枃妗ｅ鍏ョ殑鍏煎鎬?..
               </div>
             </div>
             <a-switch v-model="enableAiParse" :disabled="importAiParseBlocked || documentImportMode === 'text'" />
@@ -407,178 +407,51 @@
       </div>
     </a-modal>
 
-    <a-modal
+    <RequestExecutionResultModal
       v-model:visible="resultVisible"
-      class="detail-modal detail-modal--wide"
-      :title="currentResult?.id ? '执行结果详情' : '接口详情'"
-      width="1120px"
-      :footer="false"
-      :mask-closable="true"
-      :body-style="{ maxHeight: '78vh', overflowY: 'auto' }"
-    >
-      <div v-if="currentResult" class="result-drawer">
-        <a-descriptions :column="2" bordered size="small">
-          <a-descriptions-item label="接口名称">{{ currentResult.request_name }}</a-descriptions-item>
-          <a-descriptions-item label="执行状态">
-            <a-tag :color="currentResult.passed ? 'green' : currentResult.status === 'error' ? 'red' : 'orange'">
-              {{ currentResult.status }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="状态码">{{ currentResult.status_code ?? '-' }}</a-descriptions-item>
-          <a-descriptions-item label="响应时间">{{ formatDuration(currentResult.response_time) }}</a-descriptions-item>
-          <a-descriptions-item label="最终地址" :span="2">{{ currentResult.url }}</a-descriptions-item>
-          <a-descriptions-item label="错误信息" :span="2">
-            {{ currentResult.error_message || '-' }}
-          </a-descriptions-item>
-        </a-descriptions>
+      :result="currentResult"
+    />
 
-        <a-divider>断言结果</a-divider>
-        <a-table :data="currentResult.assertions_results || []" :pagination="false" row-key="index">
-          <template #columns>
-            <a-table-column title="#" data-index="index" :width="60" />
-            <a-table-column title="类型" data-index="type" :width="120" />
-            <a-table-column title="期望值" data-index="expected" ellipsis tooltip />
-            <a-table-column title="实际值" data-index="actual" ellipsis tooltip />
-            <a-table-column title="结果" :width="90">
-              <template #cell="{ record }">
-                <a-tag :color="record.passed ? 'green' : 'red'">{{ record.passed ? '通过' : '失败' }}</a-tag>
-              </template>
-            </a-table-column>
-          </template>
-        </a-table>
-
-        <a-divider>请求快照</a-divider>
-        <pre class="json-block">{{ stringifyBlock(currentResult.request_snapshot) }}</pre>
-
-        <template v-if="currentResult.request_snapshot?.generated_script">
-          <a-divider>接口脚本</a-divider>
-          <pre class="json-block">{{ stringifyBlock(currentResult.request_snapshot.generated_script) }}</pre>
-        </template>
-
-        <a-divider>响应快照</a-divider>
-        <pre class="json-block">{{ stringifyBlock(currentResult.response_snapshot) }}</pre>
-      </div>
-    </a-modal>
-
-    <a-drawer v-model:visible="importResultVisible" width="920px" title="文档导入结果" :footer="false">
-      <div v-if="importResult" class="import-result-drawer">
-        <a-alert
-          :type="importResult.ai_requested ? (importResult.ai_used ? 'success' : 'warning') : 'info'"
-          class="import-result-alert"
-        >
-          <template #title>
-            {{ importResultAlertTitle }}
-          </template>
-          <div>{{ importResultAlertMessage }}</div>
-          <div v-if="importResultAlertActionHint" class="import-result-alert__hint">{{ importResultAlertActionHint }}</div>
-        </a-alert>
-
-        <a-descriptions :column="2" bordered size="small">
-          <a-descriptions-item label="导入来源">{{ importResult.source_type || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="使用 Marker">
-            <a-tag :color="importResult.marker_used ? 'arcoblue' : 'gray'">
-              {{ importResult.marker_used ? '是' : '否' }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="AI增强解析">
-            <a-tag :color="importResult.ai_requested ? (importResult.ai_used ? 'green' : 'orange') : 'gray'">
-              {{
-                importResult.ai_requested
-                  ? importResult.ai_used
-                    ? '已启用'
-                    : '已回退'
-                  : '未开启'
-              }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="AI模型">{{ importResult.ai_model_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="生成接口">{{ importResult.created_count || 0 }}</a-descriptions-item>
-          <a-descriptions-item label="生成脚本">{{ importResult.generated_script_count || 0 }}</a-descriptions-item>
-          <a-descriptions-item label="生成测试用例">{{ importResult.created_testcase_count || 0 }}</a-descriptions-item>
-          <a-descriptions-item label="AI缓存">
-            <a-tag :color="importResult.ai_cache_hit ? 'green' : 'gray'">
-              {{ importResult.ai_cache_hit ? '命中缓存' : '未命中' }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="AI耗时">
-            {{ importResult.ai_duration_ms ? `${Math.round(importResult.ai_duration_ms)} ms` : '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="提示词来源">
-            {{ importResult.ai_prompt_name || importResult.ai_prompt_source || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="解析说明" :span="2">{{ importResult.note || '-' }}</a-descriptions-item>
-        </a-descriptions>
-
-        <a-tabs type="rounded">
-          <a-tab-pane key="scripts" title="接口脚本">
-            <a-empty v-if="!importResult.generated_scripts?.length" description="暂无生成脚本" />
-            <a-collapse v-else>
-              <a-collapse-item
-                v-for="item in importResult.generated_scripts"
-                :key="item.request_id"
-                :header="`${item.request_name}${item.collection_name ? ` · ${item.collection_name}` : ''}`"
-              >
-                <pre class="json-block">{{ stringifyBlock(item.script) }}</pre>
-              </a-collapse-item>
-            </a-collapse>
-          </a-tab-pane>
-          <a-tab-pane key="test-cases" title="测试用例">
-            <a-empty v-if="!importResult.test_cases?.length" description="本次未生成测试用例" />
-            <a-collapse v-else>
-              <a-collapse-item
-                v-for="item in importResult.test_cases"
-                :key="item.id"
-                :header="`${item.name}${item.request_name ? ` · ${item.request_name}` : ''}`"
-              >
-                <a-space wrap class="import-tags">
-                  <a-tag v-for="tag in item.tags || []" :key="tag" color="arcoblue">{{ tag }}</a-tag>
-                </a-space>
-                <pre class="json-block">{{ stringifyBlock(item.script) }}</pre>
-                <a-divider>断言规则</a-divider>
-                <pre class="json-block">{{ stringifyBlock(item.assertions) }}</pre>
-              </a-collapse-item>
-            </a-collapse>
-          </a-tab-pane>
-        </a-tabs>
-      </div>
-    </a-drawer>
+    <RequestImportResultDrawer
+      v-model:visible="importResultVisible"
+      :result="importResult"
+      :alert-title="importResultAlertTitle"
+      :alert-message="importResultAlertMessage"
+      :alert-action-hint="importResultAlertActionHint"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, h, onUnmounted, ref, watch } from 'vue'
-import { Message, Modal } from '@arco-design/web-vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { Message } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
+import RequestExecutionResultModal from '../components/RequestExecutionResultModal.vue'
+import RequestImportResultDrawer from '../components/RequestImportResultDrawer.vue'
 import StructuredHttpEditor from '../components/StructuredHttpEditor.vue'
 import { apiRequestApi, environmentApi, testCaseApi } from '../api'
 import { useApiImportDrafts } from '../state/importDraft'
 import { useApiCaseGenerationJobs } from '../state/caseGenerationJobs'
 import {
   bodyModeToLegacyBodyType,
-  createEmptyHttpEditorModel,
-  httpEditorModelToAssertionSpecs,
-  httpEditorModelToExtractorSpecs,
   httpEditorModelToRequestSpec,
-  requestFormToHttpEditorModel,
   requestSpecToLegacyBody,
   requestSpecToLegacyHeaders,
   requestSpecToLegacyParams,
   requestToHttpEditorModel,
 } from '../state/httpEditor'
 import { useApiImportJobs } from '../state/importJobs'
+import { useRequestCaseGeneration, type CaseGenerationMode } from '../state/useRequestCaseGeneration'
+import { useRequestEditor } from '../state/useRequestEditor'
+import { useRequestExecution } from '../state/useRequestExecution'
+import { useRequestImportFeedback } from '../state/useRequestImportFeedback'
+import { useRequestImportState } from '../state/useRequestImportState'
+import { useRequestListData } from '../state/useRequestListData'
 import type {
-  ApiCaseGenerationJob,
   ApiEnvironment,
-  ApiExecutionBatchResult,
-  ApiHttpEditorModel,
-  ApiExecutionRecord,
-  ApiImportAiCompatibility,
   ApiImportJob,
-  ApiImportResult,
   ApiRequest,
-  ApiRequestForm,
   ApiTestCase,
-  ApiTestCaseGenerationResult,
 } from '../types'
 
 const props = defineProps<{
@@ -593,7 +466,7 @@ const emit = defineEmits<{
 
 const projectStore = useProjectStore()
 const projectId = computed(() => projectStore.currentProject?.id)
-const projectName = computed(() => projectStore.currentProject?.name || '未选择项目')
+const projectName = computed(() => projectStore.currentProject?.name || '鏈€夋嫨椤圭洰')
 const {
   requestDrafts,
   draftSummary,
@@ -613,9 +486,9 @@ const methodColorMap: Record<string, string> = {
 }
 
 const statusLabelMap: Record<ApiTestCase['status'], string> = {
-  draft: '草稿',
-  ready: '就绪',
-  disabled: '停用',
+  draft: '鑽夌',
+  ready: '灏辩华',
+  disabled: '鍋滅敤',
 }
 
 const statusTagColorMap: Record<ApiTestCase['status'], string> = {
@@ -624,54 +497,10 @@ const statusTagColorMap: Record<ApiTestCase['status'], string> = {
   disabled: 'red',
 }
 
-const loading = ref(false)
 const environmentLoading = ref(false)
-const submitLoading = ref(false)
 const searchKeyword = ref('')
-const requests = ref<ApiRequest[]>([])
 const environments = ref<ApiEnvironment[]>([])
 const selectedEnvironmentId = ref<number | undefined>(undefined)
-const selectedRequestIds = ref<number[]>([])
-const expandedRequestKeys = ref<number[]>([])
-const requestTestCaseMap = ref<Record<number, ApiTestCase[]>>({})
-const requestTestCaseLoadingMap = ref<Record<number, boolean>>({})
-const requestDetailCache = ref<Record<number, ApiRequest>>({})
-const requestListCache = ref<Record<string, { items: ApiRequest[]; total: number; ts: number }>>({})
-const requestPagination = ref({
-  current: 1,
-  pageSize: 20,
-  total: 0,
-  showTotal: true,
-  showPageSize: true,
-  pageSizeOptions: [20, 50, 100, 200],
-})
-const REQUEST_LIST_CACHE_TTL_MS = 30_000
-const editorVisible = ref(false)
-const resultVisible = ref(false)
-const importResultVisible = ref(false)
-const editingRequest = ref<ApiRequest | null>(null)
-const currentResult = ref<ApiExecutionRecord | null>(null)
-const importResult = ref<ApiImportResult | null>(null)
-const importAiCompatibility = ref<ApiImportAiCompatibility | null>(null)
-const importAiCompatibilityLoading = ref(false)
-const documentFile = ref<File | null>(null)
-const documentInputRef = ref<HTMLInputElement | null>(null)
-const documentDragging = ref(false)
-const documentImportMode = ref<'file' | 'text'>('file')
-const documentText = ref('')
-const documentSourceName = ref('')
-const createMode = ref<'manual' | 'document'>('manual')
-const generateTestCases = ref(true)
-const enableAiParse = ref(true)
-const selectedRequestDraftIndex = ref(0)
-const importProgressActive = ref(false)
-const importProgressPercent = ref(0)
-const importProgressStage = ref(0)
-const importProgressStatus = ref<'idle' | 'uploading' | 'processing' | 'success' | 'error'>('idle')
-const importProgressMessage = ref('')
-const importProgressError = ref('')
-const importProgressFileName = ref('')
-
 const {
   activeImportJobs,
   syncProject: syncImportProject,
@@ -685,274 +514,93 @@ const {
   waitForCaseGenerationJob,
   applyCaseGenerationJob,
 } = useApiCaseGenerationJobs()
+const {
+  documentFile,
+  documentInputRef,
+  documentDragging,
+  documentImportMode,
+  documentText,
+  documentSourceName,
+  createMode,
+  generateTestCases,
+  enableAiParse,
+  selectedRequestDraftIndex,
+  importProgressActive,
+  importProgressPercent,
+  importProgressStage,
+  importProgressStatus,
+  importProgressMessage,
+  importProgressError,
+  importProgressFileName,
+  importProgressSteps,
+  documentFileSummary,
+  documentTextSummary,
+  importProgressRatio,
+  clearImportProgressTimer,
+  resetImportProgress,
+  startImportProgress,
+  handleImportUploadProgress,
+  completeImportProgress,
+  failImportProgress,
+  getImportStepClass,
+  triggerDocumentSelect,
+  handleDocumentImportModeChange,
+  handleDocumentChange,
+  clearDocumentFile,
+  buildInlineDocumentSourceName,
+  handleDocumentDrop,
+  resetImportDraft,
+} = useRequestImportState()
 
-const importProgressSteps = [
-  { title: '上传接口文档', description: '将 Word、PDF、Swagger 等接口文档上传到 FlyTest。' },
-  { title: '提取文档文本', description: '转换文档内容并抽取接口结构线索。' },
-  { title: '识别接口定义', description: '结合规则与 AI 解析请求方式、路径、参数和断言。' },
-  { title: '生成脚本与用例', description: '为识别出的接口批量生成可执行脚本和测试用例。' },
-  { title: '写入 FlyTest', description: '把接口、脚本和测试用例保存到当前集合。' },
-]
-
-let importProgressTimer: ReturnType<typeof window.setInterval> | null = null
-
-interface RequestEditorForm {
-  name: string
-  description: string
-  editor: ApiHttpEditorModel
+function getErrorMessage(error: any) {
+  const rawMessage = error?.error || error?.data?.error || error?.message || '处理接口失败'
+  const rawText = String(rawMessage)
+  if (rawText.includes('鏈繑鍥炲彲瑙ｆ瀽姝ｆ枃') || rawText.includes('LLM returned empty content')) {
+    return '当前激活的 AI 网关调用成功，但未返回可解析正文，请切换到能正常返回正文的模型或网关后再试。'
+  }
+  if (error?.status === 408 || /timeout/i.test(String(rawMessage))) {
+    return '接口文档解析超时，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
+  }
+  if (rawText.includes('服务端无响应')) {
+    return '接口文档解析等待时间过长，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
+  }
+  return rawMessage
 }
 
-const createInitialFormState = (): RequestEditorForm => ({
-  name: '',
-  description: '',
-  editor: createEmptyHttpEditorModel(),
+const {
+  loading,
+  requests,
+  selectedRequestIds,
+  expandedRequestKeys,
+  requestTestCaseMap,
+  requestTestCaseLoadingMap,
+  requestPagination,
+  clearRequestListCache,
+  resetRequestState,
+  loadRequests,
+  handleSearch,
+  handleSearchClear,
+  handlePageChange,
+  handlePageSizeChange,
+  ensureRequestDetail,
+  loadRequestTestCases,
+  handleRequestExpand,
+} = useRequestListData({
+  projectId,
+  selectedCollectionId: computed(() => props.selectedCollectionId),
+  searchKeyword,
+  getErrorMessage,
 })
 
-const formState = ref<RequestEditorForm>(createInitialFormState())
-
-const filteredRequests = computed(() => {
-  return requests.value
-})
+const filteredRequests = computed(() => requests.value)
 
 const requestCaseTotal = computed(() =>
   requests.value.reduce((sum, item) => sum + Number(item.test_case_count || 0), 0)
 )
 
-type CaseGenerationMode = 'generate' | 'append' | 'regenerate'
-type CaseGenerationPayload = {
-  scope: 'selected' | 'collection' | 'project'
-  ids?: number[]
-  collection_id?: number
-  project_id?: number
-  mode: CaseGenerationMode
-  count_per_request?: number
-  apply_changes?: boolean
-}
-
 const requestRowSelection = {
   type: 'checkbox' as const,
   showCheckedAll: true,
-}
-
-const documentFileSummary = computed(() => {
-  if (!documentFile.value) return ''
-  const size = documentFile.value.size
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(2)} MB`
-})
-
-const documentTextSummary = computed(() => {
-  const text = documentText.value.trim()
-  if (!text) return '未输入接口文档内容'
-  return `已输入 ${text.length} 个字符，将按正文切片后交给 AI 解析`
-})
-
-const importAiCompatibilityAlertType = computed(() => {
-  if (!importAiCompatibility.value) return 'info'
-  return importAiCompatibility.value.compatible ? 'success' : 'warning'
-})
-
-const importAiParseBlocked = computed(() => {
-  if (!importAiCompatibility.value) return false
-  return !importAiCompatibility.value.compatible
-})
-
-const loadImportAiCompatibility = async () => {
-  if (importAiCompatibilityLoading.value) return
-  importAiCompatibilityLoading.value = true
-  try {
-    const res = await apiRequestApi.getImportAiCompatibility()
-    importAiCompatibility.value = res.data?.data || null
-  } catch (error: any) {
-    console.error('[RequestList] 获取导入 AI 兼容性失败:', error)
-    importAiCompatibility.value = {
-      compatible: false,
-      issue_code: 'probe_failed',
-      level: 'warning',
-      title: '兼容性检测失败',
-      message: error?.error || '暂时无法确认当前 AI 配置是否兼容文档导入。',
-      action_hint: '请先修正当前 AI 配置，或稍后重试兼容性检测。',
-    }
-  } finally {
-    importAiCompatibilityLoading.value = false
-  }
-}
-
-const importResultAlertTitle = computed(() => {
-  if (!importResult.value) return ''
-  if (importResult.value.ai_requested) {
-    if (importResult.value.ai_used) return 'AI文档解析已生效'
-    if (importResult.value.ai_issue_code === 'gateway_incompatible_empty_content') {
-      return '当前 AI 网关未返回正文，无法执行文档 AI 解析'
-    }
-    return 'AI文档解析未成功完成'
-  }
-  return '本次未执行 AI 文档解析'
-})
-
-const importResultAlertMessage = computed(() => {
-  if (!importResult.value) return ''
-  return importResult.value.ai_user_message || importResult.value.ai_note || '本次导入未返回额外的 AI 解析说明。'
-})
-
-const importResultAlertActionHint = computed(() => {
-  if (!importResult.value) return ''
-  return importResult.value.ai_action_hint || ''
-})
-
-const importProgressRatio = computed(() => {
-  const clamped = Math.max(0, Math.min(importProgressPercent.value, 100))
-  return clamped / 100
-})
-
-const currentImportJob = computed(() => {
-  if (!projectId.value) return null
-  return activeImportJobs.value.find(job => job.project === projectId.value) || null
-})
-
-const canCancelImportJob = (job: ApiImportJob) => {
-  return (job.status === 'pending' || job.status === 'running') && !job.cancel_requested
-}
-
-const getImportStepClass = (index: number) => {
-  if (importProgressStatus.value === 'error') {
-    if (index < importProgressStage.value) return 'is-finished'
-    if (index === importProgressStage.value) return 'is-error'
-    return 'is-pending'
-  }
-  if (importProgressStatus.value === 'success') {
-    return 'is-finished'
-  }
-  if (index < importProgressStage.value) return 'is-finished'
-  if (index === importProgressStage.value) return 'is-active'
-  return 'is-pending'
-}
-
-const clearImportProgressTimer = () => {
-  if (importProgressTimer) {
-    window.clearInterval(importProgressTimer)
-    importProgressTimer = null
-  }
-}
-
-const resetImportProgress = () => {
-  clearImportProgressTimer()
-  importProgressActive.value = false
-  importProgressPercent.value = 0
-  importProgressStage.value = 0
-  importProgressStatus.value = 'idle'
-  importProgressMessage.value = ''
-  importProgressError.value = ''
-  importProgressFileName.value = ''
-}
-
-const syncProcessingStage = () => {
-  const milestones = [28, 50, 74, 90, 97]
-
-  if (importProgressPercent.value < milestones[1]) {
-    importProgressStage.value = 1
-    importProgressMessage.value = '文档上传完成，正在抽取正文与接口结构。'
-    return
-  }
-  if (importProgressPercent.value < milestones[2]) {
-    importProgressStage.value = 2
-    importProgressMessage.value = '正在识别接口名称、请求方式、路径、参数与断言。'
-    return
-  }
-  if (importProgressPercent.value < milestones[3]) {
-    importProgressStage.value = 3
-    importProgressMessage.value = '正在生成前端可执行的接口脚本和测试用例。'
-    return
-  }
-  importProgressStage.value = 4
-  importProgressMessage.value = '正在把解析结果写入当前接口集合。'
-}
-
-const startImportProgress = (fileName: string) => {
-  resetImportProgress()
-  importProgressActive.value = true
-  importProgressFileName.value = fileName
-  importProgressStatus.value = 'uploading'
-  importProgressStage.value = 0
-  importProgressPercent.value = 6
-  importProgressMessage.value = `正在上传 ${fileName}，并校验文档格式。`
-
-  clearImportProgressTimer()
-  importProgressTimer = window.setInterval(() => {
-    if (importProgressStatus.value === 'uploading') {
-      importProgressPercent.value = Math.min(importProgressPercent.value + 3, 24)
-      return
-    }
-    if (importProgressStatus.value !== 'processing') return
-
-    importProgressPercent.value = Math.min(importProgressPercent.value + 4, 97)
-    syncProcessingStage()
-  }, 700)
-}
-
-const handleImportUploadProgress = (event: { loaded?: number; total?: number }) => {
-  if (!importProgressActive.value) return
-
-  const total = event.total || 0
-  if (total > 0) {
-    const percent = Math.max(6, Math.min(28, Math.round((event.loaded || 0) / total * 28)))
-    importProgressPercent.value = Math.max(importProgressPercent.value, percent)
-  }
-
-  if (total > 0 && (event.loaded || 0) >= total) {
-    importProgressStatus.value = 'processing'
-    importProgressPercent.value = Math.max(importProgressPercent.value, 34)
-    syncProcessingStage()
-  }
-}
-
-const completeImportProgress = async (createdCount: number, testcaseCount: number) => {
-  clearImportProgressTimer()
-  importProgressActive.value = true
-  importProgressStatus.value = 'success'
-  importProgressStage.value = importProgressSteps.length - 1
-  importProgressPercent.value = 100
-  importProgressMessage.value = `解析完成，已生成 ${createdCount} 个接口和 ${testcaseCount} 个测试用例。`
-  await new Promise(resolve => window.setTimeout(resolve, 360))
-}
-
-const failImportProgress = (message: string) => {
-  clearImportProgressTimer()
-  importProgressActive.value = true
-  importProgressStatus.value = 'error'
-  importProgressError.value = message
-  importProgressPercent.value = Math.max(importProgressPercent.value, 20)
-  syncProcessingStage()
-}
-
-const handleCancelImportJob = async (job: ApiImportJob) => {
-  try {
-    await cancelImportJob(job.id)
-    importProgressActive.value = true
-    importProgressStatus.value = 'processing'
-    importProgressMessage.value = '已发送停止解析请求，正在等待后台终止任务。'
-    Message.success('已发送停止解析请求')
-  } catch (error) {
-    console.error('[RequestList] 停止解析失败:', error)
-    Message.error('停止解析失败')
-  }
-}
-
-const stringifyBlock = (value: any) => {
-  if (value === null || value === undefined) return '-'
-  if (typeof value === 'string') return value
-  return JSON.stringify(value, null, 2)
-}
-
-const formatDate = (value?: string) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString('zh-CN')
-}
-
-const formatDuration = (value?: number | null) => {
-  if (value === null || value === undefined) return '-'
-  return `${value.toFixed(2)} ms`
 }
 
 const loadEnvironments = async () => {
@@ -976,405 +624,72 @@ const loadEnvironments = async () => {
     environmentLoading.value = false
   }
 }
-
-const buildRequestListCacheKey = () =>
-  JSON.stringify({
-    project: projectId.value || null,
-    collection: props.selectedCollectionId || null,
-    search: searchKeyword.value.trim() || '',
-    page: requestPagination.value.current,
-    pageSize: requestPagination.value.pageSize,
-  })
-
-const clearRequestListCache = () => {
-  requestListCache.value = {}
-}
-
-const loadRequests = async (force = false) => {
-  if (!projectId.value || !props.selectedCollectionId) {
-    requests.value = []
-    selectedRequestIds.value = []
-    expandedRequestKeys.value = []
-    requestTestCaseMap.value = {}
-    return
-  }
-
-  const cacheKey = buildRequestListCacheKey()
-  const cached = requestListCache.value[cacheKey]
-  if (!force && cached && Date.now() - cached.ts < REQUEST_LIST_CACHE_TTL_MS) {
-    requests.value = cached.items.map(item => ({
-      ...item,
-      ...(requestDetailCache.value[item.id] || {}),
-    }))
-    requestPagination.value = {
-      ...requestPagination.value,
-      total: cached.total,
-    }
-    return
-  }
-
-  loading.value = true
-  try {
-    const res = await apiRequestApi.list({
-      project: projectId.value,
-      collection: props.selectedCollectionId,
-      search: searchKeyword.value.trim() || undefined,
-      page: requestPagination.value.current,
-      page_size: requestPagination.value.pageSize,
-    })
-    const data = res.data?.data || []
-    requests.value = (Array.isArray(data) ? data : []).map(item => ({
-      ...item,
-      ...(requestDetailCache.value[item.id] || {}),
-    }))
-    requestListCache.value = {
-      ...requestListCache.value,
-      [cacheKey]: {
-        items: requests.value,
-        total: Number(res.data?.total || 0),
-        ts: Date.now(),
-      },
-    }
-    requestPagination.value = {
-      ...requestPagination.value,
-      total: Number(res.data?.total || 0),
-    }
-    const availableIds = new Set(requests.value.map(item => item.id))
-    selectedRequestIds.value = selectedRequestIds.value.filter(id => availableIds.has(id))
-    expandedRequestKeys.value = expandedRequestKeys.value.filter(id => availableIds.has(id))
-  } catch (error) {
-    console.error('[RequestList] 获取接口失败:', error)
-    Message.error(getErrorMessage(error))
-    requests.value = []
-    selectedRequestIds.value = []
-    expandedRequestKeys.value = []
-    requestTestCaseMap.value = {}
-    requestPagination.value = {
-      ...requestPagination.value,
-      total: 0,
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleSearch = async () => {
-  requestPagination.value = {
-    ...requestPagination.value,
-    current: 1,
-  }
-  await loadRequests()
-}
-
-const handleSearchClear = async () => {
-  searchKeyword.value = ''
-  requestPagination.value = {
-    ...requestPagination.value,
-    current: 1,
-  }
-  await loadRequests()
-}
-
-const handlePageChange = async (page: number) => {
-  requestPagination.value = {
-    ...requestPagination.value,
-    current: page,
-  }
-  await loadRequests()
-}
-
-const handlePageSizeChange = async (pageSize: number) => {
-  requestPagination.value = {
-    ...requestPagination.value,
-    current: 1,
-    pageSize,
-  }
-  await loadRequests()
-}
-
-const cacheRequestDetail = (detail: ApiRequest) => {
-  requestDetailCache.value = {
-    ...requestDetailCache.value,
-    [detail.id]: detail,
-  }
-  requests.value = requests.value.map(item => (item.id === detail.id ? { ...item, ...detail } : item))
-  return detail
-}
-
-const ensureRequestDetail = async (record: ApiRequest) => {
-  const cached = requestDetailCache.value[record.id]
-  if (cached?.request_spec) return cached
-  if (record.request_spec) return cacheRequestDetail(record)
-  const res = await apiRequestApi.get(record.id)
-  const detail = res.data?.data
-  if (!detail) {
-    throw new Error('获取接口详情失败')
-  }
-  return cacheRequestDetail(detail)
-}
-
-const loadRequestTestCases = async (requestId: number, force = false) => {
-  if (!projectId.value) return
-  if (!force && requestTestCaseMap.value[requestId]) return
-
-  requestTestCaseLoadingMap.value = {
-    ...requestTestCaseLoadingMap.value,
-    [requestId]: true,
-  }
-  try {
-    const res = await testCaseApi.list({
-      project: projectId.value,
-      request: requestId,
-    })
-    const data = res.data?.data || []
-    requestTestCaseMap.value = {
-      ...requestTestCaseMap.value,
-      [requestId]: Array.isArray(data) ? data : [],
-    }
-  } catch (error) {
-    console.error('[RequestList] 获取接口下测试用例失败:', error)
-    Message.error('获取接口下测试用例失败')
-    requestTestCaseMap.value = {
-      ...requestTestCaseMap.value,
-      [requestId]: [],
-    }
-  } finally {
-    requestTestCaseLoadingMap.value = {
-      ...requestTestCaseLoadingMap.value,
-      [requestId]: false,
-    }
-  }
-}
-
-const handleRequestExpand = async (rowKey: string | number) => {
-  const requestId = Number(rowKey)
-  if (!Number.isFinite(requestId)) return
-  if (expandedRequestKeys.value.includes(requestId)) {
-    await loadRequestTestCases(requestId)
-  }
-}
-
-const unregisterImportFinishedHandler = registerFinishedHandler(async job => {
-  if (job.project !== projectId.value) return
-  if (job.status === 'canceled') {
-    clearImportProgressTimer()
-    importProgressActive.value = true
-    importProgressStatus.value = 'error'
-    importProgressError.value = job.error_message || job.progress_message || '文档解析已手动停止'
-    importProgressMessage.value = job.progress_message || '文档解析任务已取消'
-    return
-  }
-  const result = job.result_payload
-  if (!result) return
-
-  importResult.value = result
-  importResultVisible.value = true
-  saveDraftsFromImport(result, projectId.value || job.project, job.collection)
-  clearRequestListCache()
-  await loadRequests(true)
-  emit('updated')
+const {
+  importResult,
+  importResultVisible,
+  importAiCompatibility,
+  importAiCompatibilityLoading,
+  importAiCompatibilityAlertType,
+  importAiParseBlocked,
+  importResultAlertTitle,
+  importResultAlertMessage,
+  importResultAlertActionHint,
+  currentImportJob,
+  canCancelImportJob,
+  loadImportAiCompatibility,
+  handleCancelImportJob,
+  unregisterImportFinishedHandler,
+} = useRequestImportFeedback({
+  projectId,
+  activeImportJobs,
+  cancelImportJob,
+  registerFinishedHandler,
+  clearImportProgressTimer,
+  importProgressActive,
+  importProgressStatus,
+  importProgressMessage,
+  importProgressError,
+  saveDraftsFromImport,
+  clearRequestListCache,
+  loadRequests,
+  onUpdated: () => emit('updated'),
 })
 
-const resetEditor = () => {
-  editingRequest.value = null
-  documentFile.value = null
-  documentDragging.value = false
-  documentImportMode.value = 'file'
-  documentText.value = ''
-  documentSourceName.value = ''
-  createMode.value = 'manual'
-  generateTestCases.value = true
-  enableAiParse.value = true
-  selectedRequestDraftIndex.value = 0
-  resetImportProgress()
-  if (documentInputRef.value) {
-    documentInputRef.value.value = ''
-  }
-  formState.value = createInitialFormState()
-}
-
-const fillFormFromRequestDraft = (draftIndex = selectedRequestDraftIndex.value) => {
-  const draft = getRequestDraft(draftIndex)
-  if (!draft) return
-
-  selectedRequestDraftIndex.value = draftIndex
-  formState.value = {
-    name: draft.form.name,
-    description: draft.form.description || '',
-    editor: requestFormToHttpEditorModel(draft.form),
-  }
-}
-
-const openCreateModal = () => {
-  resetEditor()
-  if (hasRequestDrafts.value) {
-    fillFormFromRequestDraft(0)
-  }
-  editorVisible.value = true
-}
+const {
+  editorVisible,
+  submitLoading,
+  editingRequest,
+  formState,
+  resetEditor,
+  openCreateModal,
+  openEditModal: openEditModalBase,
+  applySelectedRequestDraft: applySelectedRequestDraftBase,
+  clearDraftsAndReset,
+  submitManualRequest,
+} = useRequestEditor({
+  selectedCollectionId: computed(() => props.selectedCollectionId),
+  ensureRequestDetail,
+  getRequestDraft,
+  hasRequestDrafts,
+  resetImportDraft,
+  resetImportProgress,
+  clearDrafts,
+  getErrorMessage,
+  setLoading: value => {
+    loading.value = value
+  },
+})
 
 const openEditModal = async (record: ApiRequest) => {
-  try {
-    loading.value = true
-    const detail = await ensureRequestDetail(record)
-    editingRequest.value = detail
-    createMode.value = 'manual'
-    formState.value = {
-      name: detail.name,
-      description: detail.description || '',
-      editor: requestToHttpEditorModel(detail),
-    }
-    editorVisible.value = true
-  } catch (error) {
-    console.error('[RequestList] 获取接口详情失败:', error)
-    Message.error(getErrorMessage(error))
-  } finally {
-    loading.value = false
-  }
+  await openEditModalBase(record, mode => {
+    createMode.value = mode
+  })
 }
 
 const applySelectedRequestDraft = (value?: string | number | boolean) => {
   const index = typeof value === 'number' ? value : selectedRequestDraftIndex.value
-  fillFormFromRequestDraft(index)
-}
-
-const clearDraftsAndReset = () => {
-  clearDrafts()
-  resetEditor()
-}
-
-const handleDocumentImportModeChange = (value?: string | number | boolean) => {
-  const nextMode = value === 'text' ? 'text' : 'file'
-  documentImportMode.value = nextMode
-  documentDragging.value = false
-  if (nextMode === 'text') {
-    clearDocumentFile()
-    enableAiParse.value = true
-    return
-  }
-  documentText.value = ''
-  documentSourceName.value = ''
-}
-
-const handleDocumentChange = (event: Event) => {
-  const input = event.target as HTMLInputElement
-  documentFile.value = input.files?.[0] || null
-  documentDragging.value = false
-}
-
-const triggerDocumentSelect = () => {
-  documentInputRef.value?.click()
-}
-
-const clearDocumentFile = () => {
-  documentFile.value = null
-  documentDragging.value = false
-  if (documentInputRef.value) {
-    documentInputRef.value.value = ''
-  }
-}
-
-const buildInlineDocumentSourceName = () => {
-  const raw = documentSourceName.value.trim()
-  if (!raw) return 'inline-api-document.md'
-  return raw
-}
-
-const handleDocumentDrop = (event: DragEvent) => {
-  event.preventDefault()
-  documentDragging.value = false
-  const file = event.dataTransfer?.files?.[0] || null
-  if (file) {
-    documentFile.value = file
-    if (documentInputRef.value) {
-      documentInputRef.value.value = ''
-    }
-  }
-}
-
-const viewRequest = async (record: ApiRequest) => {
-  try {
-    loading.value = true
-    const detail = await ensureRequestDetail(record)
-    const requestSpec = detail.request_spec || httpEditorModelToRequestSpec(requestToHttpEditorModel(detail))
-    currentResult.value = {
-      id: 0,
-      project: detail.project_id || projectId.value || 0,
-      request: detail.id,
-      environment: null,
-      request_name: detail.name,
-      method: detail.method,
-      url: detail.url,
-      status: 'success',
-      passed: false,
-      status_code: null,
-      response_time: null,
-      request_snapshot: {
-        headers: requestSpecToLegacyHeaders(requestSpec),
-        params: requestSpecToLegacyParams(requestSpec),
-        body_type: bodyModeToLegacyBodyType(requestSpec.body_mode),
-        body: requestSpecToLegacyBody(requestSpec),
-        assertions: detail.assertion_specs || detail.assertions,
-        request_spec: requestSpec,
-        assertion_specs: detail.assertion_specs || [],
-        extractor_specs: detail.extractor_specs || [],
-        generated_script: detail.generated_script,
-      },
-      response_snapshot: {},
-      assertions_results: [],
-      created_at: detail.updated_at,
-      executor: null,
-    }
-    resultVisible.value = true
-  } catch (error) {
-    console.error('[RequestList] 获取接口详情失败:', error)
-    Message.error(getErrorMessage(error))
-  } finally {
-    loading.value = false
-  }
-}
-
-const submitManualRequest = async () => {
-  const requestSpec = httpEditorModelToRequestSpec(formState.value.editor)
-  const payload: ApiRequestForm = {
-    collection: props.selectedCollectionId!,
-    name: formState.value.name.trim(),
-    description: formState.value.description.trim(),
-    method: requestSpec.method,
-    url: requestSpec.url.trim(),
-    headers: requestSpecToLegacyHeaders(requestSpec),
-    params: requestSpecToLegacyParams(requestSpec),
-    body_type: bodyModeToLegacyBodyType(requestSpec.body_mode),
-    body: requestSpecToLegacyBody(requestSpec),
-    assertions: [],
-    request_spec: requestSpec,
-    assertion_specs: httpEditorModelToAssertionSpecs(formState.value.editor),
-    extractor_specs: httpEditorModelToExtractorSpecs(formState.value.editor),
-    timeout_ms: requestSpec.timeout_ms,
-  }
-
-  if (editingRequest.value) {
-    await apiRequestApi.update(editingRequest.value.id, payload)
-    Message.success('接口更新成功')
-  } else {
-    await apiRequestApi.create(payload)
-    Message.success('接口创建成功')
-  }
-}
-
-const getErrorMessage = (error: any) => {
-  const rawMessage = error?.error || error?.data?.error || error?.message || '处理接口失败'
-  const rawText = String(rawMessage)
-  if (rawText.includes('未返回可解析正文') || rawText.includes('LLM returned empty content')) {
-    return '当前激活的 AI 网关调用成功但未返回正文，请切换到能正常返回正文的模型或网关后再试。'
-  }
-  if (error?.status === 408 || /timeout/i.test(String(rawMessage))) {
-    return '接口文档解析超时，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
-  }
-  if (rawText.includes('服务器无响应')) {
-    return '接口文档解析等待时间过长，请稍后重试；如果文档较大，建议缩小文档范围或切换更快的模型。'
-  }
-  return rawMessage
+  selectedRequestDraftIndex.value = index
+  applySelectedRequestDraftBase(index)
 }
 
 const _submitDocumentImportLegacy = async () => {
@@ -1405,13 +720,13 @@ const submitDocumentImport = async () => {
   const inlineText = documentText.value.trim()
 
   if (documentImportMode.value === 'file' && !documentFile.value) {
-    throw new Error('璇峰厛閫夋嫨鎺ュ彛鏂囨。')
+    throw new Error('请先选择接口文档')
   }
   if (documentImportMode.value === 'text' && !inlineText) {
     throw new Error('请先输入接口文档内容')
   }
   if (documentImportMode.value === 'text' && importAiParseBlocked.value) {
-    throw new Error(importAiCompatibility.value?.message || '当前 AI 配置暂不支持直接输入解析，请先切换可用模型')
+    throw new Error(importAiCompatibility.value?.message || '当前 AI 配置暂不支持直接输入解析，请先切换可用模型。')
   }
 
   const sourceName = documentImportMode.value === 'file' ? documentFile.value!.name : buildInlineDocumentSourceName()
@@ -1433,7 +748,7 @@ const submitDocumentImport = async () => {
     clearImportProgressTimer()
     resetImportProgress()
     trackImportJob(job)
-    Message.success('鎺ュ彛鏂囨。瑙ｆ瀽浠诲姟宸叉彁浜わ紝鍚庡彴浼氱户缁墽琛岋紝瀹屾垚鍚庝細鑷姩鎻愮ず浣犮€?')
+    Message.success('接口文档解析任务已提交，后台会继续执行，完成后会自动提示你。')
   } catch (error: any) {
     failImportProgress(getErrorMessage(error))
     throw error
@@ -1484,236 +799,67 @@ const deleteRequest = async (id: number) => {
   }
 }
 
-const showBatchExecutionMessage = (label: string, summary: ApiExecutionBatchResult) => {
-  const text = `${label}完成：共 ${summary.total_count} 条，成功 ${summary.success_count} 条，断言失败 ${summary.failed_count} 条，异常 ${summary.error_count} 条。`
-  if (summary.failed_count || summary.error_count) {
-    Message.warning(text)
-    return
-  }
-  Message.success(text)
-}
+const { generateCasesByScope } = useRequestCaseGeneration({
+  createCaseGenerationJob,
+  waitForCaseGenerationJob,
+  applyCaseGenerationJob,
+  clearRequestListCache,
+  loadRequests,
+  expandedRequestKeys,
+  loadRequestTestCases,
+  onUpdated: () => emit('updated'),
+})
 
-const executeRequestBatch = async (payload: {
-  scope: 'selected' | 'collection' | 'project'
-  ids?: number[]
-  collection_id?: number
-  project_id?: number
-  environment_id?: number
-}, label: string) => {
-  try {
-    const res = await apiRequestApi.executeBatch(payload)
-    const summary = res.data.data
-    showBatchExecutionMessage(label, summary)
-    emit('executed')
-  } catch (error: any) {
-    console.error('[RequestList] 批量执行接口失败:', error)
-    Message.error(error?.error || '批量执行接口失败')
-  }
-}
-
-const showCaseGenerationMessage = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
-  const modeLabelMap: Record<CaseGenerationMode, string> = {
-    generate: '生成',
-    append: '追加生成',
-    regenerate: '重新生成',
-  }
-  const cacheText = summary.ai_cache_hit_count ? ` 命中缓存 ${summary.ai_cache_hit_count} 个接口。` : ''
-  const text = `${modeLabelMap[mode]}完成：处理 ${summary.processed_requests}/${summary.total_requests} 个接口，新增 ${summary.created_testcase_count} 条测试用例。${cacheText}`
-  if (summary.skipped_requests) {
-    Message.warning(`${text} 跳过 ${summary.skipped_requests} 个已有用例的接口。`)
-    return
-  }
-  Message.success(text)
-}
-
-const formatCaseSummaryLine = (caseItem: NonNullable<ApiTestCaseGenerationResult['items'][number]['case_summaries']>[number]) => {
-  const detailParts = [
-    caseItem.assertion_types.length ? `断言: ${caseItem.assertion_types.join(', ')}` : '断言: -',
-    caseItem.extractor_variables.length ? `提取变量: ${caseItem.extractor_variables.join(', ')}` : '提取变量: -',
-    caseItem.override_sections.length ? `覆盖字段: ${caseItem.override_sections.join(', ')}` : '覆盖字段: 无额外覆盖',
-  ]
-  return [`  - ${caseItem.name}`, `    ${detailParts.join(' | ')}`]
-}
-
-const buildCaseSummaryLines = (summary: ApiTestCaseGenerationResult) => {
-  const lines: string[] = []
-  summary.items.forEach(item => {
-    if (item.skipped || !item.case_summaries?.length) return
-    const header = `${item.request_name} (${item.request_method} ${item.request_url})`
-    const metaParts = [
-      item.ai_used ? 'AI生成' : '模板回退',
-      item.ai_cache_hit ? '命中缓存' : null,
-      item.ai_duration_ms ? `耗时 ${Math.round(item.ai_duration_ms)} ms` : null,
-    ].filter(Boolean)
-    lines.push(header)
-    if (metaParts.length) lines.push(`  ${metaParts.join(' / ')}`)
-    item.case_summaries.forEach(caseItem => {
-      lines.push(...formatCaseSummaryLine(caseItem))
-    })
-  })
-  return lines
-}
-
-const buildRegeneratePreviewLines = (summary: ApiTestCaseGenerationResult) => {
-  const lines: string[] = []
-  summary.items.forEach(item => {
-    if (!item.preview_only) return
-    const replacement = item.replacement_summary
-    lines.push(`${item.request_name} (${item.request_method} ${item.request_url})`)
-    lines.push(
-      `  当前 ${replacement?.existing_count ?? item.existing_case_summaries?.length ?? 0} 条用例，候选 ${replacement?.proposed_count ?? item.proposed_case_summaries?.length ?? 0} 条用例`
-    )
-    if (replacement?.removed_case_names?.length) {
-      lines.push(`  将移除: ${replacement.removed_case_names.join(', ')}`)
+const {
+  currentResult,
+  resultVisible,
+  stringifyBlock,
+  formatDate,
+  formatDuration,
+  executeRequestBatch,
+  executeRequest,
+  viewRequest,
+} = useRequestExecution({
+  projectId,
+  selectedEnvironmentId,
+  ensureRequestDetail,
+  requestToSnapshot: detail => {
+    const requestSpec = detail.request_spec || httpEditorModelToRequestSpec(requestToHttpEditorModel(detail))
+    return {
+      id: 0,
+      project: detail.project_id || projectId.value || 0,
+      request: detail.id,
+      environment: null,
+      request_name: detail.name,
+      method: detail.method,
+      url: detail.url,
+      status: 'success',
+      passed: false,
+      status_code: null,
+      response_time: null,
+      request_snapshot: {
+        headers: requestSpecToLegacyHeaders(requestSpec),
+        params: requestSpecToLegacyParams(requestSpec),
+        body_type: bodyModeToLegacyBodyType(requestSpec.body_mode),
+        body: requestSpecToLegacyBody(requestSpec),
+        assertions: detail.assertion_specs || detail.assertions,
+        request_spec: requestSpec,
+        assertion_specs: detail.assertion_specs || [],
+        extractor_specs: detail.extractor_specs || [],
+        generated_script: detail.generated_script,
+      },
+      response_snapshot: {},
+      assertions_results: [],
+      created_at: detail.updated_at,
+      executor: null,
     }
-    if (replacement?.added_case_names?.length) {
-      lines.push(`  将新增: ${replacement.added_case_names.join(', ')}`)
-    }
-    if (replacement?.unchanged_case_names?.length) {
-      lines.push(`  同名替换: ${replacement.unchanged_case_names.join(', ')}`)
-    }
-    if (item.existing_case_summaries?.length) {
-      lines.push('  当前用例:')
-      item.existing_case_summaries.forEach(caseItem => {
-        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
-      })
-    }
-    if (item.proposed_case_summaries?.length) {
-      lines.push('  候选用例:')
-      item.proposed_case_summaries.forEach(caseItem => {
-        lines.push(...formatCaseSummaryLine(caseItem).map(line => `  ${line}`))
-      })
-    }
-  })
-  return lines
-}
-
-const showCaseGenerationInsight = (summary: ApiTestCaseGenerationResult, mode: CaseGenerationMode) => {
-  const lines = buildCaseSummaryLines(summary)
-  if (!lines.length) return
-  const titleMap: Record<CaseGenerationMode, string> = {
-    generate: 'AI生成结果',
-    append: 'AI追加结果',
-    regenerate: 'AI重生成结果',
-  }
-  Modal.info({
-    title: titleMap[mode],
-    okText: '知道了',
-    content: () => h('div', { style: 'white-space: pre-wrap; line-height: 1.75; font-size: 13px;' }, lines.join('\n')),
-  })
-}
-
-const confirmRegeneratePreview = (summary: ApiTestCaseGenerationResult) =>
-  new Promise<boolean>(resolve => {
-    const lines = buildRegeneratePreviewLines(summary)
-    let settled = false
-    const finish = (value: boolean) => {
-      if (settled) return
-      settled = true
-      resolve(value)
-    }
-    Modal.confirm({
-      title: 'AI重生成预览',
-      okText: '确认替换',
-      cancelText: '取消',
-      alignCenter: true,
-      width: 980,
-      maskClosable: false,
-      content: () =>
-        h(
-          'div',
-          {
-            style:
-              'white-space: pre-wrap; line-height: 1.75; font-size: 13px; max-height: 68vh; overflow-y: auto;',
-          },
-          lines.join('\n')
-        ),
-      onOk: () => finish(true),
-      onCancel: () => finish(false),
-    })
-  })
-
-const ensureCaseGenerationSummary = (job: ApiCaseGenerationJob) => {
-  if (job.result_payload) return job.result_payload
-  throw new Error(job.error_message || 'AI 用例生成任务未返回结果')
-}
-
-const runCaseGenerationJob = async (payload: CaseGenerationPayload) => {
-  const job = await createCaseGenerationJob({
-    scope: payload.scope,
-    ids: payload.ids,
-    collection_id: payload.collection_id,
-    project_id: payload.project_id,
-    mode: payload.mode,
-    count_per_request: payload.count_per_request,
-  })
-
-  let currentJob = await waitForCaseGenerationJob(job.id)
-  if (currentJob.status === 'preview_ready' && payload.mode === 'regenerate') {
-    const previewSummary = ensureCaseGenerationSummary(currentJob)
-    const confirmed = await confirmRegeneratePreview(previewSummary)
-    if (!confirmed) {
-      Message.info('已取消替换当前测试用例')
-      return null
-    }
-    await applyCaseGenerationJob(currentJob.id)
-    currentJob = await waitForCaseGenerationJob(currentJob.id)
-  }
-
-  if (currentJob.status === 'failed') {
-    throw new Error(currentJob.error_message || 'AI 用例生成失败')
-  }
-  if (currentJob.status === 'canceled') {
-    Message.info(currentJob.progress_message || 'AI 用例生成已取消')
-    return null
-  }
-  return ensureCaseGenerationSummary(currentJob)
-}
-
-const generateCasesByScope = async (
-  payload: CaseGenerationPayload,
-  targetRequestIds: number[] = []
-) => {
-  try {
-    const summary = await runCaseGenerationJob(payload)
-    if (!summary) return
-    showCaseGenerationMessage(summary, payload.mode)
-    showCaseGenerationInsight(summary, payload.mode)
-    clearRequestListCache()
-    await loadRequests(true)
-    const requestIdsToRefresh = targetRequestIds.length
-      ? targetRequestIds
-      : summary.items.map(item => item.request_id)
-    for (const requestId of requestIdsToRefresh) {
-      if (expandedRequestKeys.value.includes(requestId)) {
-        await loadRequestTestCases(requestId, true)
-      }
-    }
-    emit('updated')
-  } catch (error: any) {
-    console.error('[RequestList] AI 生成测试用例失败:', error)
-    Message.error(error?.error || 'AI 生成测试用例失败')
-  }
-}
-
-const executeRequest = async (record: ApiRequest) => {
-  try {
-    const res = await apiRequestApi.execute(record.id, selectedEnvironmentId.value)
-    currentResult.value = res.data.data
-    resultVisible.value = true
-    if (currentResult.value.passed) {
-      Message.success('接口执行通过')
-    } else if (currentResult.value.status === 'error') {
-      Message.error(currentResult.value.error_message || '接口执行失败，请检查环境变量或请求配置')
-    } else {
-      Message.warning('接口执行未通过，请检查断言或响应内容')
-    }
-    emit('executed')
-  } catch (error: any) {
-    console.error('[RequestList] 执行接口失败:', error)
-    Message.error(error?.error || '执行接口失败')
-  }
-}
+  },
+  getErrorMessage,
+  setLoading: value => {
+    loading.value = value
+  },
+  onExecuted: () => emit('executed'),
+})
 
 const generateCasesForRequest = async (record: ApiRequest, mode: CaseGenerationMode) => {
   await generateCasesByScope(
@@ -1819,15 +965,7 @@ watch(
   ([nextProjectId, nextCollectionId], [prevProjectId, prevCollectionId]) => {
     syncImportProject(nextProjectId)
     syncCaseGenerationProject(nextProjectId)
-    selectedRequestIds.value = []
-    expandedRequestKeys.value = []
-    requestTestCaseMap.value = {}
-    requestDetailCache.value = {}
-    requestPagination.value = {
-      ...requestPagination.value,
-      current: 1,
-      total: 0,
-    }
+    resetRequestState()
 
     if (nextProjectId !== prevProjectId) {
       loadEnvironments()
@@ -2826,3 +1964,5 @@ defineExpose({
   }
 }
 </style>
+
+

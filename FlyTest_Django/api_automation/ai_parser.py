@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
@@ -20,13 +20,17 @@ from flytest_django.claude_messages_model import ClaudeMessagesCompatibleChatMod
 from langgraph_integration.models import (
     LLMConfig,
     attach_llm_usage_context,
-    get_user_active_llm_config,
     record_llm_response_usage,
 )
 from prompts.models import PromptType, UserPrompt
 from prompts.services import get_default_prompts
 
-from .ai_runtime import build_ai_cache_key, run_ai_operation, stable_digest
+from .ai_runtime import (
+    build_ai_cache_key,
+    resolve_active_llm_config,
+    run_ai_operation,
+    stable_digest,
+)
 from .document_import import HTTP_METHODS, ParsedRequestData, load_document_content_for_ai
 
 logger = logging.getLogger(__name__)
@@ -43,10 +47,8 @@ DEFAULT_AI_PREPARSED_REQUESTS_MAX_CHARS = 3000
 DEFAULT_AI_TIMEOUT_SPLIT_MIN_CHARS = 2000
 DEFAULT_AI_TIMEOUT_SPLIT_MAX_DEPTH = 2
 DEFAULT_AI_ENHANCEMENT_CACHE_TTL_SECONDS = 1800
-DEFAULT_AI_NOTE = "AI 文档解析未成功完成。"
 DEFAULT_AI_REQUEST_TIMEOUT_SECONDS = 60
 DEFAULT_AI_NOTE = "AI 增强解析未生效，已回退到规则解析结果。"
-DEFAULT_AI_NOTE = "AI 文档解析未成功完成。"
 
 def _ensure_not_cancelled(cancel_callback):
     if cancel_callback and cancel_callback():
@@ -69,145 +71,7 @@ class AIEnhancementResult:
 
 
 def get_import_ai_compatibility_status(*, user) -> dict[str, Any]:
-    active_config = get_user_active_llm_config(user)
-    if not active_config:
-        return {
-            "compatible": False,
-            "issue_code": "llm_not_configured",
-            "level": "warning",
-            "title": "未检测到激活模型配置",
-            "message": "当前未检测到激活的大模型配置，API 文档导入将回退到规则解析。",
-            "action_hint": "请先到“系统设置 > AI大模型配置”中激活一套可用模型。",
-            "model_name": None,
-            "prompt_source": None,
-            "prompt_name": None,
-        }
-
-    prompt_template, prompt_source, prompt_name = get_api_automation_prompt(user)
-    if not prompt_template:
-        return {
-            "compatible": False,
-            "issue_code": "prompt_missing",
-            "level": "warning",
-            "title": "未找到解析提示词",
-            "message": "当前未找到 API 自动化解析提示词，文档导入将回退到规则解析。",
-            "action_hint": "请到“提示词管理”中检查 API 自动化解析提示词是否存在。",
-            "model_name": active_config.name,
-            "prompt_source": prompt_source,
-            "prompt_name": prompt_name,
-        }
-
-    cache_key = build_ai_cache_key(
-        "document_import_compatibility",
-        {
-            "config_id": active_config.id,
-            "config_updated_at": getattr(active_config, "updated_at", None).isoformat()
-            if getattr(active_config, "updated_at", None)
-            else None,
-            "model_name": active_config.name,
-            "api_url": active_config.api_url,
-            "prompt_digest": stable_digest(prompt_template),
-        },
-    )
-
-    def _compute_status() -> dict[str, Any]:
-        compatibility_error = _probe_openai_compatible_text_response(active_config)
-        if compatibility_error is not None:
-            return {
-                "compatible": False,
-                "issue_code": "gateway_incompatible_empty_content",
-                "level": "warning",
-                "title": "当前 AI 网关未返回正文",
-                "message": f"当前激活模型 {active_config.name} 调用成功但未返回可解析正文，API 文档导入会回退到规则解析。",
-                "action_hint": "请在“系统设置 > AI大模型配置”中切换到能正常返回正文的模型或网关。",
-                "model_name": active_config.name,
-                "prompt_source": prompt_source,
-                "prompt_name": prompt_name,
-            }
-
-        return {
-            "compatible": True,
-            "issue_code": "compatible",
-            "level": "success",
-            "title": "当前 AI 增强解析可用",
-            "message": f"当前激活模型 {active_config.name} 可用于 API 文档导入的 AI 增强解析。",
-            "action_hint": None,
-            "model_name": active_config.name,
-            "prompt_source": prompt_source,
-            "prompt_name": prompt_name,
-        }
-
-    status_payload, runtime_meta = run_ai_operation(
-        user=user,
-        feature="document_import_compatibility",
-        cache_key=cache_key,
-        cache_ttl_seconds=300,
-        lock_timeout_seconds=15,
-        lock_error_message="当前账号已有 API 导入兼容性检测任务正在进行，请稍后重试。",
-        compute=_compute_status,
-    )
-    status_payload["cache_hit"] = runtime_meta.cache_hit
-    status_payload["duration_ms"] = runtime_meta.duration_ms
-    return status_payload
-
-
-def create_llm_instance(active_config: LLMConfig, temperature: float = 0.1):
-    provider = (getattr(active_config, "provider", None) or "openai_compatible").strip()
-    wire_api = (getattr(active_config, "wire_api", None) or "chat_completions").strip().lower()
-    model_identifier = active_config.name or "gpt-3.5-turbo"
-    request_timeout = _get_ai_request_timeout_seconds(active_config)
-    configured_max_retries = getattr(active_config, "max_retries", None)
-    provider_retry_cap = configured_max_retries if configured_max_retries is not None else 5
-    max_retries = _read_int_env(
-        "API_AUTOMATION_AI_PROVIDER_MAX_RETRIES",
-        DEFAULT_AI_PROVIDER_MAX_RETRIES,
-        minimum=0,
-        maximum=max(0, provider_retry_cap),
-    )
-    base_url = (active_config.api_url or "").strip() or None
-    api_key = (active_config.api_key or "").strip()
-
-    if provider == "qwen":
-        from langchain_qwq import ChatQwen
-
-        llm_kwargs = {
-            "model": model_identifier,
-            "temperature": temperature,
-            "timeout": request_timeout,
-            "max_retries": max_retries,
-        }
-        if api_key:
-            llm_kwargs["api_key"] = api_key
-        if base_url:
-            llm_kwargs["base_url"] = base_url
-        return ChatQwen(**llm_kwargs)
-
-    if provider == "siliconflow" and not base_url:
-        base_url = "https://api.siliconflow.cn/v1"
-
-    if wire_api == "messages":
-        return ClaudeMessagesCompatibleChatModel(
-            model=model_identifier,
-            temperature=temperature,
-            api_key=api_key,
-            base_url=base_url or "",
-            timeout=request_timeout,
-            max_retries=max_retries,
-            wire_api=wire_api,
-        )
-
-    return ChatOpenAI(
-        model=model_identifier,
-        temperature=temperature,
-        api_key=api_key,
-        base_url=base_url,
-        timeout=request_timeout,
-        max_retries=max_retries,
-    )
-
-
-def get_import_ai_compatibility_status(*, user) -> dict[str, Any]:
-    active_config = get_user_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         return {
             "compatible": False,
@@ -458,8 +322,8 @@ def _is_rate_limit_error(exc: Exception) -> bool:
         "429" in text
         or "rate_limit" in text
         or "too many requests" in text
-        or "璇锋眰杩囧" in text
-        or "闄愭祦" in text
+        or "请求过多" in text
+        or "限流" in text
     )
 
 
@@ -467,11 +331,10 @@ def _is_concurrent_request_limit_error(exc: Exception) -> bool:
     text = _exception_text(exc).lower()
     return (
         "concurrent_request_limit_exceeded" in text
-        or "骞惰璇锋眰杩囧" in text
+        or "并行请求过多" in text
         or "concurrent request" in text
         or "parallel request" in text
     )
-
 
 def _is_timeout_error(exc: Exception) -> bool:
     text = _exception_text(exc).lower()
@@ -481,7 +344,7 @@ def _is_timeout_error(exc: Exception) -> bool:
         or "readtimeout" in text
         or "apitimeouterror" in text
         or "timeout" in text
-        or "超时" in text
+        or "瓒呮椂" in text
     )
 
 
@@ -510,8 +373,8 @@ def _is_rate_limit_error(exc: Exception) -> bool:
         or "system is too busy" in text
         or "service unavailable" in text
         or "50508" in text
-        or "鐠囬攱鐪版潻鍥ь樋" in text
-        or "闂勬劖绁" in text
+        or "閻犲洭鏀遍惇鐗堟交閸パ屾▼" in text
+        or "闂傚嫭鍔栫粊" in text
     )
 
 
@@ -705,7 +568,11 @@ def _build_ai_enhancement_cache_key(
 
 def _attach_runtime_meta(result: AIEnhancementResult, *, cache_hit: bool, cache_key: str | None, duration_ms: float, lock_wait_ms: float) -> AIEnhancementResult:
     note = str(result.note or "").strip()
-    meta_note = "本次命中 AI 解析缓存，未再次调用模型。" if cache_hit else f"AI 解析耗时约 {duration_ms:.0f} ms。"
+    meta_note = (
+        "本次命中 AI 解析缓存，未再次调用模型。"
+        if cache_hit
+        else f"AI 解析耗时约 {duration_ms:.0f} ms。"
+    )
     combined_note = f"{note} {meta_note}".strip() if note else meta_note
     return replace(
         result,
@@ -1286,7 +1153,7 @@ def _consolidate_requests_with_ai(
 
 def _sanitize_document_for_ai(document_content: str) -> str:
     sanitized = re.sub(
-        r"(?i)(authorization\s*[:：]\s*)([A-Za-z0-9+/=_-]{40,})",
+        r"(?i)(authorization\s*[:锛歖\s*)([A-Za-z0-9+/=_-]{40,})",
         r"\1<LONG_TOKEN>",
         document_content,
     )
@@ -1328,26 +1195,14 @@ def _compress_ai_section(section: str, *, max_chars: int = 420) -> str:
 
     keyword_lines: list[str] = []
     seen: set[str] = set()
-    """
     keywords = (
-        "鎺ュ彛鍦板潃",
-        "璇锋眰鏂瑰紡",
-        "璇锋眰澶?,
-        "鍙傛暟",
-        "绀轰緥",
-        "杩斿洖鍊?,
-        "澶囨敞",
-        "Authorization",
-    )
-    """
-    keywords = (
-        "\u63a5\u53e3\u5730\u5740",
-        "\u8bf7\u6c42\u65b9\u5f0f",
-        "\u8bf7\u6c42\u5934",
-        "\u53c2\u6570",
-        "\u793a\u4f8b",
-        "\u8fd4\u56de\u503c",
-        "\u5907\u6ce8",
+        "接口地址",
+        "请求方式",
+        "请求头",
+        "参数",
+        "示例",
+        "返回值",
+        "备注",
         "Authorization",
     )
     for index, line in enumerate(lines):
@@ -1666,7 +1521,7 @@ def enhance_import_result_with_ai(
     base_requests: list[ParsedRequestData],
     cancel_callback=None,
 ) -> AIEnhancementResult:
-    active_config = get_user_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         return AIEnhancementResult(
             requested=True,
@@ -1923,9 +1778,9 @@ def enhance_import_result_with_ai(
             cache_key=cache_key,
             cache_ttl_seconds=_get_ai_enhancement_cache_ttl(),
             lock_timeout_seconds=lock_timeout_seconds,
-            lock_error_message="当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。",
-            compute=_compute_enhancement_result,
-            should_cache=lambda item: bool(item.used and item.requests),
+        lock_error_message="当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。",
+        compute=_compute_enhancement_result,
+        should_cache=lambda item: bool(item.used and item.requests),
         )
         return _attach_runtime_meta(
             result,
@@ -1982,7 +1837,7 @@ def enhance_import_result_with_ai(
     base_requests: list[ParsedRequestData],
     cancel_callback=None,
 ) -> AIEnhancementResult:
-    active_config = get_user_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         return AIEnhancementResult(
             requested=True,
@@ -2295,7 +2150,7 @@ def enhance_import_result_with_ai(
             cache_key=cache_key,
             cache_ttl_seconds=_get_ai_enhancement_cache_ttl(),
             lock_timeout_seconds=lock_timeout_seconds,
-            lock_error_message="当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。",
+        lock_error_message="当前账号已有 API 文档 AI 解析任务正在进行，请稍后重试。",
             compute=_compute_enhancement_result,
             should_cache=lambda item: bool(item.used and item.requests),
         )

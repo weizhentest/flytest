@@ -1,6 +1,4 @@
-﻿// 闇€姹傜鐞嗙浉鍏崇殑TypeScript绫诲瀷瀹氫箟
-
-// 鍩虹鍝嶅簲绫诲瀷
+﻿
 export interface ApiResponse<T = any> {
   status: 'success' | 'error';
   code: number;
@@ -9,7 +7,6 @@ export interface ApiResponse<T = any> {
   errors?: Record<string, any> | null;
 }
 
-// 鍒嗛〉鍝嶅簲绫诲瀷
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;
@@ -17,35 +14,32 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
-// 鏂囨。鐘舵€佹灇涓?
 export type DocumentStatus =
-  | 'uploaded'           // 宸蹭笂浼?
-  | 'processing'         // 澶勭悊涓?
-  | 'module_split'       // 妯″潡鎷嗗垎涓?
-  | 'user_reviewing'     // 鐢ㄦ埛璋冩暣涓?
-  | 'ready_for_review'   // 寰呰瘎瀹?
-  | 'reviewing'          // 璇勫涓?
-  | 'review_completed'   // 璇勫瀹屾垚
-  | 'failed';            // 澶勭悊澶辫触
+  | 'uploaded'
+  | 'processing'
+  | 'module_split'
+  | 'user_reviewing'
+  | 'ready_for_review'
+  | 'reviewing'
+  | 'review_completed'
+  | 'failed';
 
-// 鏂囨。绫诲瀷鏋氫妇
 export type DocumentType = 'pdf' | 'doc' | 'docx' | 'txt' | 'md';
 
-// 闇€姹傛枃妗ｆ帴鍙?
 export interface RequirementDocument {
   id: string;
   title: string;
   description: string | null;
   document_type: DocumentType;
-  file?: string; // 鏂囦欢URL
+  file?: string;
   content?: string | null;
   status: DocumentStatus;
   version: string;
   is_latest: boolean;
   parent_document?: string | null;
-  uploader: number; // 鐢ㄦ埛ID
+  uploader: number;
   uploader_name: string;
-  project: string; // 椤圭洰ID锛屾牴鎹柊API鏂囨。鏇存柊涓哄瓧绗︿覆绫诲瀷
+  project: string;
   project_name: string;
   uploaded_at: string;
   updated_at: string;
@@ -56,17 +50,15 @@ export interface RequirementDocument {
   image_count: number;
 }
 
-// 鍒涘缓鏂囨。璇锋眰
 export interface CreateDocumentRequest {
   title: string;
   description?: string;
   document_type: DocumentType;
-  project: string; // 椤圭洰ID锛岃櫧鐒跺悗绔湡鏈涙暟瀛楋紝浣嗘垜浠湪鏈嶅姟灞傝浆鎹?
+  project: string;
   file?: File;
   content?: string;
 }
 
-// 鏂囨。妯″潡鎺ュ彛
 export interface DocumentModule {
   id: string;
   title: string;
@@ -85,10 +77,8 @@ export interface DocumentModule {
   issues_count?: number;
 }
 
-// 妯″潡鎿嶄綔绫诲瀷
 export type ModuleOperationType = 'merge' | 'split' | 'rename' | 'reorder' | 'delete' | 'create' | 'update' | 'adjust_boundary';
 
-// 妯″潡鎿嶄綔璇锋眰
 export interface ModuleOperationRequest {
   operation: ModuleOperationType;
   target_modules: string[];
@@ -104,22 +94,18 @@ export interface ModuleOperationRequest {
   };
 }
 
-// 鎵归噺妯″潡鎿嶄綔璇锋眰
 export interface BatchModuleOperationRequest {
   operations: ModuleOperationRequest[];
 }
 
-// 鎷嗗垎绾у埆绫诲瀷
 export type SplitLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'auto';
 
-// 妯″潡鎷嗗垎璇锋眰
 export interface SplitModulesRequest {
   split_level: SplitLevel;
   include_context?: boolean;
   chunk_size?: number;
 }
 
-// 妯″潡鎷嗗垎鍝嶅簲
 export interface SplitModulesResponse {
   split_options: SplitModulesRequest;
   modules: DocumentModule[];
@@ -128,10 +114,8 @@ export interface SplitModulesResponse {
   suggestions: string[];
 }
 
-// 涓婁笅鏂囨娴嬪缓璁被鍨?
 export type ContextSuggestion = 'OK' | 'SPLIT_RECOMMENDED' | 'SPLIT_REQUIRED';
 
-// 涓婁笅鏂囧垎鏋愮粨鏋?
 export interface ContextAnalysis {
   model_name: string;
   token_count: number;
@@ -146,7 +130,6 @@ export interface ContextAnalysis {
   optimal_chunk_size?: number;
 }
 
-// 鏂囨。淇℃伅
 export interface DocumentInfo {
   title: string;
   content_length: number;
@@ -154,14 +137,12 @@ export interface DocumentInfo {
   page_count: number;
 }
 
-// 涓婁笅鏂囨娴嬪搷搴?
 export interface ContextCheckResponse {
   document_info: DocumentInfo;
   context_analysis: ContextAnalysis;
   recommendations: string[];
 }
 
-// 鏂囨。缁撴瀯鍒嗘瀽
 export interface DocumentStructure {
   h1_titles: string[];
   h2_titles: string[];
@@ -171,7 +152,6 @@ export interface DocumentStructure {
   h6_titles: string[];
 }
 
-// 鎷嗗垎寤鸿
 export interface SplitRecommendation {
   level: SplitLevel;
   modules_count: number;
@@ -180,25 +160,21 @@ export interface SplitRecommendation {
   recommended?: boolean;
 }
 
-// 鏂囨。缁撴瀯鍒嗘瀽鍝嶅簲
 export interface DocumentStructureResponse {
   document_info: DocumentInfo;
   structure_analysis: DocumentStructure;
   split_recommendations: SplitRecommendation[];
 }
 
-// 璇勫绫诲瀷
 export type AnalysisType = 'comprehensive' | 'quick' | 'custom';
 
-// 寮€濮嬭瘎瀹¤姹?
 export interface StartReviewRequest {
   analysis_type: AnalysisType;
   parallel_processing?: boolean;
   priority_modules?: string[];
   custom_requirements?: string;
-  direct_review?: boolean; // 鏂板鐩存帴璇勫鍙傛暟
-  max_workers?: number; // 鏂板骞跺彂鏁板弬鏁?
-  // 鏂板鎻愮ず璇嶇浉鍏冲弬鏁?
+  direct_review?: boolean;
+  max_workers?: number;
   prompt_ids?: {
     completeness_analysis?: number;
     consistency_analysis?: number;
@@ -209,7 +185,6 @@ export interface StartReviewRequest {
   };
 }
 
-// 璇勫杩涘害
 export interface ReviewProgress {
   task_id: string;
   overall_progress: number;
@@ -218,7 +193,6 @@ export interface ReviewProgress {
   modules_progress: ModuleProgress[];
 }
 
-// 妯″潡杩涘害
 export interface ModuleProgress {
   module_name: string;
   status: string;
@@ -226,7 +200,6 @@ export interface ModuleProgress {
   issues_found: number;
 }
 
-// 璇勭骇绫诲瀷
 export type Rating =
   | 'excellent'
   | 'good'
@@ -235,15 +208,12 @@ export type Rating =
   | 'fair'
   | 'poor';
 
-// 闂绫诲瀷
 export type ReviewReportStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
 export type IssueType = 'specification' | 'clarity' | 'completeness' | 'consistency' | 'feasibility' | 'logic';
 
-// 闂浼樺厛绾?
 export type IssuePriority = 'high' | 'medium' | 'low';
 
-// 璇勫闂
 export interface ReviewIssue {
   id: string;
   issue_type: IssueType;
@@ -264,7 +234,6 @@ export interface ReviewIssue {
   updated_at: string;
 }
 
-// 妯″潡璇勫缁撴灉
 export interface ModuleReviewResult {
   id: string;
   module: string;
@@ -279,7 +248,6 @@ export interface ModuleReviewResult {
   recommendations?: string;
 }
 
-// 璇勫鎶ュ憡
 export interface SpecializedReviewIssue {
   id?: string;
   title?: string;
@@ -331,20 +299,17 @@ export interface ReviewReport {
   module_results: ModuleReviewResult[];
   scores?: ReviewScores;
   specialized_analyses?: Record<string, SpecializedAnalysis>;
-  // 杩涘害璺熻釜瀛楁
   progress?: number;
   current_step?: string;
   completed_steps?: string[];
 }
 
-// 鏂囨。璇︽儏锛堝寘鍚ā鍧楀拰璇勫鎶ュ憡锛?
 export interface DocumentDetail extends RequirementDocument {
   modules: DocumentModule[];
   review_reports: ReviewReport[];
   latest_review?: ReviewReport;
 }
 
-// 鏌ヨ鍙傛暟鎺ュ彛
 export interface DocumentListParams {
   project: string;
   status?: DocumentStatus;
@@ -372,13 +337,11 @@ export interface IssueListParams {
   page_size?: number;
 }
 
-// 鏇存柊闂璇锋眰
 export interface UpdateIssueRequest {
   is_resolved?: boolean;
   resolution_note?: string;
 }
 
-// 鐘舵€佹樉绀烘槧灏?
 export const DocumentStatusDisplay: Record<DocumentStatus, string> = {
   uploaded: '已上传',
   processing: '处理中',
@@ -421,4 +384,5 @@ export const IssuePriorityDisplay: Record<IssuePriority, string> = {
   medium: '中',
   low: '低'
 };
+
 

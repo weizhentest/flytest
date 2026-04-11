@@ -9,14 +9,17 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from langgraph_integration.models import (
-    LLMConfig,
-    get_user_active_llm_config as resolve_user_active_llm_config,
-)
+from langgraph_integration.models import LLMConfig
 from prompts.models import UserPrompt
 
 from .ai_parser import create_llm_instance, extract_json_from_response, safe_llm_invoke
-from .ai_runtime import build_ai_cache_key, run_ai_operation, stable_digest
+from .ai_runtime import (
+    build_ai_cache_key,
+    pretty_json_dumps,
+    resolve_active_llm_config,
+    run_ai_operation,
+    stable_digest,
+)
 from .models import ApiExecutionRecord
 from .specs import serialize_assertion_specs, serialize_request_spec, serialize_test_case_override
 
@@ -38,14 +41,6 @@ SUPPORTED_FAILURE_MODES = {
     "passed",
 }
 SUPPORTED_ACTION_PRIORITIES = {"high", "medium", "low"}
-
-
-def _resolve_active_llm_config(user):
-    active_config = resolve_user_active_llm_config(user)
-    if active_config and isinstance(getattr(active_config, "name", None), str):
-        return active_config
-    return LLMConfig.objects.filter(is_active=True).first()
-
 DEFAULT_FAILURE_ANALYSIS_PROMPT = """你是 FlyTest 的 API 自动化失败复盘专家。
 请基于给定的执行记录、断言结果、工作流信息和最近失败历史，输出结构化失败复盘建议。
 
@@ -536,7 +531,7 @@ def _analyze_execution_failure_uncached(*, record: ApiExecutionRecord, user) -> 
     if record.passed:
         return fallback_result
 
-    active_config = _resolve_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         return replace(
             fallback_result,
@@ -549,7 +544,7 @@ def _analyze_execution_failure_uncached(*, record: ApiExecutionRecord, user) -> 
     context_payload = _build_context_payload(record)
     formatted_prompt = _format_prompt(
         prompt_template,
-        context_json=json.dumps(context_payload, ensure_ascii=False, indent=2),
+        context_json=pretty_json_dumps(context_payload),
     )
 
     try:
@@ -610,7 +605,7 @@ def _analyze_execution_failure_uncached(*, record: ApiExecutionRecord, user) -> 
 
 
 def analyze_execution_failure(*, record: ApiExecutionRecord, user) -> ExecutionFailureAnalysisResult:
-    active_config = _resolve_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if record.passed or not active_config:
         return _analyze_execution_failure_uncached(record=record, user=user)
 

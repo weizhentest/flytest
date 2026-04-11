@@ -14,14 +14,16 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from knowledge.models import Document as KnowledgeDocument
 from knowledge.models import DocumentChunk
-from langgraph_integration.models import (
-    LLMConfig,
-    get_user_active_llm_config as resolve_user_active_llm_config,
-)
+from langgraph_integration.models import LLMConfig
 from prompts.models import UserPrompt
 from requirements.models import RequirementDocument, RequirementModule
 
-from .ai_runtime import build_ai_cache_key, run_ai_operation
+from .ai_runtime import (
+    build_ai_cache_key,
+    pretty_json_dumps,
+    resolve_active_llm_config,
+    run_ai_operation,
+)
 from .ai_parser import create_llm_instance, extract_json_from_response, safe_llm_invoke
 from .document_import import HTTP_METHODS
 from .generation import build_parameterized_test_case_script
@@ -79,13 +81,6 @@ SUPPORTED_EXTRACTORS = {
     "status_code",
     "response_time",
 }
-
-
-def _resolve_active_llm_config(user):
-    active_config = resolve_user_active_llm_config(user)
-    if active_config and isinstance(getattr(active_config, "name", None), str):
-        return active_config
-    return LLMConfig.objects.filter(is_active=True).first()
 SUPPORTED_AUTH_TYPES = {"none", "basic", "bearer", "api_key", "cookie", "bootstrap_request"}
 AUTH_TYPE_ALIASES = {
     "": "",
@@ -226,7 +221,7 @@ def _serialize_request(api_request: ApiRequest) -> str:
         "assertion_specs": serialize_assertion_specs(api_request),
         "extractor_specs": serialize_extractor_specs(api_request),
     }
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    return pretty_json_dumps(payload)
 
 
 def _serialize_generation_contract() -> str:
@@ -267,7 +262,7 @@ def _serialize_generation_contract() -> str:
             },
         },
     }
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    return pretty_json_dumps(payload)
 
 
 def _serialize_existing_cases(existing_cases: list[ApiTestCase]) -> str:
@@ -284,7 +279,7 @@ def _serialize_existing_cases(existing_cases: list[ApiTestCase]) -> str:
         }
         for case in existing_cases
     ]
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+    return pretty_json_dumps(payload)
 
 
 def _read_int_env(name: str, default: int, *, minimum: int = 0, maximum: int | None = None) -> int:
@@ -633,7 +628,7 @@ def _build_generation_history_context(api_request: ApiRequest) -> dict[str, Any]
 
 
 def _serialize_generation_history_context(api_request: ApiRequest) -> str:
-    return json.dumps(_build_generation_history_context(api_request), ensure_ascii=False, indent=2)
+    return pretty_json_dumps(_build_generation_history_context(api_request))
 
 
 def _compact_reference_text(value: Any) -> str:
@@ -1113,7 +1108,7 @@ def _build_generation_reference_context(api_request: ApiRequest) -> dict[str, An
 
 
 def _serialize_generation_reference_context(api_request: ApiRequest) -> str:
-    return json.dumps(_build_generation_reference_context(api_request), ensure_ascii=False, indent=2)
+    return pretty_json_dumps(_build_generation_reference_context(api_request))
 
 
 def _normalize_assertions(assertions: Any, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1876,7 +1871,7 @@ def _generate_test_case_drafts_with_ai_uncached(
     reference_context_json: str | None = None,
     historical_context_json: str | None = None,
 ) -> AITestCaseGenerationResult:
-    active_config = _resolve_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         fallback_cases = _build_fallback_cases(api_request, existing_cases, count=count)
         return AITestCaseGenerationResult(
@@ -2000,7 +1995,7 @@ def generate_test_case_drafts_with_ai(
     mode: str,
     count: int,
 ) -> AITestCaseGenerationResult:
-    active_config = _resolve_active_llm_config(user)
+    active_config = resolve_active_llm_config(user)
     if not active_config:
         return _ensure_case_summaries(
             api_request,

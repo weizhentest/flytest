@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { Notification } from '@arco-design/web-vue'
+
 import { caseGenerationJobApi } from '../api'
 import type { ApiCaseGenerationJob } from '../types'
 

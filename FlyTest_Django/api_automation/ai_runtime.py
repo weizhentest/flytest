@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
 from django.core.cache import cache
+from langgraph_integration.models import (
+    LLMConfig,
+    get_user_active_llm_config as resolve_user_active_llm_config,
+)
 
 T = TypeVar("T")
 
@@ -43,6 +47,16 @@ def stable_json_dumps(value: Any) -> str:
     )
 
 
+def pretty_json_dumps(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+        default=_stable_json_default,
+    )
+
+
 def stable_digest(*parts: Any) -> str:
     payload = stable_json_dumps(parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -50,6 +64,13 @@ def stable_digest(*parts: Any) -> str:
 
 def build_ai_cache_key(feature: str, *parts: Any) -> str:
     return f"api_automation:ai:{feature}:{stable_digest(feature, *parts)}"
+
+
+def resolve_active_llm_config(user):
+    active_config = resolve_user_active_llm_config(user)
+    if active_config and isinstance(getattr(active_config, "name", None), str):
+        return active_config
+    return LLMConfig.objects.filter(is_active=True).first()
 
 
 def _get_feature_lock(user, feature: str) -> threading.Lock:
