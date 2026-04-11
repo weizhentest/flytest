@@ -11,8 +11,11 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  real_name?: string;
+  phone_number?: string;
   is_staff: boolean;
   is_active: boolean;
+  groups?: string[];
   approval_status?: 'pending' | 'approved' | 'rejected';
   approval_status_display?: string;
   approval_review_note?: string;
@@ -27,6 +30,8 @@ export interface CreateUserRequest {
   password: string;
   first_name?: string;
   last_name?: string;
+  real_name?: string;
+  phone_number?: string;
   is_staff?: boolean;
   is_active?: boolean;
 }
@@ -38,6 +43,8 @@ export interface UpdateUserRequest {
   password?: string;
   first_name?: string;
   last_name?: string;
+  real_name?: string;
+  phone_number?: string;
   is_staff?: boolean;
   is_active?: boolean;
 }

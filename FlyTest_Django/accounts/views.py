@@ -604,9 +604,9 @@ class UserViewSet(viewsets.ModelViewSet):
     """
 
 
-    queryset = User.objects.all().select_related("approval_record").order_by("id")
+    queryset = User.objects.all().select_related("approval_record", "profile").order_by("id")
     filter_backends = [SearchFilter]
-    search_fields = ["username", "email", "first_name", "last_name"]
+    search_fields = ["username", "email", "first_name", "last_name", "profile__real_name", "profile__phone_number"]
     permission_classes = [IsAuthenticated, HasModelPermission]
 
     # 条件：访问用户列表与详情；动作：自动执行查看权限校验；结果：无查看权限的请求会被拒绝。

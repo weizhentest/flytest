@@ -353,6 +353,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
     email = serializers.EmailField(required=False)
     username = serializers.CharField(required=False)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    real_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
     groups = serializers.PrimaryKeyRelatedField(
         queryset=Group.objects.all(), many=True, required=False
     )
@@ -367,6 +369,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
+            "phone_number",
+            "real_name",
             "is_staff",
             "is_active",
             "password",
@@ -396,6 +400,13 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         # 条件：请求包含 groups；动作：整体替换用户组；结果：组关系与请求保持一致。
         if "groups" in validated_data:
             instance.groups.set(validated_data.pop("groups"))
+
+        profile = ensure_user_profile(instance)
+        if "phone_number" in validated_data:
+            profile.phone_number = validated_data.pop("phone_number")
+        if "real_name" in validated_data:
+            profile.real_name = validated_data.pop("real_name")
+        profile.save(update_fields=["phone_number", "real_name", "updated_at"])
 
         # 其余字段逐项赋值，避免遗漏可编辑基础资料字段。
         for attr, value in validated_data.items():

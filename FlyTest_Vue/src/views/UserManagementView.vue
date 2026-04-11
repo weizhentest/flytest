@@ -147,6 +147,19 @@
 
         <a-row :gutter="16">
           <a-col :span="12">
+            <a-form-item field="real_name" label="真实姓名">
+              <a-input v-model="addUserForm.real_name" placeholder="请输入真实姓名" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item field="phone_number" label="手机号">
+              <a-input v-model="addUserForm.phone_number" placeholder="请输入手机号" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row :gutter="16">
+          <a-col :span="12">
             <a-form-item field="is_staff" label=" ">
               <a-checkbox v-model="addUserForm.is_staff">管理员权限</a-checkbox>
             </a-form-item>
@@ -194,6 +207,19 @@
               <a-col :span="12">
                 <a-form-item field="last_name" label="姓">
                   <a-input v-model="editUserForm.last_name" placeholder="请输入姓" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item field="real_name" label="真实姓名">
+                  <a-input v-model="editUserForm.real_name" placeholder="请输入真实姓名" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item field="phone_number" label="手机号">
+                  <a-input v-model="editUserForm.phone_number" placeholder="请输入手机号" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -294,13 +320,27 @@ const columns = [
     align: 'center',
   },
   {
-    title: '姓名',
+    title: '真实姓名',
     dataIndex: 'name',
     align: 'center',
     render: ({ record }: { record: User }) => {
+      if (record.real_name) return record.real_name;
       const fullName = [record.first_name, record.last_name].filter(Boolean).join(' ');
       return fullName || '-';
     },
+  },
+  {
+    title: '手机号',
+    dataIndex: 'phone_number',
+    align: 'center',
+    render: ({ record }: { record: User }) => record.phone_number || '-',
+  },
+  {
+    title: '所属组织',
+    dataIndex: 'groups',
+    align: 'center',
+    render: ({ record }: { record: User }) =>
+      record.groups && record.groups.length ? record.groups.join('、') : '-',
   },
   {
     title: '管理员',
@@ -456,6 +496,8 @@ const addUserForm = reactive<CreateUserRequest & { confirmPassword: string }>({
   confirmPassword: '',
   first_name: '',
   last_name: '',
+  real_name: '',
+  phone_number: '',
   is_staff: false,
   is_active: true
 });
@@ -499,6 +541,8 @@ const showAddUserModal = () => {
     confirmPassword: '',
     first_name: '',
     last_name: '',
+    real_name: '',
+    phone_number: '',
     is_staff: false,
     is_active: true
   });
@@ -532,6 +576,8 @@ const handleAddUser = async (done: (closed: boolean) => void) => {
     password: addUserForm.password,
     first_name: addUserForm.first_name,
     last_name: addUserForm.last_name,
+    real_name: addUserForm.real_name,
+    phone_number: addUserForm.phone_number,
     is_staff: addUserForm.is_staff,
     is_active: addUserForm.is_active
   };
@@ -568,6 +614,8 @@ const editUserForm = reactive<UpdateUserRequest & { confirmPassword: string, id:
   confirmPassword: '',
   first_name: '',
   last_name: '',
+  real_name: '',
+  phone_number: '',
   is_staff: false,
   is_active: true
 });
@@ -609,6 +657,8 @@ const editUser = async (user: User) => {
     confirmPassword: '',
     first_name: user.first_name || '',
     last_name: user.last_name || '',
+    real_name: user.real_name || '',
+    phone_number: user.phone_number || '',
     is_staff: user.is_staff,
     is_active: user.is_active
   });
@@ -642,6 +692,8 @@ const handleEditUser = async (done: (closed: boolean) => void) => {
   if (editUserForm.email) updateData.email = editUserForm.email;
   if (editUserForm.first_name !== undefined) updateData.first_name = editUserForm.first_name;
   if (editUserForm.last_name !== undefined) updateData.last_name = editUserForm.last_name;
+  if (editUserForm.real_name !== undefined) updateData.real_name = editUserForm.real_name;
+  if (editUserForm.phone_number !== undefined) updateData.phone_number = editUserForm.phone_number;
   if (editUserForm.is_staff !== undefined) updateData.is_staff = editUserForm.is_staff;
   if (editUserForm.is_active !== undefined) updateData.is_active = editUserForm.is_active;
 

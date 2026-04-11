@@ -356,6 +356,32 @@ class CurrentUserProfileTests(TestCase):
         self.assertEqual(self.user.profile.phone_number, "13800000000")
         self.assertEqual(self.user.profile.real_name, "张三")
 
+    def test_updated_profile_is_visible_in_user_management_list(self):
+        admin = User.objects.create_user(
+            username="profile-admin",
+            email="profile-admin@example.com",
+            password="Admin123456",
+            is_staff=True,
+        )
+
+        self.client.put(
+            "/api/accounts/profile/",
+            {
+                "email": "updated-profile@example.com",
+                "phone_number": "13800000000",
+                "real_name": "张三",
+            },
+            format="json",
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get("/api/accounts/users/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        profile_row = next(item for item in response.data if item["username"] == "profile-user")
+        self.assertEqual(profile_row["real_name"], "张三")
+        self.assertEqual(profile_row["phone_number"], "13800000000")
+
     def test_can_change_current_user_password(self):
         response = self.client.post(
             "/api/accounts/change-password/",
