@@ -230,6 +230,15 @@ export const getUserPermissions = async (userId: number): Promise<PermissionList
       },
     });
 
+    if (Array.isArray(response.data)) {
+      return {
+        success: true,
+        data: response.data,
+        statusCode: response.status,
+        total: response.data.length,
+      };
+    }
+
     // 假设API返回的数据格式为 { status: 'success', code: 200, message: '数据获取成功', data: [...权限数组] }
     if (response.data && response.data.status === 'success' && Array.isArray(response.data.data)) {
       return {

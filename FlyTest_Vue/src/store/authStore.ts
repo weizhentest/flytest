@@ -24,9 +24,16 @@ interface User {
   email: string
   first_name: string
   last_name: string
+  phone_number?: string
+  real_name?: string
   is_staff: boolean
   is_active: boolean
   groups: any[]
+  approval_status?: 'pending' | 'approved' | 'rejected'
+  approval_status_display?: string
+  approval_review_note?: string
+  approval_reviewed_at?: string | null
+  approval_reviewed_by?: string | null
 }
 
 interface Permission {
@@ -135,6 +142,11 @@ export const useAuthStore = defineStore('auth', {
 
     updateRefreshToken(token: string | null) {
       this.refreshToken = token
+    },
+
+    setCurrentUser(user: User | null) {
+      this.user = user
+      this.persistUserState()
     },
 
     async bootstrapSession(force = false): Promise<boolean> {
@@ -275,6 +287,10 @@ export const useAuthStore = defineStore('auth', {
         return true
       }
 
+      if (this.user.approval_status !== 'approved') {
+        return false
+      }
+
       if (!this.userPermissions || this.userPermissions.length === 0) {
         return false
       }
@@ -319,6 +335,9 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isLoggedIn: (state: AuthState) => state.isAuthenticated,
     currentUser: (state: AuthState) => state.user,
+    isApproved: (state: AuthState) =>
+      Boolean(state.user && (state.user.is_staff || state.user.approval_status === 'approved')),
+    approvalStatus: (state: AuthState) => state.user?.approval_status || 'pending',
     getAccessToken: (state: AuthState) => state.accessToken,
     getRefreshToken: (state: AuthState) => state.refreshToken,
     getLoginError: (state: AuthState) => state.loginError,

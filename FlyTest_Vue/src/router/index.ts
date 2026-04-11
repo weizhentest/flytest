@@ -5,6 +5,7 @@ const MainLayout = () => import('../layouts/MainLayout.vue')
 const LoginView = () => import('../views/LoginView.vue')
 const RegisterView = () => import('../views/RegisterView.vue')
 const DashboardView = () => import('../views/DashboardView.vue')
+const PersonalCenterView = () => import('../views/PersonalCenterView.vue')
 const UserManagementView = () => import('../views/UserManagementView.vue')
 const OrganizationManagementView = () => import('../views/OrganizationManagementView.vue')
 const PermissionManagementView = () => import('../views/PermissionManagementView.vue')
@@ -32,6 +33,7 @@ const TraceDetailView = () => import('@/features/ui-automation/views/TraceDetail
 
 const privateRouteLoaders = [
   DashboardView,
+  PersonalCenterView,
   ProjectManagementView,
   RequirementManagementView,
   UserManagementView,
@@ -84,6 +86,11 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: DashboardView,
+      },
+      {
+        path: 'personal-center',
+        name: 'PersonalCenter',
+        component: PersonalCenterView,
       },
       {
         path: 'projects',
@@ -232,6 +239,11 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   if (isLoggedIn && publicRoutes.has(routeName)) {
+    next({ name: 'Dashboard' })
+    return
+  }
+
+  if (isLoggedIn && !authStore.isApproved && !['Dashboard', 'PersonalCenter'].includes(routeName)) {
     next({ name: 'Dashboard' })
     return
   }

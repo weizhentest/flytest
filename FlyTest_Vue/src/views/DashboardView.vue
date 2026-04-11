@@ -1,7 +1,14 @@
 <template>
   <div class="dashboard-view">
+    <div v-if="!isApproved" class="approval-pending-card">
+      <a-result
+        status="warning"
+        title="账号待管理员审核"
+        :subtitle="approvalSubtitle"
+      />
+    </div>
     <!-- 无项目选择提示 -->
-    <div v-if="!currentProjectId" class="no-project-selected">
+    <div v-else-if="!currentProjectId" class="no-project-selected">
       <a-empty description="请在顶部选择一个项目查看统计数据">
         <template #image>
           <icon-bar-chart style="font-size: 48px; color: #c2c7d0;" />
@@ -287,11 +294,13 @@ import {
 } from '@arco-design/web-vue/es/icon';
 import { getProjectStatistics, getTokenUsageStats, type ProjectStatistics, type TokenUsageStats } from '@/services/projectService';
 import { useProjectStore } from '@/store/projectStore';
+import { useAuthStore } from '@/store/authStore';
 import LlmTokenUsageDashboard from '@/features/langgraph/components/LlmTokenUsageDashboard.vue';
 import { fetchTokenUsageStats } from '@/features/langgraph/services/llmConfigService';
 import type { TokenUsageStats as LlmTokenUsageStats } from '@/features/langgraph/types/llmConfig';
 
 const projectStore = useProjectStore();
+const authStore = useAuthStore();
 const loading = ref(false);
 const statistics = ref<ProjectStatistics | null>(null);
 const tokenStats = ref<TokenUsageStats | null>(null);
@@ -309,6 +318,14 @@ const periodOptions = [
 ];
 
 const currentProjectId = computed(() => projectStore.currentProjectId);
+const currentUser = computed(() => authStore.currentUser);
+const isApproved = computed(() => authStore.isApproved);
+const approvalSubtitle = computed(() => {
+  if (currentUser.value?.approval_status === 'rejected') {
+    return currentUser.value.approval_review_note || '当前账号已被驳回，请联系管理员处理。';
+  }
+  return '新注册用户默认没有任何后台权限，请等待管理员审核并分配权限后再使用后台功能。';
+});
 
 const formatDashboardDate = (date: Date): string => {
   const pad = (num: number) => String(num).padStart(2, '0');
@@ -438,6 +455,7 @@ const handleUsageDateRangeChange = (payload: { startDate: string; endDate: strin
 
 const fetchStatistics = async () => {
   if (!currentProjectId.value) return;
+  if (!isApproved.value) return;
 
   loading.value = true;
   try {
@@ -459,7 +477,9 @@ const fetchStatistics = async () => {
 };
 
 watch(currentProjectId, () => {
-  if (currentProjectId.value) {
+  if (!isApproved.value) {
+    statistics.value = null;
+  } else if (currentProjectId.value) {
     fetchStatistics();
   } else {
     statistics.value = null;
@@ -467,9 +487,11 @@ watch(currentProjectId, () => {
 });
 
 onMounted(() => {
-  fetchTokenStats();
-  fetchTokenUsage();
-  if (currentProjectId.value) {
+  if (isApproved.value) {
+    fetchTokenStats();
+    fetchTokenUsage();
+  }
+  if (isApproved.value && currentProjectId.value) {
     fetchStatistics();
   }
 });
@@ -495,6 +517,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.approval-pending-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 24px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 249, 253, 0.82));
+  border: 1px solid var(--theme-card-border);
+  box-shadow: var(--theme-card-shadow-strong);
 }
 
 .dashboard-spin {

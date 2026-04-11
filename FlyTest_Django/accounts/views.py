@@ -20,6 +20,8 @@ from rest_framework_simplejwt.views import (
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from .throttles import LoginRateThrottle, RegisterRateThrottle
 from .serializers import (
+    ChangePasswordSerializer,
+    CurrentUserProfileSerializer,
     UserSerializer,
     UserDetailSerializer,
     UserUpdateSerializer,
@@ -34,6 +36,14 @@ from .serializers import (
     UpdateUserPermissionsSerializer,
     UpdateGroupPermissionsSerializer,
     MyTokenObtainPairSerializer,
+    UserApprovalReviewSerializer,
+)
+from .models import (
+    UserApproval,
+    ensure_user_approval_record,
+    ensure_user_profile,
+    get_user_approval_status,
+    is_user_approved,
 )
 
 
@@ -46,6 +56,11 @@ class UserCreateAPIView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
     throttle_classes = [RegisterRateThrottle]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["registration_mode"] = True
+        return context
 
     def create(self, request, *args, **kwargs):
         # 直接复用通用创建流程，保持注册接口与统一序列化逻辑一致。
@@ -65,6 +80,56 @@ class CurrentUserAPIView(APIView):
         # 认证通过后直接返回当前用户详情，避免客户端再额外请求用户编号。
         serializer = UserDetailSerializer(request.user)
         return Response(serializer.data)
+
+
+class CurrentUserProfileAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_user_profile(request.user)
+        serializer = UserDetailSerializer(request.user)
+        return Response(
+            {
+                "status": "success",
+                "message": "获取个人中心信息成功",
+                "data": serializer.data,
+            }
+        )
+
+    def put(self, request):
+        serializer = CurrentUserProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        response_serializer = UserDetailSerializer(request.user)
+        return Response(
+            {
+                "status": "success",
+                "message": "个人资料更新成功",
+                "data": response_serializer.data,
+            }
+        )
+
+
+class ChangeCurrentUserPasswordAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        return Response(
+            {
+                "status": "success",
+                "message": "密码修改成功，请重新登录。",
+                "data": None,
+            }
+        )
 
 
 class GroupViewSet(viewsets.ModelViewSet):
@@ -539,7 +604,7 @@ class UserViewSet(viewsets.ModelViewSet):
     """
 
 
-    queryset = User.objects.all().order_by("id")
+    queryset = User.objects.all().select_related("approval_record").order_by("id")
     filter_backends = [SearchFilter]
     search_fields = ["username", "email", "first_name", "last_name"]
     permission_classes = [IsAuthenticated, HasModelPermission]
@@ -548,6 +613,22 @@ class UserViewSet(viewsets.ModelViewSet):
     # 条件：创建用户；动作：自动执行新增权限校验；结果：防止未授权创建。
     # 条件：更新用户；动作：自动执行变更权限校验；结果：防止未授权修改。
     # 条件：删除用户；动作：自动执行删除权限校验；结果：防止未授权删除。
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        approval_status = self.request.query_params.get("approval_status")
+        if approval_status == UserApproval.STATUS_PENDING:
+            return queryset.filter(approval_record__status=UserApproval.STATUS_PENDING)
+        if approval_status == UserApproval.STATUS_REJECTED:
+            return queryset.filter(approval_record__status=UserApproval.STATUS_REJECTED)
+        if approval_status == UserApproval.STATUS_APPROVED:
+            return queryset.filter(
+                Q(is_superuser=True)
+                | Q(is_staff=True)
+                | Q(approval_record__status=UserApproval.STATUS_APPROVED)
+                | Q(approval_record__isnull=True)
+            ).distinct()
+        return queryset
 
     def get_serializer_class(self):
         # 条件：创建用户；动作：使用写入型序列化器；结果：强制校验密码等创建字段。
@@ -627,6 +708,15 @@ class UserViewSet(viewsets.ModelViewSet):
         获取用户的全部权限（含直接权限与用户组继承权限）。
         """
         user = self.get_object()
+        if not is_user_approved(user):
+            empty_permissions = Permission.objects.none()
+            page = self.paginate_queryset(empty_permissions)
+            if page is not None:
+                serializer = PermissionSerializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+            serializer = PermissionSerializer(empty_permissions, many=True)
+            return Response(serializer.data)
+
         permission_strings = (
             user.get_all_permissions()
         )  # 返回“应用名.权限代号”格式的权限字符串集合
@@ -664,6 +754,103 @@ class UserViewSet(viewsets.ModelViewSet):
 
         serializer = PermissionSerializer(all_perms_qs, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="approval-summary")
+    @permission_required("auth.view_user")
+    def approval_summary(self, request):
+        base_queryset = User.objects.all()
+        summary = {
+            "all": base_queryset.count(),
+            "pending": base_queryset.filter(
+                approval_record__status=UserApproval.STATUS_PENDING
+            ).count(),
+            "rejected": base_queryset.filter(
+                approval_record__status=UserApproval.STATUS_REJECTED
+            ).count(),
+            "approved": base_queryset.filter(
+                Q(is_superuser=True)
+                | Q(is_staff=True)
+                | Q(approval_record__status=UserApproval.STATUS_APPROVED)
+                | Q(approval_record__isnull=True)
+            )
+            .distinct()
+            .count(),
+        }
+        return Response(
+            {
+                "status": "success",
+                "message": "获取审核统计成功",
+                "data": summary,
+            }
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="approve",
+        serializer_class=UserApprovalReviewSerializer,
+    )
+    @permission_required("auth.change_user")
+    def approve(self, request, pk=None):
+        user = self.get_object()
+        serializer = UserApprovalReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        approval = ensure_user_approval_record(
+            user,
+            status=UserApproval.STATUS_APPROVED,
+            reviewed_by=request.user,
+            review_note=serializer.validated_data.get("review_note", ""),
+        )
+
+        response_serializer = UserDetailSerializer(user, context={"request": request})
+        return Response(
+            {
+                "status": "success",
+                "message": f"已审核通过用户 {user.username}",
+                "data": {
+                    **response_serializer.data,
+                    "approval_status": approval.status,
+                    "approval_status_display": approval.get_status_display(),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="reject",
+        serializer_class=UserApprovalReviewSerializer,
+    )
+    @permission_required("auth.change_user")
+    def reject(self, request, pk=None):
+        user = self.get_object()
+        serializer = UserApprovalReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user.user_permissions.clear()
+        user.groups.clear()
+        approval = ensure_user_approval_record(
+            user,
+            status=UserApproval.STATUS_REJECTED,
+            reviewed_by=request.user,
+            review_note=serializer.validated_data.get("review_note", ""),
+        )
+
+        response_serializer = UserDetailSerializer(user, context={"request": request})
+        return Response(
+            {
+                "status": "success",
+                "message": f"已驳回用户 {user.username}",
+                "data": {
+                    **response_serializer.data,
+                    "approval_status": approval.status,
+                    "approval_status_display": approval.get_status_display(),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(
         detail=True,

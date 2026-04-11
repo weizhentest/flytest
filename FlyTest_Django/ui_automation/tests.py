@@ -316,7 +316,7 @@ class UiAutomationApiTests(APITestCase):
         self.assertEqual(payload["status"], "running")
         self.assertFalse(payload["enable_gif"])
         mocked_start_ai_execution.assert_called_once()
-        mocked_validate_ai_execution_request.assert_called_once_with(self.project.id, "vision")
+        mocked_validate_ai_execution_request.assert_called_once_with(self.project.id, "vision", user=self.user)
         self.assertEqual(UiAIExecutionRecord.objects.count(), 1)
 
     @patch("ui_automation.views._validate_ai_execution_request", return_value=None)
@@ -342,7 +342,7 @@ class UiAutomationApiTests(APITestCase):
         payload = response.json()["data"]
         self.assertFalse(payload["enable_gif"])
         mocked_start_ai_execution.assert_called_once()
-        mocked_validate_ai_execution_request.assert_called_once_with(self.project.id, "text")
+        mocked_validate_ai_execution_request.assert_called_once_with(self.project.id, "text", user=self.user)
 
     @patch("ui_automation.views.get_ai_runtime_capabilities")
     def test_run_ai_case_rejects_vision_mode_when_model_lacks_vision_support(self, mocked_capabilities):
@@ -431,6 +431,7 @@ class UiAutomationApiTests(APITestCase):
             creator=self.user,
         )
         LLMConfig.objects.create(
+            owner=self.user,
             config_name="Vision Model",
             provider="openai_compatible",
             name="gpt-4.1",
@@ -453,6 +454,39 @@ class UiAutomationApiTests(APITestCase):
         self.assertEqual(payload["model_config_name"], "Vision Model")
         self.assertEqual(payload["default_environment"]["name"], "Default env")
         self.assertEqual(payload["default_environment"]["base_url"], "https://example.com")
+
+    @patch("ui_automation.ai_mode_runtime.importlib.util.find_spec")
+    @patch("ui_automation.ai_mode_runtime._find_browser_executable")
+    def test_ai_runtime_capabilities_auto_creates_default_environment_when_missing(
+        self,
+        mocked_find_browser_executable,
+        mocked_find_spec,
+    ):
+        mocked_find_browser_executable.return_value = r"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        mocked_find_spec.side_effect = lambda module_name: object() if module_name in {"browser_use", "playwright"} else None
+
+        LLMConfig.objects.create(
+            owner=self.user,
+            config_name="Text Model",
+            provider="siliconflow",
+            name="Pro/zai-org/GLM-5.1",
+            api_url="https://api.siliconflow.cn/v1",
+            api_key="secret-key",
+            supports_vision=False,
+            is_active=True,
+        )
+
+        response = self.client.get(
+            f"/api/ui-automation/ai-execution-records/capabilities/?project={self.project.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertTrue(payload["llm_configured"])
+        self.assertTrue(payload["text_mode_ready"])
+        self.assertIsNotNone(payload["default_environment"])
+        self.assertEqual(payload["default_environment"]["name"], "默认环境")
+        self.assertEqual(payload["default_environment"]["base_url"], "http://localhost:5173")
 
     def test_ai_cases_batch_delete_clears_related_execution_records(self):
         case_one = UiAICase.objects.create(

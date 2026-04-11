@@ -9,6 +9,8 @@ interface UserInfo {
   email: string;
   first_name: string;
   last_name: string;
+  phone_number?: string;
+  real_name?: string;
   is_staff: boolean;
   is_active: boolean;
   groups: any[];

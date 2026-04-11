@@ -209,7 +209,7 @@ const handleSubmit = async () => {
   try {
     const success = await authStore.register(formState.username, formState.email, formState.password);
     if (success) {
-      Message.success('注册成功！请登录。');
+      Message.success('注册成功，请等待管理员审核后再登录。');
       router.push('/login');
     }
   } catch (e) {

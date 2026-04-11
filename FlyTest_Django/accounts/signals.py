@@ -6,12 +6,34 @@ from django.dispatch import receiver
 
 # 导入内置用户与权限模型。
 from django.contrib.auth.models import User, Permission
+from accounts.models import (
+    UserApproval,
+    ensure_user_approval_record,
+    ensure_user_profile,
+)
 
 # 导入日志模块用于记录自动权限和提示词初始化结果。
 import logging
 
 # 初始化模块级日志记录器。
 logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=User)
+def ensure_user_approval_status(sender, instance, created, **kwargs):
+    """
+    确保用户始终存在审批记录，已有管理员默认视为已通过。
+    """
+    if created:
+        ensure_user_profile(instance)
+
+    if instance.is_superuser or instance.is_staff:
+        ensure_user_approval_record(instance, status=UserApproval.STATUS_APPROVED)
+        return
+
+    if created:
+        ensure_user_approval_record(instance, status=UserApproval.STATUS_PENDING)
+        ensure_user_profile(instance)
 
 
 @receiver(pre_save, sender=User)

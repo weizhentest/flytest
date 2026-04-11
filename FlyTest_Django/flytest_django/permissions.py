@@ -1,5 +1,6 @@
 import logging
 from rest_framework import permissions
+from accounts.models import is_user_approved
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ class HasModelPermission(permissions.BasePermission):
         # 超级用户拥有所有权限
         if request.user.is_superuser:
             return True
+
+        if not request.user.is_staff and not is_user_approved(request.user):
+            logger.debug("用户 %s 尚未通过审核，拒绝访问", request.user.username)
+            return False
 
         # 如果提供了特定权限，则检查该权限
         if self.perm:
@@ -74,6 +79,10 @@ class HasModelPermission(permissions.BasePermission):
         # 超级用户拥有所有权限
         if request.user.is_superuser:
             return True
+
+        if not request.user.is_staff and not is_user_approved(request.user):
+            logger.debug("用户 %s 尚未通过审核，拒绝对象访问", request.user.username)
+            return False
 
         # 如果提供了特定权限，则检查该权限（仅模型级别）
         if self.perm:

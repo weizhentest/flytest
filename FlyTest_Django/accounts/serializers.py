@@ -5,6 +5,14 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework_simplejwt.serializers import (
     TokenObtainPairSerializer as BaseTokenObtainPairSerializer,
 )
+from .models import (
+    UserApproval,
+    ensure_user_approval_record,
+    ensure_user_profile,
+    get_user_approval_record,
+    get_user_approval_status,
+    get_user_profile,
+)
 
 # 权限名称翻译映射
 # 您可以根据实际的权限名称进行扩展
@@ -214,8 +222,49 @@ PERMISSION_NAME_TRANSLATIONS = {
 }
 
 
+class UserApprovalMixin(serializers.Serializer):
+    approval_status = serializers.SerializerMethodField()
+    approval_status_display = serializers.SerializerMethodField()
+    approval_review_note = serializers.SerializerMethodField()
+    approval_reviewed_at = serializers.SerializerMethodField()
+    approval_reviewed_by = serializers.SerializerMethodField()
 
-class UserSerializer(serializers.ModelSerializer):
+    def get_approval_status(self, obj):
+        return get_user_approval_status(obj)
+
+    def get_approval_status_display(self, obj):
+        status = get_user_approval_status(obj)
+        return dict(UserApproval.STATUS_CHOICES).get(status, status)
+
+    def get_approval_review_note(self, obj):
+        approval = get_user_approval_record(obj)
+        return approval.review_note if approval else ""
+
+    def get_approval_reviewed_at(self, obj):
+        approval = get_user_approval_record(obj)
+        return approval.reviewed_at if approval else None
+
+    def get_approval_reviewed_by(self, obj):
+        approval = get_user_approval_record(obj)
+        if approval and approval.reviewed_by:
+            return approval.reviewed_by.username
+        return None
+
+
+class UserProfileMixin(serializers.Serializer):
+    phone_number = serializers.SerializerMethodField()
+    real_name = serializers.SerializerMethodField()
+
+    def get_phone_number(self, obj):
+        profile = get_user_profile(obj)
+        return profile.phone_number if profile else ""
+
+    def get_real_name(self, obj):
+        profile = get_user_profile(obj)
+        return profile.real_name if profile else ""
+
+
+class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True, required=True, style={"input_type": "password"}
     )
@@ -228,25 +277,46 @@ class UserSerializer(serializers.ModelSerializer):
             "username",
             "email",
             "password",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "real_name",
             "is_staff",
             "is_active",
+            "approval_status",
+            "approval_status_display",
+            "approval_review_note",
+            "approval_reviewed_at",
+            "approval_reviewed_by",
         )  # 添加管理员相关字段
 
     def create(self, validated_data):
+        registration_mode = bool(self.context.get("registration_mode"))
         # 信号处理器会自动处理管理员权限分配，这里只需要正常创建用户
         # 统一走 create_user，确保密码会被哈希而不是明文入库。
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
             password=validated_data["password"],
-            is_staff=validated_data.get("is_staff", False),
+            first_name=validated_data.get("first_name", ""),
+            last_name=validated_data.get("last_name", ""),
+            is_staff=False if registration_mode else validated_data.get("is_staff", False),
             is_active=validated_data.get("is_active", True),
         )
+
+        ensure_user_approval_record(
+            user,
+            status=UserApproval.STATUS_PENDING if registration_mode else UserApproval.STATUS_APPROVED,
+        )
+        profile = ensure_user_profile(user)
+        profile.phone_number = validated_data.get("phone_number", "")
+        profile.real_name = validated_data.get("real_name", "")
+        profile.save(update_fields=["phone_number", "real_name", "updated_at"])
 
         return user
 
 
-class UserDetailSerializer(serializers.ModelSerializer):
+class UserDetailSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSerializer):
     """
     用于展示用户详情（只读，不包含密码）。
     """
@@ -261,9 +331,16 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "email",
             "first_name",
             "last_name",
+            "phone_number",
+            "real_name",
             "is_staff",
             "is_active",
             "groups",
+            "approval_status",
+            "approval_status_display",
+            "approval_review_note",
+            "approval_reviewed_at",
+            "approval_reviewed_by",
         )  # 根据需要添加更多字段
         read_only_fields = fields
 
@@ -879,6 +956,46 @@ class UpdateGroupPermissionsSerializer(serializers.Serializer):
         if existing_count != len(set(value)):
             raise serializers.ValidationError("一个或多个权限ID无效。")
         return value
+
+
+class UserApprovalReviewSerializer(serializers.Serializer):
+    review_note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=1000,
+        help_text="审核备注，可选",
+    )
+
+
+class CurrentUserProfileSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    real_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
+
+    def update(self, instance, validated_data):
+        instance.email = validated_data["email"]
+        instance.save(update_fields=["email"])
+
+        profile = ensure_user_profile(instance)
+        profile.phone_number = validated_data.get("phone_number", profile.phone_number)
+        profile.real_name = validated_data.get("real_name", profile.real_name)
+        profile.save(update_fields=["phone_number", "real_name", "updated_at"])
+        return instance
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True, min_length=8)
+    confirm_password = serializers.CharField(required=True, write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "两次输入的新密码不一致。"})
+        user = self.context["request"].user
+        if not user.check_password(attrs["current_password"]):
+            raise serializers.ValidationError({"current_password": "当前密码不正确。"})
+        return attrs
 
 
 class MyTokenObtainPairSerializer(BaseTokenObtainPairSerializer):

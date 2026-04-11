@@ -7,7 +7,7 @@
           <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
           <div class="logo-copy">
             <span class="logo-text">FlyTest</span>
-            <span class="logo-subtitle">智能测试平台</span>
+            <span class="logo-subtitle">AI智能测试平台</span>
           </div>
         </div>
         <div class="project-selector" v-if="showProjectSelector">
@@ -85,16 +85,18 @@
           :trigger-props="{ contentClass: 'user-panel-dropdown' }"
         >
           <div class="user-dropdown">
-            <span class="username">{{ username }}</span>
+            <span class="username">{{ displayName }}</span>
             <icon-down />
           </div>
           <template #content>
             <div class="dropdown-user-info">
-              <div class="dropdown-username">{{ username }}</div>
+              <div class="dropdown-username">{{ displayName }}</div>
+              <div class="dropdown-email" v-if="user?.real_name && user?.username">{{ user.username }}</div>
               <div class="dropdown-email" v-if="user?.email">{{ user.email }}</div>
               <div class="dropdown-role" v-if="user?.is_staff">管理员</div>
             </div>
             <a-divider style="margin: 4px 0" />
+            <a-doption @click="handleOpenPersonalCenter">个人中心</a-doption>
             <a-doption @click="handleLogout">退出登录</a-doption>
           </template>
         </a-dropdown>
@@ -123,7 +125,7 @@
           @menu-item-click="handleMenuItemClick"
           @sub-menu-click="handleSubMenuClick"
         >
-          <a-menu-item key="dashboard">
+          <a-menu-item key="dashboard" v-if="isApproved">
             <template #icon><icon-home /></template>
             <span class="menu-link">首页</span>
           </a-menu-item>
@@ -236,6 +238,10 @@
           <a-sub-menu key="ui-automation" v-if="hasUiAutomationMenuItems">
             <template #icon><icon-computer /></template>
             <template #title>UI自动化</template>
+            <a-menu-item key="ui-automation-ai-intelligent" v-if="hasUiAutomationAiIntelligentPermission">
+              <template #icon><icon-message /></template>
+              <span class="menu-link">AI智能模式</span>
+            </a-menu-item>
             <a-menu-item key="ui-automation-pages" v-if="hasUiAutomationPagesPermission">
               <template #icon><icon-computer /></template>
               <span class="menu-link">页面管理</span>
@@ -247,10 +253,6 @@
             <a-menu-item key="ui-automation-testcases" v-if="hasUiAutomationTestCasesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link">测试用例</span>
-            </a-menu-item>
-            <a-menu-item key="ui-automation-ai-intelligent" v-if="hasUiAutomationAiIntelligentPermission">
-              <template #icon><icon-message /></template>
-              <span class="menu-link">AI智能模式</span>
             </a-menu-item>
             <a-menu-item key="ui-automation-execution-records" v-if="hasUiAutomationExecutionRecordsPermission">
               <template #icon><icon-history /></template>
@@ -622,12 +624,17 @@ const handleVisibilityChange = () => {
 
 // 用户信息
 const user = computed(() => authStore.currentUser);
+const isApproved = computed(() => authStore.isApproved);
 const username = computed(() => user.value?.username || '');
+const displayName = computed(() => user.value?.real_name || user.value?.username || '');
 const userInitial = computed(() => {
+  if (user.value?.real_name && user.value.real_name.length > 0) {
+    return user.value.real_name.charAt(0).toUpperCase();
+  }
   if (user.value?.first_name && user.value.first_name.length > 0) {
     return user.value.first_name.charAt(0).toUpperCase();
   }
-  return username.value.charAt(0).toUpperCase();
+  return displayName.value.charAt(0).toUpperCase();
 });
 
 const themeButtonLabel = computed(() => (themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题'));
@@ -1031,9 +1038,12 @@ const handleLogout = () => {
   router.push('/login');
 };
 
+const handleOpenPersonalCenter = () => {
+  router.push('/personal-center');
+};
+
 // 项目选择器相关
-// 在所有页面都显示项目选择器
-const showProjectSelector = computed(() => true);
+const showProjectSelector = computed(() => isApproved.value);
 
 // 当前选中的项目 ID
 const selectedProjectId = computed({

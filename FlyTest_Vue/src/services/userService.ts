@@ -13,6 +13,11 @@ export interface User {
   last_name: string;
   is_staff: boolean;
   is_active: boolean;
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  approval_status_display?: string;
+  approval_review_note?: string;
+  approval_reviewed_at?: string | null;
+  approval_reviewed_by?: string | null;
 }
 
 // 创建用户请求接口
@@ -67,6 +72,14 @@ export interface PaginationParams {
   page: number;
   pageSize: number;
   search?: string;
+  approvalStatus?: 'all' | 'pending' | 'approved' | 'rejected';
+}
+
+export interface UserApprovalSummary {
+  all: number;
+  pending: number;
+  approved: number;
+  rejected: number;
 }
 
 /**
@@ -93,6 +106,7 @@ export const getUserList = async (params: PaginationParams): Promise<UserListRes
         page: params.page,
         page_size: params.pageSize,
         search: params.search || '',
+        approval_status: params.approvalStatus && params.approvalStatus !== 'all' ? params.approvalStatus : undefined,
       }
     });
 
@@ -101,7 +115,7 @@ export const getUserList = async (params: PaginationParams): Promise<UserListRes
         success: true,
         data: response.data,
         statusCode: 200,
-        total: response.data.length, // 使用数组长度作为总数
+        total: response.total || response.data.length,
       };
     } else {
       return {
@@ -421,4 +435,55 @@ export const getUserDetail = async (userId: number): Promise<{ success: boolean;
       error: errorMessage,
     };
   }
+};
+
+export const approveUser = async (
+  userId: number,
+  reviewNote = '',
+): Promise<{ success: boolean; data?: User; error?: string }> => {
+  const response = await request<User>({
+    url: `/accounts/users/${userId}/approve/`,
+    method: 'POST',
+    data: { review_note: reviewNote },
+  });
+
+  return {
+    success: response.success,
+    data: response.data,
+    error: response.error,
+  };
+};
+
+export const getUserApprovalSummary = async (): Promise<{
+  success: boolean;
+  data?: UserApprovalSummary;
+  error?: string;
+}> => {
+  const response = await request<UserApprovalSummary>({
+    url: '/accounts/users/approval-summary/',
+    method: 'GET',
+  });
+
+  return {
+    success: response.success,
+    data: response.data,
+    error: response.error,
+  };
+};
+
+export const rejectUser = async (
+  userId: number,
+  reviewNote = '',
+): Promise<{ success: boolean; data?: User; error?: string }> => {
+  const response = await request<User>({
+    url: `/accounts/users/${userId}/reject/`,
+    method: 'POST',
+    data: { review_note: reviewNote },
+  });
+
+  return {
+    success: response.success,
+    data: response.data,
+    error: response.error,
+  };
 };

@@ -116,8 +116,8 @@ def _coerce_bool(value, default=True):
     return default
 
 
-def _validate_ai_execution_request(project_id: int, execution_mode: str) -> str | None:
-    capabilities = get_ai_runtime_capabilities(project_id)
+def _validate_ai_execution_request(project_id: int, execution_mode: str, user=None) -> str | None:
+    capabilities = get_ai_runtime_capabilities(project_id, user=user)
 
     if execution_mode == 'vision':
         if not capabilities.get('llm_configured'):
@@ -686,12 +686,12 @@ class UiAICaseViewSet(OptionalPaginationMixin, viewsets.ModelViewSet):
         if execution_mode not in dict(UiAICase.EXECUTION_MODE_CHOICES):
             return Response({'error': '不支持的执行模式'}, status=status.HTTP_400_BAD_REQUEST)
 
-        validation_error = _validate_ai_execution_request(ai_case.project_id, execution_mode)
+        validation_error = _validate_ai_execution_request(ai_case.project_id, execution_mode, user=request.user)
         if validation_error:
             return Response(
                 {
                     'error': validation_error,
-                    'runtime_capabilities': get_ai_runtime_capabilities(ai_case.project_id),
+                    'runtime_capabilities': get_ai_runtime_capabilities(ai_case.project_id, user=request.user),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -751,9 +751,9 @@ class UiAIExecutionRecordViewSet(OptionalPaginationMixin, viewsets.ModelViewSet)
             project = Project.objects.filter(id=project_id).only('id').first()
             if project is None:
                 return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
-            capability_data = get_ai_runtime_capabilities(project.id)
+            capability_data = get_ai_runtime_capabilities(project.id, user=request.user)
         else:
-            capability_data = get_ai_runtime_capabilities()
+            capability_data = get_ai_runtime_capabilities(user=request.user)
 
         return Response(capability_data)
 
@@ -775,12 +775,12 @@ class UiAIExecutionRecordViewSet(OptionalPaginationMixin, viewsets.ModelViewSet)
         if project is None:
             return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-        validation_error = _validate_ai_execution_request(project.id, execution_mode)
+        validation_error = _validate_ai_execution_request(project.id, execution_mode, user=request.user)
         if validation_error:
             return Response(
                 {
                     'error': validation_error,
-                    'runtime_capabilities': get_ai_runtime_capabilities(project.id),
+                    'runtime_capabilities': get_ai_runtime_capabilities(project.id, user=request.user),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )

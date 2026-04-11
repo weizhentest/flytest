@@ -1,5 +1,18 @@
 <template>
   <div class="user-management">
+    <div class="approval-filter-bar">
+      <a-radio-group
+        v-model="approvalFilter"
+        type="button"
+        @change="handleApprovalFilterChange"
+      >
+        <a-radio value="all">全部用户 {{ approvalSummary.all }}</a-radio>
+        <a-radio value="pending">待审核 {{ approvalSummary.pending }}</a-radio>
+        <a-radio value="approved">已通过 {{ approvalSummary.approved }}</a-radio>
+        <a-radio value="rejected">已驳回 {{ approvalSummary.rejected }}</a-radio>
+      </a-radio-group>
+    </div>
+
     <div class="page-header">
       <div class="search-box">
         <a-input-search
@@ -27,8 +40,38 @@
           {{ record.is_active ? '启用' : '禁用' }}
         </a-tag>
       </template>
+      <template #approvalStatus="{ record }">
+        <a-tag
+          :color="
+            record.approval_status === 'approved'
+              ? 'green'
+              : record.approval_status === 'rejected'
+                ? 'red'
+                : 'orange'
+          "
+        >
+          {{ record.approval_status_display || '待审核' }}
+        </a-tag>
+      </template>
       <template #operations="{ record }">
         <a-space :size="4">
+          <a-button
+            v-if="record.approval_status !== 'approved'"
+            type="primary"
+            size="mini"
+            @click="approvePendingUser(record)"
+          >
+            通过
+          </a-button>
+          <a-button
+            v-if="record.approval_status !== 'rejected'"
+            type="primary"
+            status="warning"
+            size="mini"
+            @click="rejectPendingUser(record)"
+          >
+            驳回
+          </a-button>
           <a-button type="primary" size="mini" @click="viewUserPermissions(record)">权限</a-button>
           <a-button type="primary" size="mini" @click="editUser(record)">编辑</a-button>
           <a-button type="primary" status="danger" size="mini" @click="deleteUser(record)">删除</a-button>
@@ -206,10 +249,14 @@ import {
   getUserList,
   createUser,
   deleteUser as deleteUserService,
+  approveUser,
+  getUserApprovalSummary,
+  rejectUser,
   updateUser,
   type User,
   type CreateUserRequest,
-  type UpdateUserRequest
+  type UpdateUserRequest,
+  type UserApprovalSummary
 } from '@/services/userService';
 import PermissionTreeSelector from '@/components/permission/PermissionTreeSelector.vue';
 import { useProjectStore } from '@/store/projectStore';
@@ -220,6 +267,13 @@ const projectStore = useProjectStore();
 const loading = ref(false);
 // 搜索关键词
 const searchKeyword = ref('');
+const approvalFilter = ref<'all' | 'pending' | 'approved' | 'rejected'>('all');
+const approvalSummary = reactive<UserApprovalSummary>({
+  all: 0,
+  pending: 0,
+  approved: 0,
+  rejected: 0,
+});
 
 // 表格列定义
 const columns = [
@@ -261,9 +315,15 @@ const columns = [
     align: 'center',
   },
   {
+    title: '审核状态',
+    dataIndex: 'approval_status',
+    slotName: 'approvalStatus',
+    align: 'center',
+  },
+  {
     title: '操作',
     slotName: 'operations',
-    width: 180,
+    width: 280,
     fixed: 'right',
     align: 'center',
   },
@@ -292,6 +352,7 @@ const viewUserPermissions = async (user: User) => {
 // 刷新用户列表
 const refreshUserList = () => {
   fetchUserList();
+  fetchApprovalSummary();
 };
 
 // 分页配置
@@ -312,7 +373,8 @@ const fetchUserList = async () => {
     const response = await getUserList({
       page: pagination.current,
       pageSize: pagination.pageSize,
-      search: searchKeyword.value
+      search: searchKeyword.value,
+      approvalStatus: approvalFilter.value,
     });
 
     if (response.success && response.data) {
@@ -333,10 +395,22 @@ const fetchUserList = async () => {
   }
 };
 
+const fetchApprovalSummary = async () => {
+  const response = await getUserApprovalSummary();
+  if (response.success && response.data) {
+    Object.assign(approvalSummary, response.data);
+  }
+};
+
 // 搜索用户
 const onSearch = (value: string) => {
   searchKeyword.value = value;
   pagination.current = 1; // 重置到第一页
+  fetchUserList();
+};
+
+const handleApprovalFilterChange = () => {
+  pagination.current = 1;
   fetchUserList();
 };
 
@@ -362,12 +436,14 @@ watch(() => projectStore.currentProjectId, (newProjectId, oldProjectId) => {
 
     // 重新获取用户列表
     fetchUserList();
+    fetchApprovalSummary();
   }
 }, { immediate: false });
 
 // 在组件挂载时加载用户数据
 onMounted(() => {
   fetchUserList();
+  fetchApprovalSummary();
 });
 
 // 添加用户模态框相关
@@ -468,6 +544,7 @@ const handleAddUser = async (done: (closed: boolean) => void) => {
       Message.success('用户创建成功');
       // 刷新用户列表
       fetchUserList();
+      fetchApprovalSummary();
       done(true); // 关闭模态框
     } else {
       Message.error(response.error || '创建用户失败');
@@ -581,6 +658,7 @@ const handleEditUser = async (done: (closed: boolean) => void) => {
       Message.success('用户更新成功');
       // 刷新用户列表
       fetchUserList();
+      fetchApprovalSummary();
       done(true); // 关闭模态框
     } else {
       Message.error(response.error || '更新用户失败');
@@ -591,6 +669,44 @@ const handleEditUser = async (done: (closed: boolean) => void) => {
     Message.error('更新用户时发生错误');
     done(false); // 不关闭模态框
   }
+};
+
+const approvePendingUser = (user: User) => {
+  Modal.confirm({
+    title: '审核通过',
+    content: `确认审核通过用户“${user.username}”吗？通过后需要继续分配权限，用户才能看到对应菜单。`,
+    okText: '确认通过',
+    cancelText: '取消',
+    onOk: async () => {
+      const response = await approveUser(user.id);
+      if (response.success) {
+        Message.success(`已审核通过 ${user.username}`);
+        fetchUserList();
+        fetchApprovalSummary();
+        return;
+      }
+      Message.error(response.error || '审核通过失败');
+    },
+  });
+};
+
+const rejectPendingUser = (user: User) => {
+  Modal.warning({
+    title: '驳回注册',
+    content: `确认驳回用户“${user.username}”吗？驳回后该用户仍可登录，但不会拥有任何后台权限。`,
+    okText: '确认驳回',
+    cancelText: '取消',
+    onOk: async () => {
+      const response = await rejectUser(user.id);
+      if (response.success) {
+        Message.success(`已驳回 ${user.username}`);
+        fetchUserList();
+        fetchApprovalSummary();
+        return;
+      }
+      Message.error(response.error || '驳回失败');
+    },
+  });
 };
 
 // 删除用户
@@ -608,6 +724,7 @@ const deleteUser = (user: User) => {
           Message.success(response.message || '用户删除成功');
           // 刷新用户列表
           fetchUserList();
+          fetchApprovalSummary();
         } else {
           Message.error(response.error || '删除用户失败');
         }
@@ -628,6 +745,12 @@ const deleteUser = (user: User) => {
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
   height: 100%;
   box-sizing: border-box;
+}
+
+.approval-filter-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .page-header {

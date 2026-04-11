@@ -19,6 +19,7 @@ from django.utils import timezone
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langgraph_integration.models import LLMConfig, get_user_active_llm_config
+from projects.models import ProjectCredential
 
 from .models import UiAIExecutionRecord, UiElement, UiEnvironmentConfig, UiModule, UiPage
 
@@ -1149,10 +1150,37 @@ def _get_active_llm_config(user=None) -> LLMConfig | None:
 
 
 def _get_default_env_config(project_id: int) -> UiEnvironmentConfig | None:
-    return (
+    env_config = (
         UiEnvironmentConfig.objects.filter(project_id=project_id)
         .order_by("-is_default", "id")
         .first()
+    )
+    if env_config is not None:
+        return env_config
+
+    credential = (
+        ProjectCredential.objects.filter(project_id=project_id)
+        .exclude(system_url="")
+        .order_by("id")
+        .first()
+    )
+    fallback_base_url = (
+        (credential.system_url if credential and credential.system_url else "")
+        or getattr(settings, "UI_AUTOMATION_DEFAULT_BASE_URL", "")
+        or "http://localhost:5173"
+    )
+
+    return UiEnvironmentConfig.objects.create(
+        project_id=project_id,
+        name="默认环境",
+        base_url=fallback_base_url,
+        browser="chromium",
+        headless=True,
+        viewport_width=1280,
+        viewport_height=720,
+        timeout=30000,
+        is_default=True,
+        creator_id=None,
     )
 
 
@@ -1162,8 +1190,8 @@ def _detect_execution_backend() -> str:
     return "browser_use" if has_browser_use and has_playwright else "planning"
 
 
-def get_ai_runtime_capabilities(project_id: int | None = None) -> dict[str, Any]:
-    active_config = _get_active_llm_config()
+def get_ai_runtime_capabilities(project_id: int | None = None, user=None) -> dict[str, Any]:
+    active_config = _get_active_llm_config(user)
     env_config = _get_default_env_config(project_id) if project_id else None
     has_browser_use = importlib.util.find_spec("browser_use") is not None
     has_playwright = importlib.util.find_spec("playwright") is not None

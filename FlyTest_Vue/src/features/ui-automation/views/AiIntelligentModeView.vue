@@ -1,7 +1,7 @@
 <template>
   <div class="ai-mode-view">
     <a-alert class="mode-tip" type="info" show-icon>
-      AI 智能模式会优先使用已启用的 LLM 做任务规划；缺少 `browser-use / Playwright` 时会自动回退到规划执行模式。
+      AI 智能模式会优先使用当前已启用的模型进行任务规划与真实浏览器执行；文本模式可直接使用，视觉模式需要支持图片能力的模型。
     </a-alert>
     <div v-if="!projectId" class="empty-state">
       <a-empty description="请先选择项目后再使用 AI 智能模式" />
@@ -914,6 +914,18 @@ const reportStatusAlert = computed(() => {
 })
 const runtimeCapabilityAlert = computed<ExecutionStatusAlert | null>(() => {
   if (!runtimeCapabilities.value) return null
+  if (
+    runtimeCapabilities.value.execution_backend === 'browser_use'
+    && runtimeCapabilities.value.llm_configured
+    && runtimeCapabilities.value.text_mode_ready
+    && !runtimeCapabilities.value.vision_mode_ready
+  ) {
+    return {
+      type: 'info',
+      title: '文本模式可用，视觉模式暂不可用',
+      content: '当前真实浏览器智能执行链路已经可用，但当前模型不支持视觉能力；你可以直接使用文本模式。',
+    }
+  }
   if (runtimeCapabilities.value.execution_backend === 'browser_use' && runtimeCapabilities.value.llm_configured) {
     return {
       type: runtimeCapabilities.value.browser_executable_found ? 'success' : 'warning',

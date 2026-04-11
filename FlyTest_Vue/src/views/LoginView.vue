@@ -6,7 +6,7 @@
       <div class="brand-area">
         <img :src="brandLogoUrl" alt="Logo" class="brand-logo" />
         <h1 class="brand-title">FlyTest</h1>
-        <p class="brand-subtitle">Flytest智能测试平台</p>
+        <p class="brand-subtitle">AI智能测试平台</p>
         <div class="brand-tags" role="list" aria-label="平台能力标签">
           <div v-for="tag in featureTags" :key="tag.label" class="tag-item" role="listitem">
             <button
@@ -159,6 +159,10 @@
         </div>
       </div>
     </Transition>
+
+    <footer class="page-copyright">
+      <span>Copyright © {{ currentYear }} FlyTest AI智能测试平台 版权所有 · 开发与维护：魏振 · 66674094@qq.com</span>
+    </footer>
   </div>
 </template>
 
@@ -186,6 +190,7 @@ const showPassword = ref(false)
 const loginDialogVisible = ref(false)
 const previousFocusedElement = ref<HTMLElement | null>(null)
 const previousBodyOverflow = ref('')
+const currentYear = new Date().getFullYear()
 const fingerprintAssetCandidates = ['/login-fingerprint.svg', '/login-fingerprint.png'] as const
 const currentFingerprintAssetIndex = ref(0)
 const fingerprintImageLoadFailed = ref(false)
@@ -392,7 +397,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 36px;
   min-height: 100vh;
-  padding: 12px 20px 150px;
+  padding: 12px 20px 110px;
 }
 
 .brand-area {
@@ -829,6 +834,27 @@ onBeforeUnmount(() => {
 .register-link a:hover {
   color: #93c5fd;
   text-decoration: underline;
+}
+
+.page-copyright {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 2;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 18, 34, 0.4);
+  backdrop-filter: blur(10px);
+  color: rgba(180, 210, 255, 0.72);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .login-dialog-enter-active,
