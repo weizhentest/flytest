@@ -321,232 +321,61 @@
       </a-form>
     </a-modal>
 
-    <a-drawer v-model:visible="recordDrawerVisible" title="AI 执行详情" width="820px" unmount-on-close>
-      <a-spin :loading="recordDetailLoading" style="width:100%">
-        <template v-if="currentRecord">
-          <div class="drawer-actions">
-            <a-space>
-              <a-button type="outline" size="small" @click="openReport(currentRecord.id)"><template #icon><icon-file /></template>查看报告</a-button>
-              <a-button v-if="isRunningStatus(currentRecord.status)" type="outline" size="small" status="warning" @click="stopRecord(currentRecord.id)"><template #icon><icon-stop /></template>停止任务</a-button>
-            </a-space>
-          </div>
-          <a-descriptions :column="2" bordered size="small">
-            <a-descriptions-item label="任务名称">{{ currentRecord.case_name }}</a-descriptions-item>
-            <a-descriptions-item label="执行人">{{ currentRecord.executed_by_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="执行模式"><a-tag :color="modeColors[currentRecord.execution_mode]">{{ AI_MODE_LABELS[currentRecord.execution_mode] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="执行后端"><a-tag :color="backendColors[currentRecord.execution_backend]">{{ AI_BACKEND_LABELS[currentRecord.execution_backend] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="执行状态"><a-tag :color="statusColors[currentRecord.status]">{{ AI_STATUS_LABELS[currentRecord.status] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="模型配置">{{ currentRecord.model_config_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="GIF 录制">{{ currentRecord.enable_gif ? '已开启' : '已关闭' }}</a-descriptions-item>
-            <a-descriptions-item label="开始时间">{{ formatTime(currentRecord.start_time) }}</a-descriptions-item>
-            <a-descriptions-item label="结束时间">{{ currentRecord.end_time ? formatTime(currentRecord.end_time) : '-' }}</a-descriptions-item>
-            <a-descriptions-item label="执行时长">{{ currentRecord.duration != null ? `${currentRecord.duration.toFixed(2)}s` : '-' }}</a-descriptions-item>
-            <a-descriptions-item label="任务进度">{{ formatProgress(currentRecord) }}</a-descriptions-item>
-          </a-descriptions>
-          <a-alert
-            v-if="currentRecordStatusAlert"
-            class="status-alert"
-            :type="currentRecordStatusAlert.type"
-            show-icon
-            :title="currentRecordStatusAlert.title"
-          >
-            {{ currentRecordStatusAlert.content }}
-          </a-alert>
-          <a-divider>任务描述</a-divider>
-          <div class="block-card">{{ currentRecord.task_description }}</div>
-          <template v-if="currentRecord.error_message"><a-divider>错误信息</a-divider><a-alert type="error" :title="currentRecord.error_message" /></template>
-          <template v-if="currentRecord.planned_tasks?.length"><a-divider>规划任务</a-divider><div class="item-list"><div v-for="task in currentRecord.planned_tasks" :key="task.id" class="item-card"><div class="item-head"><span class="item-title">{{ task.title }}</span><a-tag :color="taskStatusColor(task.status)">{{ taskStatusLabel(task.status) }}</a-tag></div><div class="item-desc">{{ task.description }}</div><div v-if="task.expected_result" class="item-meta">预期结果：{{ task.expected_result }}</div></div></div></template>
-          <template v-if="currentRecord.steps_completed?.length">
-            <a-divider>已完成步骤</a-divider>
-            <div class="item-list">
-              <div v-for="step in currentRecord.steps_completed" :key="`${step.step}-${step.completed_at}`" class="item-card">
-                <div class="item-head">
-                  <span class="item-title">步骤 {{ step.step }} · {{ step.title }}</span>
-                  <a-tag :color="stepStatusColor(step.status)">{{ stepStatusLabel(step.status) }}</a-tag>
-                </div>
-                <div class="item-desc">{{ step.description || '-' }}</div>
-                <div v-if="step.expected_result" class="item-meta"><strong>预期结果：</strong>{{ step.expected_result }}</div>
-                <div v-if="step.message" class="item-meta"><strong>执行信息：</strong>{{ step.message }}</div>
-                <div v-if="step.browser_step_count" class="item-meta"><strong>浏览器步骤：</strong>{{ step.browser_step_count }}</div>
-                <div class="item-meta"><strong>耗时：</strong>{{ formatDuration(step.duration) }}<span v-if="step.completed_at"> · {{ formatTime(step.completed_at) }}</span></div>
-                <div v-if="step.screenshots?.length" class="step-media">
-                  <a-image-preview-group>
-                    <div class="media-grid">
-                      <a-image
-                        v-for="(item, index) in step.screenshots"
-                        :key="`${step.step}-${item}-${index}`"
-                        :src="resolveMediaUrl(item)"
-                        width="168"
-                        height="108"
-                        fit="cover"
-                      />
-                    </div>
-                  </a-image-preview-group>
-                </div>
-              </div>
-            </div>
-          </template>
-          <template v-if="currentRecord.screenshots_sequence?.length"><a-divider>执行截图</a-divider><a-image-preview-group><div class="media-grid"><a-image v-for="(item, index) in currentRecord.screenshots_sequence" :key="`${item}-${index}`" :src="resolveMediaUrl(item)" width="168" height="108" fit="cover" /></div></a-image-preview-group></template>
-          <template v-if="currentRecord.gif_path"><a-divider>执行回放</a-divider><div class="gif-preview"><img :src="resolveMediaUrl(currentRecord.gif_path)" alt="AI execution replay" /></div></template>
-          <template v-if="currentRecord.logs"><a-divider>执行日志</a-divider><pre class="log-panel">{{ currentRecord.logs }}</pre></template>
-        </template>
-      </a-spin>
-    </a-drawer>
+    <AiExecutionDetailDrawer
+      v-if="recordDrawerVisible"
+      v-model:visible="recordDrawerVisible"
+      :loading="recordDetailLoading"
+      :record="currentRecord"
+      :status-alert="currentRecordStatusAlert"
+      :status-colors="statusColors"
+      :mode-colors="modeColors"
+      :backend-colors="backendColors"
+      :format-time="formatTime"
+      :format-duration="formatDuration"
+      :format-progress="formatProgress"
+      :task-status-color="taskStatusColor"
+      :task-status-label="taskStatusLabel"
+      :step-status-color="stepStatusColor"
+      :step-status-label="stepStatusLabel"
+      :resolve-media-url="resolveMediaUrl"
+      @open-report="openReport"
+      @stop-record="stopRecord"
+    />
 
-    <a-modal v-model:visible="reportVisible" title="AI 执行报告" width="920px" :footer="false" unmount-on-close>
-      <a-spin :loading="reportLoading" style="width:100%">
-        <template v-if="currentReport">
-          <div class="report-toolbar">
-            <a-radio-group v-model="currentReportType" type="button" size="small" @change="handleReportTypeChange">
-              <a-radio v-for="option in reportTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</a-radio>
-            </a-radio-group>
-            <a-space>
-              <a-button type="outline" size="small" :loading="exportingReport" @click="exportReportPdf"><template #icon><icon-file /></template>导出 PDF</a-button>
-              <a-button type="outline" size="small" @click="reloadCurrentReport"><template #icon><icon-refresh /></template>刷新报告</a-button>
-            </a-space>
-          </div>
-          <div class="report-summary">
-            <div class="summary-card" v-for="item in reportStats" :key="item.label"><span class="summary-label">{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-          </div>
-          <a-descriptions :column="2" bordered size="small">
-            <a-descriptions-item label="任务名称">{{ currentReport.case_name }}</a-descriptions-item>
-            <a-descriptions-item label="执行状态"><a-tag :color="statusColors[currentReport.status]">{{ AI_STATUS_LABELS[currentReport.status] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="执行模式"><a-tag :color="modeColors[currentReport.execution_mode]">{{ AI_MODE_LABELS[currentReport.execution_mode] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="执行后端"><a-tag :color="backendColors[currentReport.execution_backend]">{{ AI_BACKEND_LABELS[currentReport.execution_backend] }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="模型配置">{{ currentReport.model_config_name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="执行时长">{{ formatDuration(currentReport.duration) }}</a-descriptions-item>
-          </a-descriptions>
-          <a-alert
-            v-if="reportStatusAlert"
-            class="status-alert"
-            :type="reportStatusAlert.type"
-            show-icon
-            :title="reportStatusAlert.title"
-          >
-            {{ reportStatusAlert.content }}
-          </a-alert>
-          <a-divider>任务描述</a-divider>
-          <div class="block-card">{{ currentReport.task_description }}</div>
-          <template v-if="currentReportType === 'summary'">
-            <template v-if="overviewCards.length">
-              <a-divider>执行概览</a-divider>
-              <div class="metric-grid">
-                <div v-for="item in overviewCards" :key="item.label" class="metric-card"><span class="summary-label">{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-              </div>
-            </template>
-            <template v-if="currentReport.timeline?.length">
-              <a-divider>任务时间线</a-divider>
-              <div class="timeline-list">
-                <div v-for="item in currentReport.timeline" :key="item.id" class="timeline-card">
-                  <div class="item-head"><span class="item-title">{{ item.title }}</span><a-tag :color="taskStatusColor(item.status)">{{ item.status_display }}</a-tag></div>
-                  <div class="item-desc">{{ item.description || '-' }}</div>
-                  <div v-if="item.expected_result" class="item-meta">预期结果：{{ item.expected_result }}</div>
-                </div>
-              </div>
-            </template>
-            <template v-if="currentReport.planned_tasks?.length">
-              <a-divider>规划任务</a-divider>
-              <div class="item-list">
-                <div v-for="task in currentReport.planned_tasks" :key="task.id" class="item-card">
-                  <div class="item-head"><span class="item-title">{{ task.title }}</span><a-tag :color="taskStatusColor(task.status)">{{ taskStatusLabel(task.status) }}</a-tag></div>
-                  <div class="item-desc">{{ task.description }}</div>
-                  <div v-if="task.expected_result" class="item-meta">预期结果：{{ task.expected_result }}</div>
-                </div>
-              </div>
-            </template>
-            <template v-if="reportActionDistribution.length">
-              <a-divider>动作分布</a-divider>
-              <div class="distribution-list">
-                <div v-for="item in reportActionDistribution" :key="item.action" class="distribution-item">
-                  <span class="distribution-label">{{ item.action }}</span>
-                  <div class="distribution-bar"><div class="distribution-bar__fill" :style="{ width: `${distributionWidth(item.count)}%` }" /></div>
-                  <strong class="distribution-count">{{ item.count }}</strong>
-                </div>
-              </div>
-            </template>
-            <template v-if="currentReport.error_message"><a-divider>错误信息</a-divider><a-alert type="error" :title="currentReport.error_message" /></template>
-          </template>
-          <template v-else-if="currentReportType === 'detailed'">
-            <template v-if="reportErrors.length">
-              <a-divider>错误信息</a-divider>
-              <div class="error-list">
-                <a-alert v-for="(item, index) in reportErrors" :key="`${item.message}-${index}`" :title="item.step_number ? `步骤 ${item.step_number}：${item.message}` : item.message" type="error" />
-              </div>
-            </template>
-            <a-divider>步骤明细</a-divider>
-            <div v-if="detailedSteps.length" class="item-list">
-              <div v-for="step in detailedSteps" :key="step.step_number" class="item-card">
-                <div class="item-head"><span class="item-title">步骤 {{ step.step_number }} · {{ step.title }}</span><a-tag :color="stepStatusColor(step.status)">{{ stepStatusLabel(step.status) }}</a-tag></div>
-                <div class="item-desc"><strong>动作：</strong>{{ step.action || '-' }}</div>
-                <div class="item-meta"><strong>描述：</strong>{{ step.description || '-' }}</div>
-                <div v-if="step.expected_result" class="item-meta"><strong>预期结果：</strong>{{ step.expected_result }}</div>
-                <div v-if="step.element" class="item-meta"><strong>元素：</strong>{{ step.element }}</div>
-                <div v-if="step.thinking" class="item-meta"><strong>AI 思考：</strong>{{ step.thinking }}</div>
-                <div v-if="step.message" class="item-meta"><strong>执行信息：</strong>{{ step.message }}</div>
-                <div v-if="step.browser_step_count" class="item-meta"><strong>浏览器步骤：</strong>{{ step.browser_step_count }}</div>
-                <div class="item-meta"><strong>耗时：</strong>{{ formatDuration(step.duration) }}<span v-if="step.completed_at"> · {{ formatTime(step.completed_at) }}</span></div>
-                <div v-if="step.screenshots?.length" class="step-media">
-                  <a-image-preview-group>
-                    <div class="media-grid">
-                      <a-image
-                        v-for="(item, index) in step.screenshots"
-                        :key="`${step.step_number}-${item}-${index}`"
-                        :src="resolveMediaUrl(item)"
-                        width="168"
-                        height="108"
-                        fit="cover"
-                      />
-                    </div>
-                  </a-image-preview-group>
-                </div>
-              </div>
-            </div>
-            <a-empty v-else description="暂无步骤明细" />
-          </template>
-          <template v-else>
-            <template v-if="performanceCards.length">
-              <a-divider>性能指标</a-divider>
-              <div class="metric-grid">
-                <div v-for="item in performanceCards" :key="item.label" class="metric-card"><span class="summary-label">{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-              </div>
-            </template>
-            <template v-if="reportActionDistribution.length">
-              <a-divider>动作分布</a-divider>
-              <div class="distribution-list">
-                <div v-for="item in reportActionDistribution" :key="item.action" class="distribution-item">
-                  <span class="distribution-label">{{ item.action }}</span>
-                  <div class="distribution-bar"><div class="distribution-bar__fill" :style="{ width: `${distributionWidth(item.count)}%` }" /></div>
-                  <strong class="distribution-count">{{ item.count }}</strong>
-                </div>
-              </div>
-            </template>
-            <template v-if="currentReport.bottlenecks?.length">
-              <a-divider>性能瓶颈</a-divider>
-              <div class="item-list">
-                <div v-for="item in currentReport.bottlenecks" :key="`${item.step_number}-${item.action}`" class="item-card">
-                  <div class="item-head"><span class="item-title">步骤 {{ item.step_number }} · {{ item.action }}</span><a-tag color="orange">{{ item.duration.toFixed(2) }}s</a-tag></div>
-                  <div class="item-meta">高于平均耗时 {{ item.slower_than_avg_by.toFixed(2) }}%</div>
-                </div>
-              </div>
-            </template>
-            <template v-if="currentReport.recommendations?.length">
-              <a-divider>优化建议</a-divider>
-              <div class="error-list">
-                <a-alert v-for="(item, index) in currentReport.recommendations" :key="`${item}-${index}`" :title="item" type="info" />
-              </div>
-            </template>
-          </template>
-          <template v-if="currentReport.screenshots_sequence?.length"><a-divider>执行截图</a-divider><a-image-preview-group><div class="media-grid"><a-image v-for="(item, index) in currentReport.screenshots_sequence" :key="`${item}-${index}`" :src="resolveMediaUrl(item)" width="168" height="108" fit="cover" /></div></a-image-preview-group></template>
-          <template v-if="currentReport.gif_path"><a-divider>执行回放</a-divider><div class="gif-preview"><img :src="resolveMediaUrl(currentReport.gif_path)" alt="AI execution replay" /></div></template>
-          <template v-if="currentReport.logs"><a-divider>执行日志</a-divider><pre class="log-panel">{{ currentReport.logs }}</pre></template>
-        </template>
-      </a-spin>
-    </a-modal>
+    <AiExecutionReportModal
+      v-if="reportVisible"
+      v-model:visible="reportVisible"
+      :loading="reportLoading"
+      :exporting="exportingReport"
+      :report="currentReport"
+      :report-type="currentReportType"
+      :report-type-options="reportTypeOptions"
+      :report-stats="reportStats"
+      :status-alert="reportStatusAlert"
+      :overview-cards="overviewCards"
+      :performance-cards="performanceCards"
+      :report-errors="reportErrors"
+      :detailed-steps="detailedSteps"
+      :report-action-distribution="reportActionDistribution"
+      :status-colors="statusColors"
+      :mode-colors="modeColors"
+      :backend-colors="backendColors"
+      :format-time="formatTime"
+      :format-duration="formatDuration"
+      :resolve-media-url="resolveMediaUrl"
+      :task-status-color="taskStatusColor"
+      :task-status-label="taskStatusLabel"
+      :step-status-color="stepStatusColor"
+      :step-status-label="stepStatusLabel"
+      @reload="reloadCurrentReport"
+      @export="exportReportPdf"
+      @change-report-type="handleReportTypeChange"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, h, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import { IconDelete, IconEdit, IconEye, IconFile, IconPlayArrow, IconPlus, IconRefresh, IconStop } from '@arco-design/web-vue/es/icon'
 import { useProjectStore } from '@/store/projectStore'
@@ -566,6 +395,9 @@ import type {
   UiAIReportType,
 } from '../types'
 import { AI_BACKEND_LABELS, AI_MODE_LABELS, AI_STATUS_LABELS, extractPaginationData, extractResponseData } from '../types'
+
+const AiExecutionDetailDrawer = defineAsyncComponent(() => import('../components/AiExecutionDetailDrawer.vue'))
+const AiExecutionReportModal = defineAsyncComponent(() => import('../components/AiExecutionReportModal.vue'))
 
 const projectStore = useProjectStore()
 const projectId = computed(() => projectStore.currentProject?.id)

@@ -373,11 +373,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, toRefs, onMounted, computed } from 'vue';
+import { defineAsyncComponent, ref, reactive, watch, toRefs, onMounted, computed } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { IconArrowLeft, IconPlus, IconEye, IconLeft, IconRight, IconDragDotVertical } from '@arco-design/web-vue/es/icon';
 import type { FormInstance, TreeNodeData } from '@arco-design/web-vue';
-import draggable from 'vuedraggable';
+const draggable = defineAsyncComponent(() => import('vuedraggable'));
 import {
   createTestCase,
   updateTestCase,

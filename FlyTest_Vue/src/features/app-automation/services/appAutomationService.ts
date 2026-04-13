@@ -1,4 +1,5 @@
 import { request } from '@/utils/request'
+import { useAuthStore } from '@/store/authStore'
 import type {
   AppAdbDetectionResult,
   AppAdbDiagnostics,
@@ -43,6 +44,21 @@ const APP_API_ROOT = (() => {
 
   return (envUrl || '/api').replace(/\/$/, '')
 })()
+
+function withAccessToken(url: string) {
+  let token = ''
+  try {
+    token = useAuthStore().getAccessToken || ''
+  } catch {
+    token = ''
+  }
+  if (!token) {
+    return url
+  }
+
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}token=${encodeURIComponent(token)}`
+}
 
 async function unwrap<T>(config: Record<string, unknown>): Promise<T> {
   const response = await request<T>(config as never)
@@ -183,7 +199,7 @@ export const AppAutomationService = {
   },
 
   getElementPreviewUrl(id: number) {
-    return `${APP_API_ROOT}${APP_BASE}/elements/${id}/preview/`
+    return withAccessToken(`${APP_API_ROOT}${APP_BASE}/elements/${id}/preview/`)
   },
 
   getElementAssetUrl(imagePath: string) {
@@ -192,7 +208,7 @@ export const AppAutomationService = {
       .split('/')
       .map(segment => encodeURIComponent(segment))
       .join('/')
-    return `${APP_API_ROOT}${APP_BASE}/elements/assets/${normalized}`
+    return withAccessToken(`${APP_API_ROOT}${APP_BASE}/elements/assets/${normalized}`)
   },
 
   getElementImageCategories() {
@@ -342,7 +358,7 @@ export const AppAutomationService = {
   },
 
   getExecutionReportUrl(id: number) {
-    return `${APP_API_ROOT}${APP_BASE}/executions/${id}/report/`
+    return withAccessToken(`${APP_API_ROOT}${APP_BASE}/executions/${id}/report/`)
   },
 
   getExecutionReportAssetUrl(id: number, filePath: string) {
@@ -351,7 +367,7 @@ export const AppAutomationService = {
       .split('/')
       .map(segment => encodeURIComponent(segment))
       .join('/')
-    return `${APP_API_ROOT}${APP_BASE}/executions/${id}/report/${normalized}`
+    return withAccessToken(`${APP_API_ROOT}${APP_BASE}/executions/${id}/report/${normalized}`)
   },
 
   stopExecution(id: number) {

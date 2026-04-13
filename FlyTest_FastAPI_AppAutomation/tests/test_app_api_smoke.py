@@ -1,14 +1,18 @@
 import importlib
 import json
+import os
 import tempfile
+import time
 import unittest
+import gc
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+import jwt
 
 import app.database as database
 import app.reporting as reporting
+from tests.testing_client import TestClient
 
 
 class FakeExecutor:
@@ -50,6 +54,11 @@ class CrashExecutor(FakeExecutor):
         raise RuntimeError("unexpected crash")
 
 
+class SlowExecutor(FakeExecutor):
+    def run(self, steps, on_step_complete):
+        return {"passed_steps": 0, "total_steps": max(len(steps), 1)}
+
+
 class FakeThread:
     def __init__(self, target=None, args=None, kwargs=None, daemon=None):
         self.target = target
@@ -61,11 +70,20 @@ class FakeThread:
         return None
 
 
+class InlineThread(FakeThread):
+    def start(self):
+        if self.target is not None:
+            return self.target(*self.args, **self.kwargs)
+        return None
+
+
 class AppApiSmokeTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
         self.data_dir = self.root / "data"
+        self.env_patcher = patch.dict(os.environ, {"APP_AUTOMATION_AUTH_DISABLED": "1"}, clear=False)
+        self.env_patcher.start()
         self.patches = [
             patch.object(database, "DATA_DIR", self.data_dir),
             patch.object(database, "UPLOADS_DIR", self.data_dir / "uploads"),
@@ -88,9 +106,26 @@ class AppApiSmokeTests(unittest.TestCase):
     def tearDown(self):
         if hasattr(self, "client_cm"):
             self.client_cm.__exit__(None, None, None)
+        if hasattr(self, "client"):
+            del self.client
+        if hasattr(self, "client_cm"):
+            del self.client_cm
+        if hasattr(self, "main_module"):
+            del self.main_module
+        if hasattr(self, "env_patcher"):
+            self.env_patcher.stop()
         for patcher in reversed(getattr(self, "patches", [])):
             patcher.stop()
-        self.temp_dir.cleanup()
+        gc.collect()
+        for attempt in range(10):
+            try:
+                self.temp_dir.cleanup()
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                gc.collect()
+                time.sleep(0.3)
 
     def create_package(self):
         response = self.client.post(
@@ -647,6 +682,119 @@ class AppApiSmokeTests(unittest.TestCase):
         self.assertEqual(test_case["last_result"], "failed")
         self.assertIsNotNone(test_case["last_run_at"])
 
+    def test_delete_execution_rejects_active_runs(self):
+        fixture = self.create_execution_fixture(case_name="active-delete-case")
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                "UPDATE executions SET status = 'running', started_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, fixture["execution_id"]),
+            )
+            conn.execute(
+                "UPDATE devices SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ? WHERE id = ?",
+                ("tester", now, now, fixture["device_id"]),
+            )
+
+        response = self.client.delete(f"/executions/{fixture['execution_id']}/")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"], "执行仍在收尾中，请等待完成后再删除")
+
+        with database.connection() as conn:
+            execution = database.fetch_one(conn, "SELECT status FROM executions WHERE id = ?", (fixture["execution_id"],))
+            device = database.fetch_one(conn, "SELECT status, locked_by FROM devices WHERE id = ?", (fixture["device_id"],))
+
+        self.assertEqual(execution["status"], "running")
+        self.assertEqual(device["status"], "locked")
+        self.assertEqual(device["locked_by"], "tester")
+
+    def test_delete_test_suite_cleans_related_tasks_and_keeps_execution_history(self):
+        fixture = self.create_execution_fixture(case_name="suite-delete-case", suite_name="suite-delete")
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                """
+                INSERT INTO scheduled_tasks (
+                    project_id, name, description, task_type, trigger_type, cron_expression, interval_seconds, execute_at,
+                    device_id, package_id, test_suite_id, test_case_id, notify_on_success, notify_on_failure,
+                    notification_type, notify_emails, status, last_run_time, next_run_time, total_runs, successful_runs,
+                    failed_runs, last_result, error_message, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 0, 0, '{}', '', ?, ?, ?)
+                """,
+                (
+                    1001,
+                    "suite-cleanup-task",
+                    "cleanup",
+                    "TEST_SUITE",
+                    "INTERVAL",
+                    "",
+                    3600,
+                    None,
+                    fixture["device_id"],
+                    fixture["package_id"],
+                    fixture["suite_id"],
+                    None,
+                    0,
+                    1,
+                    "email",
+                    json.dumps(["qa@example.com"], ensure_ascii=False),
+                    "ACTIVE",
+                    now,
+                    "tester",
+                    now,
+                    now,
+                ),
+            )
+            task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                """
+                INSERT INTO notification_logs (
+                    task_id, task_name, task_type, notification_type, actual_notification_type,
+                    sender_name, sender_email, recipient_info, webhook_bot_info, notification_content,
+                    status, error_message, response_info, created_at, sent_at, retry_count, is_retried
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    "suite-cleanup-task",
+                    "TEST_SUITE",
+                    "task_execution",
+                    "email",
+                    "FlyTest",
+                    "noreply@flytest.local",
+                    json.dumps([{"email": "qa@example.com"}], ensure_ascii=False),
+                    "{}",
+                    "suite cleanup notification",
+                    "failed",
+                    "fixture",
+                    "{}",
+                    now,
+                    now,
+                    0,
+                    0,
+                ),
+            )
+            log_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        response = self.client.delete(f"/test-suites/{fixture['suite_id']}/")
+        self.assertEqual(response.status_code, 200)
+
+        with database.connection() as conn:
+            suite = database.fetch_one(conn, "SELECT id FROM test_suites WHERE id = ?", (fixture["suite_id"],))
+            task = database.fetch_one(conn, "SELECT id FROM scheduled_tasks WHERE id = ?", (task_id,))
+            execution = database.fetch_one(
+                conn,
+                "SELECT id, test_suite_id FROM executions WHERE id = ?",
+                (fixture["execution_id"],),
+            )
+            notification = database.fetch_one(conn, "SELECT task_id FROM notification_logs WHERE id = ?", (log_id,))
+
+        self.assertIsNone(suite)
+        self.assertIsNone(task)
+        self.assertIsNone(execution["test_suite_id"])
+        self.assertIsNone(notification["task_id"])
+
     def test_run_now_returns_trigger_payload_and_notification_context(self):
         import app.extended_routes as extended_routes
 
@@ -686,14 +834,75 @@ class AppApiSmokeTests(unittest.TestCase):
         self.assertEqual(payload["last_result"]["status"], "triggered")
         self.assertEqual(payload["last_result"]["triggered_by"], "smoke")
         self.assertTrue(payload["trigger_payload"]["execution_id"] > 0)
+        self.assertEqual(payload["successful_runs"], 0)
+        self.assertEqual(payload["failed_runs"], 0)
+
+        log_response = self.client.get("/notification-logs/", params={"task_id": task_id})
+        self.assertEqual(log_response.status_code, 200)
+        logs = log_response.json()["data"]
+        self.assertEqual(logs, [])
+
+    def test_run_now_updates_task_statistics_after_execution_result(self):
+        import app.extended_routes as extended_routes
+
+        fixture = self.create_execution_fixture(case_name="scheduled-failed-case")
+
+        create_response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-result-task",
+                "description": "scheduled trigger",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "tester",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        task_id = create_response.json()["data"]["id"]
+
+        with patch.object(extended_routes, "Thread", FakeThread):
+            response = self.client.post(f"/scheduled-tasks/{task_id}/run_now/", params={"triggered_by": "smoke"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        execution_id = payload["trigger_payload"]["execution_id"]
+
+        with patch.object(self.main_module, "AppFlowExecutor", CrashExecutor):
+            extended_routes._run_case_task_in_background(
+                task_id,
+                execution_id,
+                triggered_by="smoke",
+                triggered_at=payload["last_result"]["triggered_at"],
+            )
+
+        task_response = self.client.get(f"/scheduled-tasks/{task_id}/")
+        self.assertEqual(task_response.status_code, 200)
+        task_payload = task_response.json()["data"]
+        self.assertEqual(task_payload["successful_runs"], 0)
+        self.assertEqual(task_payload["failed_runs"], 1)
+        self.assertEqual(task_payload["last_result"]["status"], "failed")
+        self.assertEqual(task_payload["last_result"]["execution_id"], execution_id)
 
         log_response = self.client.get("/notification-logs/", params={"task_id": task_id})
         self.assertEqual(log_response.status_code, 200)
         logs = log_response.json()["data"]
         self.assertEqual(len(logs), 1)
-        self.assertEqual(logs[0]["response_info"]["task_id"], task_id)
+        self.assertEqual(logs[0]["status"], "failed")
+        self.assertEqual(logs[0]["response_info"]["execution_id"], execution_id)
         self.assertEqual(logs[0]["response_info"]["triggered_by"], "smoke")
-        self.assertEqual(logs[0]["response_info"]["execution_id"], payload["trigger_payload"]["execution_id"])
 
     def test_retry_notification_updates_response_info(self):
         with database.connection() as conn:
@@ -841,6 +1050,127 @@ class AppApiSmokeTests(unittest.TestCase):
         index_html = (Path(report_path) / "index.html").read_text(encoding="utf-8")
         self.assertIn("artifacts/failed-step.png", index_html)
         self.assertNotIn(str(artifact_path), index_html)
+
+class AppApiAuthTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.data_dir = self.root / "data"
+        self.secret = "app-automation-test-secret"
+        self.env_patcher = patch.dict(
+            os.environ,
+            {
+                "APP_AUTOMATION_AUTH_DISABLED": "0",
+                "APP_AUTOMATION_JWT_SECRET": self.secret,
+            },
+            clear=False,
+        )
+        self.env_patcher.start()
+        self.patches = [
+            patch.object(database, "DATA_DIR", self.data_dir),
+            patch.object(database, "UPLOADS_DIR", self.data_dir / "uploads"),
+            patch.object(database, "ELEMENT_UPLOADS_DIR", self.data_dir / "uploads" / "elements"),
+            patch.object(database, "REPORTS_DIR", self.data_dir / "reports"),
+            patch.object(database, "DB_PATH", self.data_dir / "app_automation.db"),
+            patch.object(reporting, "REPORTS_DIR", self.data_dir / "reports"),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+
+        database.init_storage()
+
+        import app.main as main_module
+
+        self.main_module = importlib.reload(main_module)
+        self.client_cm = TestClient(self.main_module.app)
+        self.client = self.client_cm.__enter__()
+
+    def tearDown(self):
+        if hasattr(self, "client_cm"):
+            self.client_cm.__exit__(None, None, None)
+        if hasattr(self, "client"):
+            del self.client
+        if hasattr(self, "client_cm"):
+            del self.client_cm
+        if hasattr(self, "main_module"):
+            del self.main_module
+        if hasattr(self, "env_patcher"):
+            self.env_patcher.stop()
+        for patcher in reversed(getattr(self, "patches", [])):
+            patcher.stop()
+        gc.collect()
+        for attempt in range(10):
+            try:
+                self.temp_dir.cleanup()
+                break
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                gc.collect()
+                time.sleep(0.3)
+
+    def build_auth_header(self):
+        token = jwt.encode({"user_id": 1, "username": "tester"}, self.secret, algorithm="HS256")
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_public_health_remains_available(self):
+        response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "success")
+
+    def test_mutating_route_requires_authentication(self):
+        response = self.client.post(
+            "/settings/save/",
+            json={
+                "adb_path": "adb",
+                "default_timeout": 180,
+                "workspace_root": "",
+                "auto_discover_on_open": True,
+                "notes": "blocked",
+            },
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("detail", response.json())
+
+    def test_mutating_route_accepts_valid_bearer_token(self):
+        response = self.client.post(
+            "/settings/save/",
+            headers=self.build_auth_header(),
+            json={
+                "adb_path": "adb",
+                "default_timeout": 180,
+                "workspace_root": "",
+                "auto_discover_on_open": True,
+                "notes": "authorized",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertEqual(payload["default_timeout"], 180)
+        self.assertEqual(payload["notes"], "authorized")
+
+    def test_mutating_route_accepts_access_cookie(self):
+        token = jwt.encode({"user_id": 1, "username": "cookie-user"}, self.secret, algorithm="HS256")
+        self.client.cookies.set("flytest_access_token", token)
+
+        response = self.client.post(
+            "/settings/save/",
+            json={
+                "adb_path": "adb",
+                "default_timeout": 240,
+                "workspace_root": "",
+                "auto_discover_on_open": True,
+                "notes": "cookie-authorized",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["data"]
+        self.assertEqual(payload["default_timeout"], 240)
+        self.assertEqual(payload["notes"], "cookie-authorized")
 
 
 if __name__ == "__main__":

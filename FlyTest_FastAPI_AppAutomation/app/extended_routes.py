@@ -460,10 +460,11 @@ def create_notification_log(
     recipients: list[str] | None = None,
     response_info: dict[str, Any] | None = None,
     webhook_bot_info: dict[str, Any] | None = None,
+    db_conn=None,
 ) -> None:
-    with connection() as conn:
+    if db_conn is not None:
         now = utc_now()
-        conn.execute(
+        db_conn.execute(
             """
             INSERT INTO notification_logs (
                 task_id, task_name, task_type, notification_type, actual_notification_type,
@@ -485,6 +486,22 @@ def create_notification_log(
                 now,
                 now,
             ),
+        )
+        return
+
+    with connection() as conn:
+        create_notification_log(
+            task_id=task_id,
+            task_name=task_name,
+            task_type=task_type,
+            actual_notification_type=actual_notification_type,
+            content=content,
+            status=status,
+            error_message=error_message,
+            recipients=recipients,
+            response_info=response_info,
+            webhook_bot_info=webhook_bot_info,
+            db_conn=conn,
         )
 
 
@@ -512,19 +529,23 @@ def update_task_run_state(
     failure_count: int = 0,
     error_message: str = "",
     last_result: dict[str, Any] | None = None,
+    total_run_increment: int = 1,
+    update_last_run_time: bool = True,
 ) -> None:
     now = utc_now()
+    last_run_time = now if update_last_run_time else None
     conn.execute(
         """
         UPDATE scheduled_tasks
-        SET last_run_time = ?, next_run_time = ?, total_runs = total_runs + 1,
+        SET last_run_time = COALESCE(?, last_run_time), next_run_time = ?, total_runs = total_runs + ?,
             successful_runs = successful_runs + ?, failed_runs = failed_runs + ?,
             status = ?, error_message = ?, last_result = ?, updated_at = ?
         WHERE id = ?
         """,
         (
-            now,
+            last_run_time,
             next_run_time,
+            total_run_increment,
             success_count,
             failure_count,
             status,
@@ -534,6 +555,242 @@ def update_task_run_state(
             task_id,
         ),
     )
+
+
+def _resolve_task_status_after_completion(task: dict[str, Any], *, success: bool) -> str:
+    trigger_type = str(task.get("trigger_type") or "").upper()
+    current_status = str(task.get("status") or "ACTIVE").upper()
+    if trigger_type == "ONCE":
+        return "COMPLETED" if success else "FAILED"
+    if current_status in {"ACTIVE", "PAUSED"}:
+        return current_status
+    return "ACTIVE" if success else "FAILED"
+
+
+def _should_notify_for_result(task: dict[str, Any], *, success: bool) -> bool:
+    if not str(task.get("notification_type") or "").strip():
+        return False
+    return bool(task.get("notify_on_success")) if success else bool(task.get("notify_on_failure"))
+
+
+def _create_task_notification(
+    conn,
+    task: dict[str, Any],
+    *,
+    success: bool,
+    content: str,
+    error_message: str,
+    response_info: dict[str, Any],
+) -> None:
+    if not _should_notify_for_result(task, success=success):
+        return
+
+    create_notification_log(
+        task_id=task["id"],
+        task_name=task["name"],
+        task_type=task["task_type"],
+        actual_notification_type=task["notification_type"],
+        content=content,
+        status="success" if success else "failed",
+        error_message=error_message,
+        recipients=task["notify_emails"],
+        response_info={
+            "delivery_status": "simulated",
+            **response_info,
+        },
+        db_conn=conn,
+    )
+
+
+def _finalize_case_task_run(task_id: int, execution_id: int, *, triggered_by: str, triggered_at: str) -> None:
+    with connection() as conn:
+        task_row = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
+        if task_row is None:
+            return
+
+        task = serialize_task(task_row)
+        execution = fetch_one(
+            conn,
+            """
+            SELECT id, test_case_id, status, result, error_message, finished_at
+            FROM executions
+            WHERE id = ?
+            """,
+            (execution_id,),
+        )
+
+        if execution is None:
+            outcome = "failed"
+            success = False
+            error_message = "执行记录不存在"
+            finished_at = utc_now()
+            test_case_id = task.get("test_case_id")
+        else:
+            outcome = str(execution.get("result") or execution.get("status") or "failed").strip().lower() or "failed"
+            success = outcome == "passed"
+            error_message = "" if success else str(execution.get("error_message") or outcome or "执行失败")
+            finished_at = str(execution.get("finished_at") or utc_now())
+            test_case_id = execution.get("test_case_id")
+
+        last_result = {
+            "task_id": task_id,
+            "task_type": task["task_type"],
+            "status": outcome,
+            "execution_id": execution_id,
+            "test_case_id": test_case_id,
+            "triggered_by": triggered_by,
+            "triggered_at": triggered_at,
+            "finished_at": finished_at,
+        }
+        if error_message:
+            last_result["error_message"] = error_message
+
+        update_task_run_state(
+            conn,
+            task_id,
+            next_run_time=task.get("next_run_time"),
+            status=_resolve_task_status_after_completion(task, success=success),
+            success_count=1 if success else 0,
+            failure_count=0 if success else 1,
+            error_message=error_message,
+            last_result=last_result,
+            total_run_increment=0,
+            update_last_run_time=False,
+        )
+
+        response_info = {
+            "task_id": task_id,
+            "task_type": task["task_type"],
+            "triggered_by": triggered_by,
+            "triggered_at": triggered_at,
+            "execution_id": execution_id,
+            "test_case_id": test_case_id,
+            "execution_result": outcome,
+            "finished_at": finished_at,
+        }
+        _create_task_notification(
+            conn,
+            task,
+            success=success,
+            content=(
+                f"任务 {task['name']} 执行成功"
+                if success
+                else f"任务 {task['name']} 执行失败"
+            ),
+            error_message=error_message,
+            response_info=response_info,
+        )
+
+
+def _finalize_suite_task_run(
+    task_id: int,
+    suite_id: int,
+    execution_ids: list[int],
+    *,
+    triggered_by: str,
+    triggered_at: str,
+) -> None:
+    with connection() as conn:
+        task_row = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
+        if task_row is None:
+            return
+
+        task = serialize_task(task_row)
+        suite = fetch_one(
+            conn,
+            """
+            SELECT id, execution_status, execution_result, passed_count, failed_count, last_run_at
+            FROM test_suites
+            WHERE id = ?
+            """,
+            (suite_id,),
+        )
+
+        if suite is None:
+            outcome = "failed"
+            success = False
+            error_message = "测试套件不存在"
+            finished_at = utc_now()
+        else:
+            outcome = str(suite.get("execution_result") or suite.get("execution_status") or "failed").strip().lower() or "failed"
+            success = outcome == "passed"
+            finished_at = str(suite.get("last_run_at") or utc_now())
+            passed_count = int(suite.get("passed_count") or 0)
+            failed_count = int(suite.get("failed_count") or 0)
+            if success:
+                error_message = ""
+            elif outcome == "stopped":
+                error_message = "测试套件执行已停止"
+            else:
+                error_message = f"测试套件执行失败（通过 {passed_count}，失败 {failed_count}）"
+
+        last_result = {
+            "task_id": task_id,
+            "task_type": task["task_type"],
+            "status": outcome,
+            "execution_ids": execution_ids,
+            "test_case_count": len(execution_ids),
+            "test_suite_id": suite_id,
+            "triggered_by": triggered_by,
+            "triggered_at": triggered_at,
+            "finished_at": finished_at,
+        }
+        if error_message:
+            last_result["error_message"] = error_message
+
+        update_task_run_state(
+            conn,
+            task_id,
+            next_run_time=task.get("next_run_time"),
+            status=_resolve_task_status_after_completion(task, success=success),
+            success_count=1 if success else 0,
+            failure_count=0 if success else 1,
+            error_message=error_message,
+            last_result=last_result,
+            total_run_increment=0,
+            update_last_run_time=False,
+        )
+
+        response_info = {
+            "task_id": task_id,
+            "task_type": task["task_type"],
+            "triggered_by": triggered_by,
+            "triggered_at": triggered_at,
+            "execution_ids": execution_ids,
+            "test_case_count": len(execution_ids),
+            "test_suite_id": suite_id,
+            "suite_result": outcome,
+            "finished_at": finished_at,
+        }
+        _create_task_notification(
+            conn,
+            task,
+            success=success,
+            content=(
+                f"任务 {task['name']} 执行成功"
+                if success
+                else f"任务 {task['name']} 执行失败"
+            ),
+            error_message=error_message,
+            response_info=response_info,
+        )
+
+
+def _run_case_task_in_background(task_id: int, execution_id: int, *, triggered_by: str, triggered_at: str) -> None:
+    execute_case_background(execution_id)
+    _finalize_case_task_run(task_id, execution_id, triggered_by=triggered_by, triggered_at=triggered_at)
+
+
+def _run_suite_task_in_background(
+    task_id: int,
+    suite_id: int,
+    execution_ids: list[int],
+    *,
+    triggered_by: str,
+    triggered_at: str,
+) -> None:
+    run_suite_background(suite_id, execution_ids)
+    _finalize_suite_task_run(task_id, suite_id, execution_ids, triggered_by=triggered_by, triggered_at=triggered_at)
 
 
 def simulate_case_execution(execution_id: int) -> None:
@@ -747,6 +1004,21 @@ def run_suite_background(suite_id: int, execution_ids: list[int]) -> None:
         execute_case_background(execution_id)
     with connection() as conn:
         refresh_suite_stats(conn, suite_id)
+
+
+def _detach_notification_logs_for_tasks(conn, task_ids: list[int]) -> None:
+    if not task_ids:
+        return
+    placeholders = ", ".join("?" for _ in task_ids)
+    conn.execute(f"UPDATE notification_logs SET task_id = NULL WHERE task_id IN ({placeholders})", tuple(task_ids))
+
+
+def _delete_scheduled_tasks(conn, task_ids: list[int]) -> None:
+    if not task_ids:
+        return
+    _detach_notification_logs_for_tasks(conn, task_ids)
+    placeholders = ", ".join("?" for _ in task_ids)
+    conn.execute(f"DELETE FROM scheduled_tasks WHERE id IN ({placeholders})", tuple(task_ids))
 
 
 @router.get("/components/")
@@ -1034,6 +1306,10 @@ def update_test_suite(suite_id: int, payload: TestSuitePayload) -> dict[str, Any
 def delete_test_suite(suite_id: int) -> dict[str, Any]:
     with connection() as conn:
         _ = get_suite_or_404(conn, suite_id)
+        now = utc_now()
+        task_ids = [item["id"] for item in fetch_all(conn, "SELECT id FROM scheduled_tasks WHERE test_suite_id = ?", (suite_id,))]
+        _delete_scheduled_tasks(conn, task_ids)
+        conn.execute("UPDATE executions SET test_suite_id = NULL, updated_at = ? WHERE test_suite_id = ?", (now, suite_id))
         conn.execute("DELETE FROM test_suite_cases WHERE test_suite_id = ?", (suite_id,))
         conn.execute("DELETE FROM test_suites WHERE id = ?", (suite_id,))
     return success(None, "测试套件已删除")
@@ -1140,7 +1416,7 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 task["interval_seconds"],
                 task["execute_at"],
             )
-            next_status = "COMPLETED" if task["trigger_type"] == "ONCE" and next_run_time is None else task["status"]
+            next_status = task["status"]
 
             if task["task_type"] == "TEST_SUITE":
                 suite = get_suite_or_404(conn, task["test_suite_id"])
@@ -1162,7 +1438,12 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                     "UPDATE test_suites SET execution_status = 'running', execution_result = '', updated_at = ? WHERE id = ?",
                     (triggered_at, suite["id"]),
                 )
-                Thread(target=run_suite_background, args=(suite["id"], execution_ids), daemon=True).start()
+                Thread(
+                    target=_run_suite_task_in_background,
+                    args=(task_id, suite["id"], execution_ids),
+                    kwargs={"triggered_by": triggered_by, "triggered_at": triggered_at},
+                    daemon=True,
+                ).start()
                 payload = {"task_id": task_id, "execution_ids": execution_ids, "test_case_count": len(execution_ids)}
                 last_result = {
                     "task_id": task_id,
@@ -1176,7 +1457,12 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 }
             else:
                 execution_id = create_execution(conn, task["project_id"], task["test_case_id"], task["device_id"], triggered_by, None)
-                Thread(target=execute_case_background, args=(execution_id,), daemon=True).start()
+                Thread(
+                    target=_run_case_task_in_background,
+                    args=(task_id, execution_id),
+                    kwargs={"triggered_by": triggered_by, "triggered_at": triggered_at},
+                    daemon=True,
+                ).start()
                 payload = {"task_id": task_id, "execution_id": execution_id}
                 last_result = {
                     "task_id": task_id,
@@ -1193,12 +1479,11 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 task_id,
                 next_run_time=next_run_time,
                 status=next_status,
-                success_count=1,
                 last_result=last_result,
             )
             row = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
 
-        if task.get("notification_type") and (task.get("notify_on_success") or task.get("notify_on_failure")):
+        if False and task.get("notification_type") and (task.get("notify_on_success") or task.get("notify_on_failure")):
             create_notification_log(
                 task_id=task_id,
                 task_name=task["name"],
@@ -1425,7 +1710,7 @@ def update_scheduled_task(task_id: int, payload: ScheduledTaskPayload) -> dict[s
 def delete_scheduled_task(task_id: int) -> dict[str, Any]:
     with connection() as conn:
         _ = get_task_or_404(conn, task_id)
-        conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+        _delete_scheduled_tasks(conn, [task_id])
     return success(None, "定时任务已删除")
 
 

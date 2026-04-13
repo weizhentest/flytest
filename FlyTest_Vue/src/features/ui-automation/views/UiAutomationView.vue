@@ -55,19 +55,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ModulePanel from '../components/ModulePanel.vue'
-import PageList from './PageList.vue'
-import PageStepList from './PageStepList.vue'
-import TestCaseList from './TestCaseList.vue'
-import AiIntelligentModeView from './AiIntelligentModeView.vue'
-import ExecutionRecordList from './ExecutionRecordList.vue'
-import BatchRecordList from './BatchRecordList.vue'
-import PublicDataList from './PublicDataList.vue'
-import EnvConfigList from './EnvConfigList.vue'
-import ActuatorList from './ActuatorList.vue'
 import type { UiModule } from '../types'
+
+const PageList = defineAsyncComponent(() => import('./PageList.vue'))
+const PageStepList = defineAsyncComponent(() => import('./PageStepList.vue'))
+const TestCaseList = defineAsyncComponent(() => import('./TestCaseList.vue'))
+const AiIntelligentModeView = defineAsyncComponent(() => import('./AiIntelligentModeView.vue'))
+const ExecutionRecordList = defineAsyncComponent(() => import('./ExecutionRecordList.vue'))
+const BatchRecordList = defineAsyncComponent(() => import('./BatchRecordList.vue'))
+const PublicDataList = defineAsyncComponent(() => import('./PublicDataList.vue'))
+const EnvConfigList = defineAsyncComponent(() => import('./EnvConfigList.vue'))
+const ActuatorList = defineAsyncComponent(() => import('./ActuatorList.vue'))
 
 type UiAutomationTab =
   | 'pages'

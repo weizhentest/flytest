@@ -13,9 +13,9 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .adb import (
     AdbError,
@@ -52,6 +52,7 @@ from .schemas import (
     StepSuggestionPayload,
     TestCasePayload,
 )
+from .security import should_skip_auth, validate_request_token
 
 init_storage()
 
@@ -73,6 +74,19 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=True,
 )
+
+
+@app.middleware("http")
+async def require_app_automation_auth(request: Request, call_next):
+    if should_skip_auth(request):
+        return await call_next(request)
+
+    try:
+        request.state.auth = validate_request_token(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    return await call_next(request)
 
 
 def success(data: Any = None, message: str = "success", code: int = 200) -> dict[str, Any]:
@@ -280,20 +294,27 @@ def serialize_execution(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_steps(ui_flow: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(ui_flow, list):
+        return [item for item in ui_flow if isinstance(item, dict)]
     if isinstance(ui_flow, dict):
         steps = ui_flow.get("steps")
         if isinstance(steps, list):
             return [item for item in steps if isinstance(item, dict)]
-    return [
-        {"name": "准备执行环境", "action": "prepare"},
-        {"name": "启动应用", "action": "launch"},
-        {"name": "断言结果", "action": "assert"},
-    ]
+    return []
 
 
-def append_log(logs: list[dict[str, Any]], message: str, level: str = "info") -> list[dict[str, Any]]:
+def append_log(
+    logs: list[dict[str, Any]],
+    message: str,
+    level: str = "info",
+    *,
+    artifact: str | None = None,
+) -> list[dict[str, Any]]:
     next_logs = list(logs)
-    next_logs.append({"timestamp": utc_now(), "level": level, "message": message})
+    entry = {"timestamp": utc_now(), "level": level, "message": message}
+    if artifact:
+        entry["artifact"] = artifact
+    next_logs.append(entry)
     return next_logs
 
 
@@ -376,8 +397,8 @@ def upsert_device(conn, payload: dict[str, Any], preserve_lock: bool = True) -> 
                 now,
             ),
         )
-        device_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return get_device_or_404(conn, device_id)
+        created_device_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return get_device_or_404(conn, created_device_id)
 
     next_status = payload.get("status", existing["status"])
     if preserve_lock and existing.get("status") == "locked":
@@ -417,158 +438,6 @@ def finish_device_lock(conn, device_id: int) -> None:
         """,
         (now, device_id),
     )
-
-
-def extract_steps(ui_flow: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(ui_flow, list):
-        return [item for item in ui_flow if isinstance(item, dict)]
-    if isinstance(ui_flow, dict):
-        steps = ui_flow.get("steps")
-        if isinstance(steps, list):
-            return [item for item in steps if isinstance(item, dict)]
-    return []
-
-
-def append_log(
-    logs: list[dict[str, Any]],
-    message: str,
-    level: str = "info",
-    *,
-    artifact: str | None = None,
-) -> list[dict[str, Any]]:
-    next_logs = list(logs)
-    entry = {"timestamp": utc_now(), "level": level, "message": message}
-    if artifact:
-        entry["artifact"] = artifact
-    next_logs.append(entry)
-    return next_logs
-
-
-def run_execution(execution_id: int) -> None:
-    try:
-        with connection() as conn:
-            execution = get_execution_or_404(conn, execution_id)
-            test_case = get_test_case_or_404(conn, execution["test_case_id"])
-            device = get_device_or_404(conn, execution["device_id"])
-            steps = extract_steps(test_case["ui_flow"])
-            total_steps = max(len(steps), 1)
-
-            logs = append_log([], f"开始执行测试用例: {test_case['name']}")
-            if device["status"] == "offline":
-                logs = append_log(logs, "设备离线，无法执行", "error")
-                now = utc_now()
-                conn.execute(
-                    """
-                    UPDATE executions
-                    SET status = 'failed', result = 'failed', error_message = ?, logs = ?, finished_at = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    ("设备离线，无法执行", json_dumps(logs), now, now, execution_id),
-                )
-                return
-
-            started_at = utc_now()
-            conn.execute(
-                """
-                UPDATE executions
-                SET status = 'running', started_at = ?, updated_at = ?, logs = ?, progress = 3,
-                    total_steps = ?, passed_steps = 0, failed_steps = 0
-                WHERE id = ?
-                """,
-                (started_at, started_at, json_dumps(logs), total_steps, execution_id),
-            )
-            conn.execute(
-                """
-                UPDATE devices
-                SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (execution.get("triggered_by") or "FlyTest", started_at, started_at, device["id"]),
-            )
-            started_time = datetime.fromisoformat(started_at)
-
-        for index, step in enumerate(steps, start=1):
-            time.sleep(0.8)
-            with connection() as conn:
-                current = get_execution_or_404(conn, execution_id)
-                if current["status"] == "stopped":
-                    logs = append_log(current["logs"], "执行被手动停止", "warning")
-                    now = utc_now()
-                    conn.execute(
-                        """
-                        UPDATE executions
-                        SET result = 'stopped', finished_at = ?, updated_at = ?, logs = ?
-                        WHERE id = ?
-                        """,
-                        (now, now, json_dumps(logs), execution_id),
-                    )
-                    write_execution_report(conn, execution_id)
-                    finish_device_lock(conn, current["device_id"])
-                    return
-
-                step_name = step.get("name") or step.get("action") or f"步骤 {index}"
-                progress = min(98, int(index / total_steps * 100))
-                logs = append_log(current["logs"], f"完成步骤 {index}/{total_steps}: {step_name}")
-                conn.execute(
-                    """
-                    UPDATE executions
-                    SET progress = ?, logs = ?, passed_steps = ?, failed_steps = 0, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (progress, json_dumps(logs), index, utc_now(), execution_id),
-                )
-
-        finished_at = utc_now()
-        with connection() as conn:
-            current = get_execution_or_404(conn, execution_id)
-            duration = max(0.0, (datetime.fromisoformat(finished_at) - started_time).total_seconds())
-            logs = append_log(current["logs"], "执行完成，结果通过")
-            conn.execute(
-                """
-                UPDATE executions
-                SET status = 'completed', result = 'passed', progress = 100, report_summary = ?,
-                    finished_at = ?, duration = ?, logs = ?, passed_steps = ?, failed_steps = 0, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    "MVP 执行器已完成编排与状态流转，可继续接入 Airtest 或 Appium 真实执行。",
-                    finished_at,
-                    duration,
-                    json_dumps(logs),
-                    total_steps,
-                    finished_at,
-                    execution_id,
-                ),
-            )
-            write_execution_report(conn, execution_id)
-            conn.execute(
-                """
-                UPDATE test_cases
-                SET last_result = 'passed', last_run_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (finished_at, finished_at, current["test_case_id"]),
-            )
-            finish_device_lock(conn, current["device_id"])
-            _refresh_suite_stats_for_execution(conn, execution_id)
-    except Exception as exc:
-        with connection() as conn:
-            execution = fetch_one(conn, "SELECT device_id, test_case_id, logs FROM executions WHERE id = ?", (execution_id,))
-            logs = append_log(json_loads(execution.get("logs") if execution else "[]", []), f"执行异常: {exc}", "error")
-            now = utc_now()
-            conn.execute(
-                """
-                UPDATE executions
-                SET status = 'failed', result = 'failed', error_message = ?, finished_at = ?, updated_at = ?, logs = ?,
-                    failed_steps = CASE WHEN total_steps > 0 THEN 1 ELSE 0 END
-                WHERE id = ?
-                """,
-                (str(exc), now, now, json_dumps(logs), execution_id),
-            )
-            write_execution_report(conn, execution_id)
-            if execution and execution.get("device_id"):
-                finish_device_lock(conn, execution["device_id"])
-            _refresh_suite_stats_for_execution(conn, execution_id)
 
 
 def _execution_is_stopped(execution_id: int) -> bool:
@@ -1531,8 +1400,8 @@ def stop_execution(execution_id: int) -> dict[str, Any]:
 def delete_execution(execution_id: int) -> dict[str, Any]:
     with connection() as conn:
         execution = get_execution_or_404(conn, execution_id)
-        if execution["status"] in {"pending", "running"} and execution.get("device_id"):
-            finish_device_lock(conn, execution["device_id"])
+        if execution["status"] in {"pending", "running", "stopped"}:
+            raise HTTPException(status_code=409, detail="执行仍在收尾中，请等待完成后再删除")
         conn.execute("DELETE FROM executions WHERE id = ?", (execution_id,))
         return success(None, "执行记录已删除")
 

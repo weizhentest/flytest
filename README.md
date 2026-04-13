@@ -198,6 +198,10 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
 ```
 
+APP 自动化服务默认会校验 Django 登录态的 JWT。
+独立启动时请确保当前终端已提供 `DJANGO_SECRET_KEY`，或单独设置 `APP_AUTOMATION_JWT_SECRET`；
+如果只是本地离线调试，可临时设置 `APP_AUTOMATION_AUTH_DISABLED=true`。
+
 #### 4. 启动 MCP 工具服务
 
 ```bash

@@ -4,236 +4,47 @@
       <a-empty description="请先选择项目后再查看 APP 自动化执行报告" />
     </div>
     <template v-else>
-      <div class="page-header">
-        <div>
-          <h3>执行报告</h3>
-          <p>从套件报告和执行明细两个维度查看 APP 自动化结果，支持快速定位报告、日志和执行证据。</p>
-        </div>
-        <a-space>
-          <span class="header-tip">最近刷新：{{ lastUpdatedText }}</span>
-          <a-button :loading="loading" @click="loadData">刷新</a-button>
-        </a-space>
-      </div>
+      <ReportsHeaderBar :loading="loading" :last-updated-text="lastUpdatedText" @refresh="loadData" />
 
       <a-tabs v-model:active-key="activeTab">
         <a-tab-pane key="suite" title="套件报告">
-          <a-card class="filter-card">
-            <div class="filter-grid">
-              <a-input-search
-                v-model="suiteFilters.search"
-                allow-clear
-                placeholder="搜索套件名称、描述或创建人"
-                @search="handleSuiteSearch"
-              />
-              <a-select v-model="suiteFilters.status" placeholder="执行状态" allow-clear>
-                <a-option value="not_run">未执行</a-option>
-                <a-option value="running">执行中</a-option>
-                <a-option value="passed">执行通过</a-option>
-                <a-option value="failed">执行失败</a-option>
-                <a-option value="stopped">已停止</a-option>
-              </a-select>
-              <div class="filter-actions">
-                <a-button @click="resetSuiteFilters">重置</a-button>
-                <a-button type="primary" @click="handleSuiteSearch">查询</a-button>
-              </div>
-            </div>
-          </a-card>
-
-          <div class="stats-grid">
-            <a-card class="stat-card">
-              <span class="stat-label">套件总数</span>
-              <strong>{{ suiteStats.total }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">执行中</span>
-              <strong>{{ suiteStats.running }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">通过套件</span>
-              <strong>{{ suiteStats.passed }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">平均健康度</span>
-              <strong>{{ suiteStats.health }}%</strong>
-            </a-card>
-          </div>
-
-          <a-card class="table-card">
-            <a-table :data="pagedSuites" :loading="loading" :pagination="false" row-key="id">
-              <template #columns>
-                <a-table-column title="套件 / 描述" :width="280">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <strong>{{ record.name }}</strong>
-                      <span>{{ record.description || '暂无套件描述' }}</span>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="状态 / 健康度" :width="220">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <a-tag :color="getSuiteStatus(record).color">{{ getSuiteStatus(record).label }}</a-tag>
-                      <small>健康度 {{ getSuiteHealthRate(record) }}%</small>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="用例 / 结果" :width="220">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <span>用例数 {{ record.test_case_count || 0 }}</span>
-                      <small>
-                        通过 {{ record.passed_count || 0 }} / 失败 {{ record.failed_count || 0 }} / 停止
-                        {{ record.stopped_count || 0 }}
-                      </small>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="最近执行" :width="180">
-                  <template #cell="{ record }">
-                    {{ formatDateTime(record.last_run_at) }}
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="操作" :width="240" fixed="right">
-                  <template #cell="{ record }">
-                    <a-space wrap>
-                      <a-button type="text" @click="openSuiteDetail(record)">详情</a-button>
-                      <a-button type="text" @click="openSuiteExecutions(record)">执行记录</a-button>
-                      <a-button type="text" @click="openSuiteReport(record)">最新报告</a-button>
-                    </a-space>
-                  </template>
-                </a-table-column>
-              </template>
-            </a-table>
-
-            <div class="pagination-row">
-              <a-pagination
-                v-model:current="suitePagination.current"
-                v-model:page-size="suitePagination.pageSize"
-                :total="filteredSuites.length"
-                :show-total="true"
-                :show-jumper="true"
-                :show-page-size="true"
-                :page-size-options="['10', '20', '50']"
-              />
-            </div>
-          </a-card>
+          <ReportsSuitePanel
+            :loading="loading"
+            :filters="suiteFilters"
+            :pagination="suitePagination"
+            :statistics="suiteStats"
+            :suites="pagedSuites"
+            :total="filteredSuites.length"
+            :format-date-time="formatDateTime"
+            :get-suite-status="getSuiteStatus"
+            :get-suite-health-rate="getSuiteHealthRate"
+            @search="handleSuiteSearch"
+            @reset="resetSuiteFilters"
+            @open-detail="openSuiteDetail"
+            @open-executions="openSuiteExecutions"
+            @open-report="openSuiteReport"
+          />
         </a-tab-pane>
 
         <a-tab-pane key="case" title="执行明细">
-          <a-card class="filter-card">
-            <div class="filter-grid case-filter-grid">
-              <a-input-search
-                v-model="caseFilters.search"
-                allow-clear
-                placeholder="搜索用例、设备、触发人或套件"
-                @search="handleCaseSearch"
-              />
-              <a-select v-model="caseFilters.status" placeholder="执行状态" allow-clear>
-                <a-option value="pending">等待执行</a-option>
-                <a-option value="running">执行中</a-option>
-                <a-option value="passed">执行通过</a-option>
-                <a-option value="failed">执行失败</a-option>
-                <a-option value="stopped">已停止</a-option>
-              </a-select>
-              <a-select v-model="caseFilters.source" placeholder="执行来源">
-                <a-option value="all">全部来源</a-option>
-                <a-option value="suite">套件执行</a-option>
-                <a-option value="standalone">独立执行</a-option>
-              </a-select>
-              <div class="filter-actions">
-                <a-button @click="resetCaseFilters">重置</a-button>
-                <a-button type="primary" @click="handleCaseSearch">查询</a-button>
-              </div>
-            </div>
-          </a-card>
-
-          <div class="stats-grid">
-            <a-card class="stat-card">
-              <span class="stat-label">执行记录</span>
-              <strong>{{ caseStats.total }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">通过记录</span>
-              <strong>{{ caseStats.passed }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">失败记录</span>
-              <strong>{{ caseStats.failed }}</strong>
-            </a-card>
-            <a-card class="stat-card">
-              <span class="stat-label">平均通过率</span>
-              <strong>{{ caseStats.passRate }}%</strong>
-            </a-card>
-          </div>
-
-          <a-card class="table-card">
-            <a-table :data="pagedExecutions" :loading="loading" :pagination="false" row-key="id">
-              <template #columns>
-                <a-table-column title="用例 / 设备" :width="260">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <strong>{{ record.case_name || `执行 #${record.id}` }}</strong>
-                      <span>{{ record.device_name || record.device_serial || '未绑定设备' }}</span>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="执行来源" :width="220">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <a-tag :color="record.test_suite_id ? 'green' : 'arcoblue'">
-                        {{ record.test_suite_id ? '套件执行' : '独立执行' }}
-                      </a-tag>
-                      <small>{{ getExecutionSource(record) }}</small>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="状态 / 通过率" :width="220">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <a-tag :color="getExecutionStatus(record).color">{{ getExecutionStatus(record).label }}</a-tag>
-                      <small>通过率 {{ formatRate(record.pass_rate) }}%</small>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="时间 / 耗时" :width="220">
-                  <template #cell="{ record }">
-                    <div class="stack">
-                      <span>{{ formatDateTime(record.started_at || record.created_at) }}</span>
-                      <small>耗时 {{ formatDuration(record.duration) }}</small>
-                    </div>
-                  </template>
-                </a-table-column>
-
-                <a-table-column title="操作" :width="220" fixed="right">
-                  <template #cell="{ record }">
-                    <a-space wrap>
-                      <a-button type="text" @click="openExecutionDetail(record.id)">详情</a-button>
-                      <a-button v-if="canOpenReport(record)" type="text" @click="openExecutionReport(record)">报告</a-button>
-                    </a-space>
-                  </template>
-                </a-table-column>
-              </template>
-            </a-table>
-
-            <div class="pagination-row">
-              <a-pagination
-                v-model:current="casePagination.current"
-                v-model:page-size="casePagination.pageSize"
-                :total="filteredExecutions.length"
-                :show-total="true"
-                :show-jumper="true"
-                :show-page-size="true"
-                :page-size-options="['10', '20', '50']"
-              />
-            </div>
-          </a-card>
+          <ReportsExecutionPanel
+            :loading="loading"
+            :filters="caseFilters"
+            :pagination="casePagination"
+            :statistics="caseStats"
+            :executions="pagedExecutions"
+            :total="filteredExecutions.length"
+            :format-date-time="formatDateTime"
+            :format-rate="formatRate"
+            :format-duration="formatDuration"
+            :get-execution-source="getExecutionSource"
+            :get-execution-status="getExecutionStatus"
+            :can-open-report="canOpenReport"
+            @search="handleCaseSearch"
+            @reset="resetCaseFilters"
+            @open-detail="openExecutionDetail"
+            @open-report="openExecutionReport"
+          />
         </a-tab-pane>
       </a-tabs>
 
@@ -397,6 +208,9 @@ import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../services/appAutomationService'
 import type { AppExecution, AppTestSuite } from '../types'
+import ReportsExecutionPanel from './reports/ReportsExecutionPanel.vue'
+import ReportsHeaderBar from './reports/ReportsHeaderBar.vue'
+import ReportsSuitePanel from './reports/ReportsSuitePanel.vue'
 
 const projectStore = useProjectStore()
 const route = useRoute()
@@ -891,7 +705,6 @@ watch(
 }
 
 .detail-shell,
-.stack,
 .case-list {
   display: flex;
   flex-direction: column;
@@ -918,22 +731,6 @@ watch(
   justify-content: flex-start;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.page-header h3 {
-  margin: 0;
-  color: var(--theme-text);
-}
-
-.page-header p,
-.header-tip,
-.stack span,
-.stack small,
 .meta-row,
 .detail-label,
 .case-item span,
@@ -941,13 +738,6 @@ watch(
   color: var(--theme-text-secondary);
 }
 
-.page-header p {
-  margin: 6px 0 0;
-}
-
-.filter-card,
-.table-card,
-.stat-card,
 .detail-panel {
   border-radius: 16px;
   border: 1px solid var(--theme-card-border);
@@ -955,52 +745,9 @@ watch(
   box-shadow: var(--theme-card-shadow);
 }
 
-.filter-grid {
-  display: grid;
-  grid-template-columns: 1.6fr 180px auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.case-filter-grid {
-  grid-template-columns: 1.5fr 180px 180px auto;
-}
-
-.filter-actions,
-.pagination-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin: 16px 0;
-}
-
-.stat-card :deep(.arco-card-body) {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--theme-text-secondary);
-}
-
-.stat-card strong,
 .detail-card strong,
-.case-item strong,
-.stack strong {
+.case-item strong {
   color: var(--theme-text);
-}
-
-.stat-card strong {
-  font-size: 30px;
-  line-height: 1;
 }
 
 .detail-grid {
@@ -1099,23 +846,12 @@ watch(
 }
 
 @media (max-width: 1280px) {
-  .filter-grid,
-  .case-filter-grid,
-  .stats-grid,
   .detail-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
 
 @media (max-width: 900px) {
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .filter-grid,
-  .case-filter-grid,
-  .stats-grid,
   .detail-grid {
     grid-template-columns: 1fr;
   }

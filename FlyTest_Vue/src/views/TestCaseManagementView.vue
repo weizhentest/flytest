@@ -61,18 +61,21 @@
     </div>
 
     <GenerateCasesModal
+      v-if="isGenerateCasesModalVisible"
       v-model:visible="isGenerateCasesModalVisible"
       :test-case-module-tree="moduleTreeForForm"
       @submit="handleGenerateCasesSubmit"
     />
     
     <ExecuteTestCaseModal
+      v-if="isExecuteModalVisible"
       v-model:visible="isExecuteModalVisible"
       :test-case="pendingExecuteTestCase"
       @confirm="handleExecuteConfirm"
     />
 
     <OptimizationSuggestionModal
+      v-if="isOptimizationModalVisible"
       v-model="isOptimizationModalVisible"
       :test-case="pendingOptimizationTestCase"
       @submit="handleOptimizationSubmit"
@@ -81,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, ref, computed, watch, onMounted } from 'vue';
+import { defineAsyncComponent, h, ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useProjectStore } from '@/store/projectStore';
 import type { TestCase } from '@/services/testcaseService';
@@ -92,11 +95,11 @@ import { Message, Notification } from '@arco-design/web-vue';
 
 import ModuleManagementPanel from '@/components/testcase/ModuleManagementPanel.vue';
 import TestCaseList from '@/components/testcase/TestCaseList.vue';
-import TestCaseForm from '@/components/testcase/TestCaseForm.vue';
-import TestCaseDetail from '@/components/testcase/TestCaseDetail.vue';
-import GenerateCasesModal from '@/components/testcase/GenerateCasesModal.vue';
-import ExecuteTestCaseModal from '@/components/testcase/ExecuteTestCaseModal.vue';
-import OptimizationSuggestionModal from '@/components/testcase/OptimizationSuggestionModal.vue';
+const TestCaseForm = defineAsyncComponent(() => import('@/components/testcase/TestCaseForm.vue'));
+const TestCaseDetail = defineAsyncComponent(() => import('@/components/testcase/TestCaseDetail.vue'));
+const GenerateCasesModal = defineAsyncComponent(() => import('@/components/testcase/GenerateCasesModal.vue'));
+const ExecuteTestCaseModal = defineAsyncComponent(() => import('@/components/testcase/ExecuteTestCaseModal.vue'));
+const OptimizationSuggestionModal = defineAsyncComponent(() => import('@/components/testcase/OptimizationSuggestionModal.vue'));
 import {
   sendChatMessageStream
 } from '@/features/langgraph/services/chatService';

@@ -269,15 +269,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, ref, reactive, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconEdit, IconDelete, IconDragDotVertical, IconPlayArrow } from '@arco-design/web-vue/es/icon'
-import draggable from 'vuedraggable'
 import DataFactoryReferencePicker from '@/features/data-factory/components/DataFactoryReferencePicker.vue'
 import { pageStepsDetailedApi, elementApi, actuatorApi, envConfigApi, type ActuatorInfo } from '../api'
 import type { UiPageStepsDetailed, UiPageSteps, UiElement, StepType, UiEnvironmentConfig } from '../types'
 import { STEP_TYPE_LABELS, extractListData, extractResponseData } from '../types'
 import { uiWebSocket, UiSocketEnum } from '../services/websocket'
+
+const draggable = defineAsyncComponent(() => import('vuedraggable'))
 
 /** 操作参数定义 */
 interface OpeParamDef {

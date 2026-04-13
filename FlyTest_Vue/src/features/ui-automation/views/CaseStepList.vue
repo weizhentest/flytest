@@ -95,14 +95,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { defineAsyncComponent, ref, reactive, computed, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconEdit, IconDelete, IconDragDotVertical } from '@arco-design/web-vue/es/icon'
-import draggable from 'vuedraggable'
 import { caseStepsApi, pageStepsApi } from '../api'
 import type { UiCaseStepsDetailed, UiPageSteps, UiTestCase, ExecutionStatus } from '../types'
 import { STATUS_LABELS, extractListData } from '../types'
 import { useProjectStore } from '@/store/projectStore'
+
+const draggable = defineAsyncComponent(() => import('vuedraggable'))
 
 const props = defineProps<{ testCase: UiTestCase }>()
 

@@ -1,13 +1,9 @@
 import axios from 'axios'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ArcoVue from '@arco-design/web-vue'
-import ArcoVueIcon from '@arco-design/web-vue/es/icon'
-import 'wired-elements'
 import '@arco-design/web-vue/dist/arco.css'
 import './style.css'
 import './arco-theme-override.css'
-import './assets/wired-elements-custom.css'
 
 import App from './App.vue'
 import router, { preloadPrivateRouteComponents } from './router'
@@ -21,8 +17,6 @@ axios.defaults.withCredentials = true
 
 app.use(pinia)
 app.use(router)
-app.use(ArcoVue)
-app.use(ArcoVueIcon)
 
 const bootstrapApp = async () => {
   useThemeStore(pinia).initializeTheme()
@@ -40,6 +34,17 @@ let hasScheduledRoutePreload = false
 
 const scheduleRoutePreload = () => {
   if (hasScheduledRoutePreload || typeof window === 'undefined') {
+    return
+  }
+
+  const connection = (navigator as Navigator & {
+    connection?: {
+      saveData?: boolean
+      effectiveType?: string
+    }
+  }).connection
+
+  if (connection?.saveData || connection?.effectiveType === '2g') {
     return
   }
 

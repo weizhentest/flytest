@@ -291,6 +291,7 @@ const getStatusColor = (status: string) => {
 const getConnectionLabel = (connectionType: string) => {
   if (connectionType === 'emulator') return '模拟器'
   if (connectionType === 'remote') return '远程设备'
+  if (connectionType === 'remote_emulator') return '远程设备'
   if (connectionType === 'usb') return 'USB 真机'
   return connectionType || '-'
 }

@@ -115,21 +115,53 @@ services:
 
   # 前端 Vue 服务
   frontend:
-    image: ${DOCKER_FRONTEND_IMAGE:-ghcr.io/mgdaaslab/flytest-frontend:latest}
-    # 如果需要本地构建，注释掉上面的image行，取消注释下面的build部分
-    # build:
-    #   context: ./FlyTest_Vue
-    #   dockerfile: Dockerfile
+    build:
+      context: ./FlyTest_Vue
+      dockerfile: Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${DOCKER_NODE_BASE_IMAGE:-node:20-alpine}
+        NGINX_BASE_IMAGE: ${DOCKER_NGINX_BASE_IMAGE:-nginx:alpine}
+        NPM_REGISTRY: ${DOCKER_NPM_REGISTRY:-https://registry.npmjs.org}
+    image: ${DOCKER_FRONTEND_IMAGE:-flytest-frontend:local}
     container_name: flytest-frontend
     ports:
       - "8913:80"
     depends_on:
       - backend
+      - app-automation
     networks:
       - flytest-network
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  app-automation:
+    build:
+      context: ./FlyTest_FastAPI_AppAutomation
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${DOCKER_PYTHON_BASE_IMAGE:-python:3.11-slim}
+        APT_BASE_URL: ${DOCKER_APT_BASE_URL:-http://deb.debian.org}
+        PIP_INDEX_URL: ${DOCKER_PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_INDEX_FALLBACKS: ${DOCKER_PIP_INDEX_FALLBACKS:-}
+    image: ${DOCKER_APP_AUTOMATION_IMAGE:-flytest-app-automation:local}
+    container_name: flytest-app-automation
+    volumes:
+      - ./data/app-automation:/app/data
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-change-this-in-production}
+      - APP_AUTOMATION_JWT_SECRET=${APP_AUTOMATION_JWT_SECRET:-}
+      - APP_AUTOMATION_AUTH_DISABLED=${APP_AUTOMATION_AUTH_DISABLED:-false}
+      - DJANGO_JWT_ACCESS_COOKIE_NAME=${DJANGO_JWT_ACCESS_COOKIE_NAME:-flytest_access_token}
+    networks:
+      - flytest-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3

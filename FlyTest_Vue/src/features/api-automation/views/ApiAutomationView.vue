@@ -46,16 +46,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/store/projectStore'
 import type { ApiAutomationSelection, ApiCollection, ApiRequest } from '../types'
 import CollectionPanel from '../components/CollectionPanel.vue'
-import EnvironmentList from './EnvironmentList.vue'
-import ExecutionRecordList from './ExecutionRecordList.vue'
-import RequestList from './RequestList.vue'
-import TestCaseList from './TestCaseList.vue'
-import TestReportView from './TestReportView.vue'
+
+const EnvironmentList = defineAsyncComponent(() => import('./EnvironmentList.vue'))
+const ExecutionRecordList = defineAsyncComponent(() => import('./ExecutionRecordList.vue'))
+const RequestList = defineAsyncComponent(() => import('./RequestList.vue'))
+const TestCaseList = defineAsyncComponent(() => import('./TestCaseList.vue'))
+const TestReportView = defineAsyncComponent(() => import('./TestReportView.vue'))
 
 type ApiAutomationTab = 'requests' | 'test-cases' | 'environments' | 'execution-records' | 'execution-report'
 

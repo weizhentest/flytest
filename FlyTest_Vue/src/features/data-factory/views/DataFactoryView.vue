@@ -174,7 +174,7 @@
       </section>
     </section>
 
-    <a-modal :visible="toolDialogVisible" :title="currentTool?.display_name || '工具执行'" width="1160px" :footer="false" @cancel="toolDialogVisible = false">
+    <a-modal :visible="toolDialogVisible" :title="currentTool?.display_name || '工具执行'" width="1160px" :footer="false" unmount-on-close @cancel="toolDialogVisible = false">
       <div v-if="currentTool" class="tool-modal">
         <div class="tool-modal__banner">
           <div>
@@ -794,47 +794,36 @@
       </div>
     </a-modal>
 
-    <a-drawer :visible="historyVisible" width="1100px" title="数据工厂记录与统计" @cancel="historyVisible = false">
-      <a-tabs v-model:active-key="historyTab">
-        <a-tab-pane key="records" title="使用记录">
-          <div class="history-filters">
-            <a-input-search v-model="recordFilters.search" allow-clear placeholder="搜索工具、标签或结果预览" :disabled="!projectReady" @search="searchRecords" @clear="searchRecords" />
-            <a-select v-model="recordFilters.category" :disabled="!projectReady" @change="searchRecords">
-              <a-option value="all" label="全部分类" />
-              <a-option v-for="category in catalog.categories" :key="category.category" :value="category.category" :label="category.name" />
-            </a-select>
-            <a-select v-model="recordFilters.scenario" :disabled="!projectReady" @change="searchRecords">
-              <a-option value="all" label="全部场景" />
-              <a-option v-for="scenario in catalog.scenarios" :key="scenario.scenario" :value="scenario.scenario" :label="scenario.name" />
-            </a-select>
-            <a-select v-model="recordFilters.saved" :disabled="!projectReady" @change="searchRecords">
-              <a-option value="all" label="全部记录" />
-              <a-option value="saved" label="仅已保存" />
-              <a-option value="temp" label="仅临时结果" />
-            </a-select>
-          </div>
-          <a-table :data="projectReady ? records : []" :loading="projectReady ? loadingRecords : false" :pagination="projectReady ? recordPagination : false" row-key="id" @page-change="handleRecordPageChange" @page-size-change="handleRecordPageSizeChange">
-            <template #columns>
-              <a-table-column title="ID" data-index="id" :width="80" />
-              <a-table-column title="工具" :width="220"><template #cell="{ record }"><div class="record-tool"><strong>{{ record.tool_display_name }}</strong><span>{{ record.category_display }} / {{ record.scenario_display }}</span></div></template></a-table-column>
-              <a-table-column title="标签" :width="220"><template #cell="{ record }"><a-space wrap size="mini"><a-tag v-for="tag in record.tags" :key="tag.id" :color="tag.color || 'arcoblue'">{{ tag.name }}</a-tag></a-space></template></a-table-column>
-              <a-table-column title="结果预览" data-index="preview" ellipsis tooltip />
-              <a-table-column title="创建时间" :width="180"><template #cell="{ record }">{{ formatDate(record.created_at) }}</template></a-table-column>
-              <a-table-column title="操作" :width="280"><template #cell="{ record }"><a-space wrap><a-button size="mini" :disabled="!projectReady" @click="showRecordResult(record)">查看</a-button><a-button size="mini" :disabled="!projectReady" @click="copyText(record.reference_placeholder_api, '已复制 API 记录引用')">API</a-button><a-button size="mini" :disabled="!projectReady" @click="copyText(record.reference_placeholder_ui, '已复制 UI 记录引用')">UI</a-button><a-popconfirm content="确定删除这条记录吗？" @ok="deleteRecord(record.id)"><a-button size="mini" status="danger" :disabled="!projectReady">删除</a-button></a-popconfirm></a-space></template></a-table-column>
-            </template>
-          </a-table>
-        </a-tab-pane>
-        <a-tab-pane key="stats" title="统计概览">
-          <div class="insight-grid insight-grid--drawer">
-            <div class="panel"><div class="section-title">分类使用统计</div><div class="metric-list"><div v-for="item in categoryBreakdown" :key="item.key" class="metric"><div class="metric__head"><span>{{ item.name }}</span><strong>{{ item.total }}</strong></div><div class="metric__track"><span class="metric__bar" :style="{ width: `${item.percent}%` }"></span></div></div></div></div>
-            <div class="panel"><div class="section-title">场景使用统计</div><div class="metric-list"><div v-for="item in scenarioBreakdown" :key="item.key" class="metric"><div class="metric__head"><span>{{ item.name }}</span><strong>{{ item.total }}</strong></div><div class="metric__track"><span class="metric__bar metric__bar--soft" :style="{ width: `${item.percent}%` }"></span></div></div></div></div>
-          </div>
-        </a-tab-pane>
-      </a-tabs>
-    </a-drawer>
+    <DataFactoryHistoryDrawer
+      v-if="historyVisible"
+      v-model:visible="historyVisible"
+      :history-tab="historyTab"
+      :project-ready="projectReady"
+      :loading-records="loadingRecords"
+      :records="records"
+      :record-filters="recordFilters"
+      :catalog="catalog"
+      :record-pagination="projectReady ? recordPagination : false"
+      :category-breakdown="categoryBreakdown"
+      :scenario-breakdown="scenarioBreakdown"
+      :format-date="formatDate"
+      :copy-text="copyText"
+      :show-record-result="showRecordResult"
+      :delete-record="deleteRecord"
+      :search-records="searchRecords"
+      :handle-record-page-change="handleRecordPageChange"
+      :handle-record-page-size-change="handleRecordPageSizeChange"
+      @update:history-tab="historyTab = $event"
+    />
 
-    <DataFactoryTagManager v-model="tagManagerVisible" :project-id="projectId" @updated="handleTagsUpdated" />
+    <DataFactoryTagManager
+      v-if="tagManagerVisible"
+      v-model="tagManagerVisible"
+      :project-id="projectId"
+      @updated="handleTagsUpdated"
+    />
     <DataFactoryReferencePicker
+      v-if="referencePickerVisible"
       v-model="referencePickerVisible"
       :project-id="projectId"
       :mode="referencePickerMode"
@@ -845,16 +834,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconArrowRight, IconCheckCircle, IconClockCircle, IconCodeBlock, IconCopy, IconDownload, IconFile, IconFire, IconFontColors, IconHistory, IconLock, IconPlayArrow, IconRefresh, IconTags, IconTool, IconUserGroup } from '@arco-design/web-vue/es/icon'
 import { useProjectStore } from '@/store/projectStore'
 import { dataFactoryApi } from '../api'
-import DataFactoryReferencePicker from '../components/DataFactoryReferencePicker.vue'
-import DataFactoryTagManager from '../components/DataFactoryTagManager.vue'
 import type { DataFactoryCatalog, DataFactoryCategory, DataFactoryCategoryKey, DataFactoryExecuteResult, DataFactoryFieldType, DataFactoryRecord, DataFactoryReferenceMode, DataFactoryScenarioKey, DataFactoryStatistics, DataFactoryTag, DataFactoryTool, DataFactoryToolField } from '../types'
 import { buildDataFactoryPlaceholder, DATA_FACTORY_SCENARIO_LABELS, extractDataFactoryData } from '../types'
+
+const DataFactoryReferencePicker = defineAsyncComponent(() => import('../components/DataFactoryReferencePicker.vue'))
+const DataFactoryTagManager = defineAsyncComponent(() => import('../components/DataFactoryTagManager.vue'))
+const DataFactoryHistoryDrawer = defineAsyncComponent(() => import('../components/DataFactoryHistoryDrawer.vue'))
 
 type ViewMode = 'category' | 'scenario'
 type SavedFilter = 'all' | 'saved' | 'temp'
