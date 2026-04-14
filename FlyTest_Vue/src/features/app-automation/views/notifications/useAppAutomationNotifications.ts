@@ -269,6 +269,25 @@ export function useAppAutomationNotifications() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'notifications') {
+        return
+      }
+      detailVisible.value = false
+    },
+  )
+
+  watch(
+    () => detailVisible.value,
+    value => {
+      if (!value) {
+        currentLog.value = null
+      }
+    },
+  )
+
+  watch(
     () => filteredLogs.value.length,
     total => {
       const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))

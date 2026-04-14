@@ -1,8 +1,17 @@
 import type { LocationQueryRaw, RouteLocationNormalizedLoaded, Router } from 'vue-router'
 
 import { AppAutomationService } from '../services/appAutomationService'
+import type { AppAutomationTab } from '../types'
 
 export type AppAutomationQueryPatch = Record<string, string | undefined>
+
+const appAutomationContextKeys = [
+  'caseId',
+  'executionId',
+  'suiteId',
+  'taskId',
+  'reportMode',
+] as const
 
 const normalizeQueryValue = (value: unknown) => {
   if (Array.isArray(value)) {
@@ -36,6 +45,60 @@ export const replaceAppAutomationQuery = async (
   await router.replace({
     path: '/app-automation',
     query: nextQuery,
+  })
+}
+
+export const buildAppAutomationTabChangePatch = (
+  tab: AppAutomationTab,
+): AppAutomationQueryPatch => {
+  const patch: AppAutomationQueryPatch = { tab }
+
+  appAutomationContextKeys.forEach(key => {
+    patch[key] = undefined
+  })
+
+  return patch
+}
+
+export const pushAppAutomationTab = async (
+  router: Router,
+  tab: AppAutomationTab,
+  patch: AppAutomationQueryPatch = {},
+) => {
+  await router.push({
+    path: '/app-automation',
+    query: {
+      ...buildAppAutomationTabChangePatch(tab),
+      ...patch,
+    },
+  })
+}
+
+export const pushAppAutomationExecutions = async (
+  router: Router,
+  options: { executionId?: number; suiteId?: number | null } = {},
+) => {
+  await pushAppAutomationTab(router, 'executions', {
+    executionId: options.executionId ? String(options.executionId) : undefined,
+    suiteId: options.suiteId ? String(options.suiteId) : undefined,
+  })
+}
+
+export const pushAppAutomationSceneBuilder = async (
+  router: Router,
+  options: { caseId?: number } = {},
+) => {
+  await pushAppAutomationTab(router, 'scene-builder', {
+    caseId: options.caseId ? String(options.caseId) : undefined,
+  })
+}
+
+export const pushAppAutomationScheduledTasks = async (
+  router: Router,
+  options: { taskId?: number } = {},
+) => {
+  await pushAppAutomationTab(router, 'scheduled-tasks', {
+    taskId: options.taskId ? String(options.taskId) : undefined,
   })
 }
 

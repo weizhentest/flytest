@@ -1,9 +1,14 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
+import {
+  openExecutionReportWindow,
+  pushAppAutomationExecutions,
+  pushAppAutomationSceneBuilder,
+} from '../appAutomationNavigation'
 import type { AppDevice, AppExecution, AppPackage, AppTestCase } from '../../types'
 import type {
   TestCaseExecuteFormModel,
@@ -14,6 +19,7 @@ import type {
 export function useAppAutomationTestCases() {
   const authStore = useAuthStore()
   const projectStore = useProjectStore()
+  const route = useRoute()
   const router = useRouter()
 
   const loading = ref(false)
@@ -177,12 +183,7 @@ export function useAppAutomationTestCases() {
   }
 
   const openSceneBuilderDraft = () => {
-    void router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'scene-builder',
-      },
-    })
+    void pushAppAutomationSceneBuilder(router)
   }
 
   const openEdit = (record: AppTestCase) => {
@@ -254,27 +255,15 @@ export function useAppAutomationTestCases() {
   }
 
   const openSceneBuilder = (record: AppTestCase) => {
-    void router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'scene-builder',
-        caseId: String(record.id),
-      },
-    })
+    void pushAppAutomationSceneBuilder(router, { caseId: record.id })
   }
 
   const openExecutionWorkspace = async (executionId: number) => {
-    await router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'executions',
-        executionId: String(executionId),
-      },
-    })
+    await pushAppAutomationExecutions(router, { executionId })
   }
 
   const openExecutionReport = (executionId: number) => {
-    window.open(AppAutomationService.getExecutionReportUrl(executionId), '_blank', 'noopener')
+    openExecutionReportWindow(executionId)
   }
 
   const openBatchExecute = () => {
@@ -290,6 +279,12 @@ export function useAppAutomationTestCases() {
 
   const clearSelection = () => {
     selectedCaseIds.value = []
+  }
+
+  const resetExecuteState = () => {
+    executeMode.value = 'single'
+    executeForm.device_id = undefined
+    currentExecutionCaseId.value = null
   }
 
   const executeCase = async () => {
@@ -366,12 +361,41 @@ export function useAppAutomationTestCases() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'test-cases') {
+        return
+      }
+      visible.value = false
+      executeVisible.value = false
+    },
+  )
+
+  watch(
+    () => visible.value,
+    value => {
+      if (!value) {
+        resetForm()
+      }
+    },
+  )
+
+  watch(
+    () => executeVisible.value,
+    value => {
+      if (!value) {
+        resetExecuteState()
+      }
+    },
+  )
+
+  watch(
     () => projectStore.currentProjectId,
     () => {
       resetForm()
+      resetExecuteState()
       packageFilter.value = ''
       selectedCaseIds.value = []
-      currentExecutionCaseId.value = null
       recentExecutionList.value = []
       void loadData()
     },

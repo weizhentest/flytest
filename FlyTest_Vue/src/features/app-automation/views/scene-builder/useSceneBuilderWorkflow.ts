@@ -2,6 +2,11 @@ import { Message } from '@arco-design/web-vue'
 import { computed, reactive, ref, watch, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import { AppAutomationService } from '../../services/appAutomationService'
+import {
+  pushAppAutomationExecutions,
+  pushAppAutomationTab,
+  replaceAppAutomationQuery,
+} from '../appAutomationNavigation'
 import type { AppComponent, AppCustomComponent, AppDevice, AppExecution, AppPackage, AppSceneStep, AppTestCase } from '../../types'
 import type {
   SceneBuilderAuthStoreLike,
@@ -122,10 +127,13 @@ export const useSceneBuilderWorkflow = ({
       nextQuery.caseId = String(caseId)
     }
 
-    void router.replace({
-      path: route.path,
-      query: nextQuery,
-    })
+    void replaceAppAutomationQuery(
+      { ...route, query: route.query } as RouteLocationNormalizedLoaded,
+      router,
+      Object.fromEntries(
+        Object.keys({ ...route.query, ...nextQuery }).map(key => [key, key === 'caseId' ? nextQuery.caseId : (nextQuery[key] as string | undefined)]),
+      ) as Record<string, string | undefined>,
+    )
   }
 
   const resetDraft = () => {
@@ -302,27 +310,11 @@ export const useSceneBuilderWorkflow = ({
   }
 
   const openTestCaseWorkspace = async () => {
-    await router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'test-cases',
-      },
-    })
+    await pushAppAutomationTab(router, 'test-cases')
   }
 
   const openExecutionWorkspace = async (executionId?: number) => {
-    const query: Record<string, string> = {
-      tab: 'executions',
-    }
-
-    if (executionId) {
-      query.executionId = String(executionId)
-    }
-
-    await router.push({
-      path: '/app-automation',
-      query,
-    })
+    await pushAppAutomationExecutions(router, { executionId })
   }
 
   const openExecuteDialog = async (executeVisible: Ref<boolean>) => {

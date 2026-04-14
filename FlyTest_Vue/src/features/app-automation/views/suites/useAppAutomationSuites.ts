@@ -1,12 +1,13 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import {
   openExecutionArtifactWindow,
   openExecutionReportWindow,
+  pushAppAutomationExecutions,
 } from '../appAutomationNavigation'
 import type { AppDevice, AppExecution, AppTestCase, AppTestSuite } from '../../types'
 import type {
@@ -21,6 +22,7 @@ import type {
 export function useAppAutomationSuites() {
   const authStore = useAuthStore()
   const projectStore = useProjectStore()
+  const route = useRoute()
   const router = useRouter()
 
   const loading = ref(false)
@@ -210,6 +212,11 @@ export function useAppAutomationSuites() {
     form.test_case_ids = []
   }
 
+  const resetRunState = () => {
+    currentSuiteId.value = null
+    runForm.device_id = undefined
+  }
+
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
       suites.value = []
@@ -304,14 +311,7 @@ export function useAppAutomationSuites() {
     executionId?: number,
     suiteId?: number | null,
   ) => {
-    await router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'executions',
-        executionId: executionId ? String(executionId) : undefined,
-        suiteId: suiteId ? String(suiteId) : undefined,
-      },
-    })
+    await pushAppAutomationExecutions(router, { executionId, suiteId })
   }
 
   const runSuite = async () => {
@@ -404,9 +404,73 @@ export function useAppAutomationSuites() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'suites') {
+        return
+      }
+      visible.value = false
+      runVisible.value = false
+      detailVisible.value = false
+      historyVisible.value = false
+      executionDetailVisible.value = false
+    },
+  )
+
+  watch(
+    () => visible.value,
+    value => {
+      if (!value) {
+        resetForm()
+      }
+    },
+  )
+
+  watch(
+    () => runVisible.value,
+    value => {
+      if (!value) {
+        resetRunState()
+      }
+    },
+  )
+
+  watch(
+    () => detailVisible.value,
+    value => {
+      if (!value && !historyVisible.value) {
+        selectedSuite.value = null
+      }
+    },
+  )
+
+  watch(
+    () => historyVisible.value,
+    value => {
+      if (!value) {
+        history.value = []
+        historyLoading.value = false
+        if (!detailVisible.value) {
+          selectedSuite.value = null
+        }
+      }
+    },
+  )
+
+  watch(
+    () => executionDetailVisible.value,
+    value => {
+      if (!value) {
+        currentExecution.value = null
+      }
+    },
+  )
+
+  watch(
     () => projectStore.currentProjectId,
     () => {
       resetForm()
+      resetRunState()
       filters.status = ''
       void loadData()
     },

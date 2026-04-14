@@ -430,6 +430,18 @@ export function useAppAutomationReports() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'reports') {
+        return
+      }
+      suiteDetailVisible.value = false
+      suiteExecutionsVisible.value = false
+      executionDetailVisible.value = false
+    },
+  )
+
+  watch(
     () => filteredSuites.value.length,
     total => {
       const maxPage = Math.max(1, Math.ceil(total / suitePagination.pageSize))
@@ -469,6 +481,9 @@ export function useAppAutomationReports() {
       if (!value && route.query.tab === 'reports' && route.query.suiteId) {
         void replaceAppAutomationQuery(route, router, { suiteId: undefined })
       }
+      if (!value && !suiteExecutionsVisible.value) {
+        selectedSuite.value = null
+      }
     },
   )
 
@@ -477,6 +492,22 @@ export function useAppAutomationReports() {
     value => {
       if (!value && route.query.tab === 'reports' && route.query.executionId) {
         void replaceAppAutomationQuery(route, router, { executionId: undefined })
+      }
+      if (!value) {
+        currentExecution.value = null
+      }
+    },
+  )
+
+  watch(
+    () => suiteExecutionsVisible.value,
+    value => {
+      if (!value) {
+        suiteExecutions.value = []
+        suiteExecutionsLoading.value = false
+        if (!suiteDetailVisible.value) {
+          selectedSuite.value = null
+        }
       }
     },
   )

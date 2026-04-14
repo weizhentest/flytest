@@ -5,7 +5,12 @@ import { getActiveLlmConfig, getLlmConfigDetails } from '@/features/langgraph/se
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
-import { openExecutionReportWindow } from '../appAutomationNavigation'
+import {
+  openExecutionReportWindow,
+  pushAppAutomationExecutions,
+  pushAppAutomationScheduledTasks,
+  pushAppAutomationTab,
+} from '../appAutomationNavigation'
 import type {
   AppAutomationTab,
   AppDashboardStatistics,
@@ -388,20 +393,11 @@ export const useAppAutomationDashboard = () => {
   }
 
   const openTab = async (tab: AppAutomationTab) => {
-    await router.push({
-      path: '/app-automation',
-      query: { tab },
-    })
+    await pushAppAutomationTab(router, tab)
   }
 
   const openExecution = async (executionId: number) => {
-    await router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'executions',
-        executionId: String(executionId),
-      },
-    })
+    await pushAppAutomationExecutions(router, { executionId })
   }
 
   const openLatestExecution = async (task: AppScheduledTask) => {
@@ -414,13 +410,7 @@ export const useAppAutomationDashboard = () => {
   }
 
   const openScheduledTask = async (task: AppScheduledTask) => {
-    await router.push({
-      path: '/app-automation',
-      query: {
-        tab: 'scheduled-tasks',
-        taskId: String(task.id),
-      },
-    })
+    await pushAppAutomationScheduledTasks(router, { taskId: task.id })
   }
 
   const openReport = (executionId: number) => {

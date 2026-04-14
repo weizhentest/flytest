@@ -17,6 +17,10 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AppAutomationTab } from '../types'
 import {
+  buildAppAutomationTabChangePatch,
+  replaceAppAutomationQuery,
+} from './appAutomationNavigation'
+import {
   appAutomationTabDefinitions,
   normalizeAppAutomationTab,
 } from './appAutomationTabs'
@@ -30,13 +34,7 @@ const activeTab = computed<AppAutomationTab>({
     if (value === normalizeAppAutomationTab(route.query.tab)) {
       return
     }
-    void router.replace({
-      path: '/app-automation',
-      query: {
-        ...route.query,
-        tab: value,
-      },
-    })
+    void replaceAppAutomationQuery(route, router, buildAppAutomationTabChangePatch(value))
   },
 })
 

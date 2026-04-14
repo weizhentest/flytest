@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
+import { useRoute } from 'vue-router'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppElement, AppImageCategory } from '../../types'
@@ -10,6 +11,7 @@ import type {
 
 export function useAppAutomationElements() {
   const projectStore = useProjectStore()
+  const route = useRoute()
 
   const loading = ref(false)
   const visible = ref(false)
@@ -557,6 +559,36 @@ export function useAppAutomationElements() {
   const handleCaptureSuccess = async () => {
     await Promise.all([loadElements(), loadCategories()])
   }
+
+  watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'elements') {
+        return
+      }
+      closeEditor()
+      detailVisible.value = false
+      captureVisible.value = false
+    },
+  )
+
+  watch(
+    () => detailVisible.value,
+    value => {
+      if (!value) {
+        detailRecord.value = null
+      }
+    },
+  )
+
+  watch(
+    () => captureVisible.value,
+    value => {
+      if (!value) {
+        updateLocalPreviewUrl('')
+      }
+    },
+  )
 
   watch(
     () => form.element_type,

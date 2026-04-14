@@ -410,6 +410,16 @@ export function useAppAutomationExecutions() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'executions') {
+        return
+      }
+      detailVisible.value = false
+    },
+  )
+
+  watch(
     () => filteredExecutions.value.length,
     total => {
       const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))
@@ -431,6 +441,9 @@ export function useAppAutomationExecutions() {
     value => {
       if (!value && route.query.tab === 'executions' && route.query.executionId) {
         void replaceAppAutomationQuery(route, router, { executionId: undefined })
+      }
+      if (!value) {
+        currentExecution.value = null
       }
     },
   )

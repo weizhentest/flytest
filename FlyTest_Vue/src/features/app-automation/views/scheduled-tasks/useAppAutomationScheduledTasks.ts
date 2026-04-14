@@ -652,6 +652,17 @@ export function useAppAutomationScheduledTasks() {
   }
 
   watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'scheduled-tasks') {
+        return
+      }
+      visible.value = false
+      detailVisible.value = false
+    },
+  )
+
+  watch(
     () => filteredTasks.value.length,
     total => {
       const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))
@@ -666,6 +677,21 @@ export function useAppAutomationScheduledTasks() {
     value => {
       if (!value && route.query.tab === 'scheduled-tasks' && route.query.taskId) {
         void replaceAppAutomationQuery(route, router, { taskId: undefined })
+      }
+      if (!value) {
+        currentTask.value = null
+        taskNotifications.value = []
+        detailLoading.value = false
+        taskNotificationsLoading.value = false
+      }
+    },
+  )
+
+  watch(
+    () => visible.value,
+    value => {
+      if (!value) {
+        resetForm()
       }
     },
   )

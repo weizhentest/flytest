@@ -1,5 +1,6 @@
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/authStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppDevice, AppDeviceScreenshot } from '../../types'
@@ -12,6 +13,7 @@ import type {
 
 export function useAppAutomationDevices() {
   const authStore = useAuthStore()
+  const route = useRoute()
 
   const loading = ref(false)
   const editSaving = ref(false)
@@ -301,6 +303,60 @@ export function useAppAutomationDevices() {
     }
     stopAutoRefresh()
   }
+
+  watch(
+    () => showConnectModal.value,
+    value => {
+      if (!value) {
+        connectForm.ip_address = ''
+        connectForm.port = 5555
+      }
+    },
+  )
+
+  watch(
+    () => screenshotVisible.value,
+    value => {
+      if (!value) {
+        currentScreenshot.value = null
+      }
+    },
+  )
+
+  watch(
+    () => detailVisible.value,
+    value => {
+      if (!value) {
+        currentDevice.value = null
+      }
+    },
+  )
+
+  watch(
+    () => editVisible.value,
+    value => {
+      if (!value) {
+        editingDeviceId.value = null
+        editForm.name = ''
+        editForm.description = ''
+        editForm.location = ''
+        editForm.status = 'available'
+      }
+    },
+  )
+
+  watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'devices') {
+        return
+      }
+      showConnectModal.value = false
+      screenshotVisible.value = false
+      detailVisible.value = false
+      editVisible.value = false
+    },
+  )
 
   onMounted(() => {
     void loadDevices()

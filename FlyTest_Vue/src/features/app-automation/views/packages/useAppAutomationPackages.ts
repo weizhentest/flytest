@@ -1,5 +1,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
+import { useRoute } from 'vue-router'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppPackage } from '../../types'
@@ -11,6 +12,7 @@ import type {
 
 export function useAppAutomationPackages() {
   const projectStore = useProjectStore()
+  const route = useRoute()
   const loading = ref(false)
   const submitting = ref(false)
   const visible = ref(false)
@@ -184,6 +186,25 @@ export function useAppAutomationPackages() {
   watch([search, platformFilter, () => pagination.pageSize], () => {
     pagination.current = 1
   })
+
+  watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'packages') {
+        return
+      }
+      visible.value = false
+    },
+  )
+
+  watch(
+    () => visible.value,
+    value => {
+      if (!value) {
+        resetForm()
+      }
+    },
+  )
 
   watch(
     () => filteredPackages.value.length,

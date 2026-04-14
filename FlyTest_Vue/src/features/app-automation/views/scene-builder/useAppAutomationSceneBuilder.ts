@@ -476,6 +476,13 @@ export function useAppAutomationSceneBuilder() {
     step[groupKey] = items
   }
 
+  const clearStepSelectionState = () => {
+    selectedStepIndex.value = null
+    selectedSubStepIndex.value = null
+    selectedSubStepGroupKey.value = null
+    clearRecord(subStepSelections)
+  }
+
   const openExecuteDialog = () => openWorkflowExecuteDialog(executeVisible)
 
   const executeCurrentDraft = () => runWorkflowExecuteCurrentDraft(executeVisible)
@@ -483,6 +490,39 @@ export function useAppAutomationSceneBuilder() {
   const saveDraft = async () => {
     await persistDraft()
   }
+
+  watch(
+    () => route.query.tab,
+    tab => {
+      if (tab === 'scene-builder') {
+        return
+      }
+      clearStepSelectionState()
+      executeVisible.value = false
+      aiPlanVisible.value = false
+      aiStepVisible.value = false
+      componentPackageVisible.value = false
+      componentPackageExportVisible.value = false
+      customComponentVisible.value = false
+    },
+  )
+
+  watch(selectedParentStep, step => {
+    if (step || selectedStepIndex.value === null) {
+      return
+    }
+    clearStepSelectionState()
+    syncStepEditor()
+  })
+
+  watch(selectedSceneStep, step => {
+    if (step || selectedSubStepIndex.value === null) {
+      return
+    }
+    selectedSubStepIndex.value = null
+    selectedSubStepGroupKey.value = null
+    syncStepEditor()
+  })
 
   watch([selectedStepIndex, selectedSubStepIndex, selectedSubStepGroupKey], () => {
     syncStepEditor()
