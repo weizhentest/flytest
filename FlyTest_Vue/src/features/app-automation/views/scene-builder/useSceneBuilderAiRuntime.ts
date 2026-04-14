@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import type { Router } from 'vue-router'
 import { getActiveLlmConfig, getLlmConfigDetails } from '@/features/langgraph/services/llmConfigService'
 import type { AppLlmConfigSnapshot } from '../../types'
+import type { SceneBuilderErrorNormalizer } from './sceneBuilderComposableModels'
 
 export interface AiRuntimeStatus {
   has_config: boolean
@@ -31,7 +32,7 @@ export interface AiActivityRecord {
 
 interface UseSceneBuilderAiRuntimeOptions {
   router: Router
-  normalizeErrorMessage: (error: any, fallback: string) => string
+  normalizeErrorMessage: SceneBuilderErrorNormalizer
 }
 
 export const createAiStatusState = (): AiRuntimeStatus => ({

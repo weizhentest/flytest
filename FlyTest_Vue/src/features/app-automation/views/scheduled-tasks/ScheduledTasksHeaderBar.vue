@@ -12,16 +12,12 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  loading: boolean
-}
+import type { ScheduledTaskHeaderBarEmits } from './scheduledTaskEventModels'
+import type { ScheduledTaskHeaderBarProps } from './scheduledTaskViewModels'
 
-defineProps<Props>()
+defineProps<ScheduledTaskHeaderBarProps>()
 
-const emit = defineEmits<{
-  refresh: []
-  create: []
-}>()
+const emit = defineEmits<ScheduledTaskHeaderBarEmits>()
 </script>
 
 <style scoped>

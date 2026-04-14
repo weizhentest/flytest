@@ -11,13 +11,17 @@ import {
   sanitizeStep,
   stripNestedStepKeys,
 } from './sceneBuilderDraft'
+import type {
+  SceneBuilderStepEditorPayloadApplier,
+  SceneBuilderStepEditorPayloadBuilder,
+} from './sceneBuilderComposableModels'
 
 interface UseSceneBuilderStepConfigOptions {
   selectedSceneStep: ComputedRef<AppSceneStep | null>
   selectedCustomParentSummary: ComputedRef<boolean>
   componentMap: ComputedRef<Map<string, AppComponent>>
-  buildStepEditorPayload: (step?: AppSceneStep | null) => Record<string, unknown>
-  applyStepEditorPayload: (step: AppSceneStep, payload: Record<string, unknown>) => void
+  buildStepEditorPayload: SceneBuilderStepEditorPayloadBuilder
+  applyStepEditorPayload: SceneBuilderStepEditorPayloadApplier
 }
 
 export const useSceneBuilderStepConfig = ({

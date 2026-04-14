@@ -6,14 +6,20 @@ import type {
   AppSceneStep,
   AppStepSuggestionResponse,
 } from '../../types'
+import type {
+  SceneBuilderCustomStepChecker,
+  SceneBuilderDraftGetter,
+  SceneBuilderGenerateStepId,
+  SceneBuilderStepGroupReader,
+  SceneBuilderStepNormalizer,
+  SceneBuilderStepsNormalizer,
+  SceneBuilderSyncStepEditor,
+  SceneBuilderVariableDraftMerger,
+  SceneBuilderVariableNormalizer,
+} from './sceneBuilderComposableModels'
 import type { SceneVariableDraft, StepChildGroupKey } from './sceneBuilderDraft'
+import type { SceneBuilderDraftIdentityModel } from './sceneBuilderViewModels'
 import type { AiApplyMode } from './useSceneBuilderAiPlanning'
-
-interface DraftModel {
-  name: string
-  description: string
-  package_id?: number | null
-}
 
 interface UseSceneBuilderSceneStateOptions {
   componentSearch: Ref<string>
@@ -21,18 +27,18 @@ interface UseSceneBuilderSceneStateOptions {
   customComponents: Ref<AppCustomComponent[]>
   steps: Ref<AppSceneStep[]>
   variableItems: Ref<SceneVariableDraft[]>
-  getDraft: () => DraftModel
+  getDraft: SceneBuilderDraftGetter
   selectedStepIndex: Ref<number | null>
   selectedSubStepIndex: Ref<number | null>
   selectedSubStepGroupKey: Ref<StepChildGroupKey | null>
-  getStepGroupSteps: (step: AppSceneStep, groupKey: StepChildGroupKey) => AppSceneStep[]
-  isCustomStep: (step?: Partial<AppSceneStep> | null) => boolean
-  normalizeStep: (input: Partial<AppSceneStep>, forcedKind?: 'base' | 'custom') => AppSceneStep
-  normalizeSteps: (items: unknown, forcedKind?: 'base' | 'custom') => AppSceneStep[]
-  normalizeVariables: (items: unknown) => SceneVariableDraft[]
-  mergeVariableDrafts: (currentItems: SceneVariableDraft[], incomingItems: SceneVariableDraft[]) => SceneVariableDraft[]
-  syncStepEditor: () => void
-  generateStepId: () => string
+  getStepGroupSteps: SceneBuilderStepGroupReader
+  isCustomStep: SceneBuilderCustomStepChecker
+  normalizeStep: SceneBuilderStepNormalizer
+  normalizeSteps: SceneBuilderStepsNormalizer
+  normalizeVariables: SceneBuilderVariableNormalizer
+  mergeVariableDrafts: SceneBuilderVariableDraftMerger
+  syncStepEditor: SceneBuilderSyncStepEditor
+  generateStepId: SceneBuilderGenerateStepId
 }
 
 export const useSceneBuilderSceneState = ({

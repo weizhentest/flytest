@@ -3,25 +3,25 @@ import { computed, reactive, ref, watch, type Ref } from 'vue'
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppComponent, AppCustomComponent, AppDevice, AppExecution, AppPackage, AppSceneStep, AppTestCase } from '../../types'
+import type {
+  SceneBuilderAuthStoreLike,
+  SceneBuilderProjectStoreLike,
+  SceneBuilderRecordClearer,
+  SceneBuilderStepsNormalizer,
+  SceneBuilderStepSanitizer,
+  SceneBuilderSyncStepEditor,
+  SceneBuilderVariableNormalizer,
+  SceneBuilderVariablePayloadBuilder,
+} from './sceneBuilderComposableModels'
 import type { SceneVariableDraft, StepChildGroupKey } from './sceneBuilderDraft'
-
-interface DraftState {
-  name: string
-  description: string
-  package_id: number | undefined
-  timeout: number
-  retry_count: number
-}
-
-interface ExecuteFormState {
-  device_id: number | undefined
-}
+import type { SceneBuilderExecuteFormModel } from './sceneBuilderDialogModels'
+import type { SceneBuilderDraftFormModel } from './sceneBuilderViewModels'
 
 interface UseSceneBuilderWorkflowOptions {
   route: RouteLocationNormalizedLoaded
   router: Router
-  projectStore: { currentProjectId?: number | null }
-  authStore: { currentUser?: { username?: string | null } | null }
+  projectStore: SceneBuilderProjectStoreLike
+  authStore: SceneBuilderAuthStoreLike
   components: Ref<AppComponent[]>
   customComponents: Ref<AppCustomComponent[]>
   steps: Ref<AppSceneStep[]>
@@ -30,12 +30,12 @@ interface UseSceneBuilderWorkflowOptions {
   selectedSubStepIndex: Ref<number | null>
   selectedSubStepGroupKey: Ref<StepChildGroupKey | null>
   subStepSelections: Record<string, string | undefined>
-  clearRecord: (record: Record<string, unknown>) => void
-  normalizeVariables: (items: unknown) => SceneVariableDraft[]
-  normalizeSteps: (items: unknown, forcedKind?: 'base' | 'custom') => AppSceneStep[]
-  sanitizeStep: (step: AppSceneStep) => AppSceneStep
-  buildVariablePayload: () => Array<Record<string, unknown>>
-  syncStepEditor: () => void
+  clearRecord: SceneBuilderRecordClearer
+  normalizeVariables: SceneBuilderVariableNormalizer
+  normalizeSteps: SceneBuilderStepsNormalizer
+  sanitizeStep: SceneBuilderStepSanitizer
+  buildVariablePayload: SceneBuilderVariablePayloadBuilder
+  syncStepEditor: SceneBuilderSyncStepEditor
   refreshAiRuntimeStatus: () => Promise<unknown>
 }
 
@@ -68,7 +68,7 @@ export const useSceneBuilderWorkflow = ({
   const packages = ref<AppPackage[]>([])
   const testCases = ref<AppTestCase[]>([])
 
-  const draft = reactive<DraftState>({
+  const draft = reactive<SceneBuilderDraftFormModel>({
     name: '',
     description: '',
     package_id: undefined,
@@ -76,7 +76,7 @@ export const useSceneBuilderWorkflow = ({
     retry_count: 0,
   })
 
-  const executeForm = reactive<ExecuteFormState>({
+  const executeForm = reactive<SceneBuilderExecuteFormModel>({
     device_id: undefined,
   })
 

@@ -13,37 +13,13 @@ import type {
   AppTestCase,
   AppTestSuite,
 } from '../../types'
-
-interface ScheduledTaskFilters {
-  search: string
-  status: string
-  task_type: string
-  trigger_type: string
-}
-
-interface ScheduledTaskPagination {
-  current: number
-  pageSize: number
-}
-
-interface ScheduledTaskFormState {
-  id: number
-  name: string
-  description: string
-  task_type: string
-  trigger_type: string
-  cron_expression: string
-  interval_seconds: number
-  execute_at: string
-  device_id: number | undefined
-  package_id: number | undefined
-  test_suite_id: number | undefined
-  test_case_id: number | undefined
-  notify_on_success: boolean
-  notify_on_failure: boolean
-  notification_type: string
-  status: string
-}
+import type {
+  ScheduledTaskFilters,
+  ScheduledTaskFormModel,
+  ScheduledTaskPagination,
+  ScheduledTaskResultMeta,
+  ScheduledTaskStatistics,
+} from './scheduledTaskViewModels'
 
 export function useAppAutomationScheduledTasks() {
   const authStore = useAuthStore()
@@ -79,7 +55,7 @@ export function useAppAutomationScheduledTasks() {
     pageSize: 10,
   })
 
-  const form = reactive<ScheduledTaskFormState>({
+  const form = reactive<ScheduledTaskFormModel>({
     id: 0,
     name: '',
     description: '',
@@ -132,7 +108,7 @@ export function useAppAutomationScheduledTasks() {
     return filteredTasks.value.slice(start, start + pagination.pageSize)
   })
 
-  const statistics = computed(() => {
+  const statistics = computed<ScheduledTaskStatistics>(() => {
     const totalRuns = filteredTasks.value.reduce((sum, task) => sum + Number(task.total_runs || 0), 0)
     const successfulRuns = filteredTasks.value.reduce(
       (sum, task) => sum + Number(task.successful_runs || 0),
@@ -259,7 +235,7 @@ export function useAppAutomationScheduledTasks() {
       : 0
   }
 
-  const getLastResultMeta = (task: AppScheduledTask) => {
+  const getLastResultMeta = (task: AppScheduledTask): ScheduledTaskResultMeta => {
     if (task.error_message) return { label: '触发失败', color: 'red' }
     if (task.last_result.status === 'triggered') return { label: '已触发', color: 'arcoblue' }
     if (task.total_runs > 0) return { label: '已执行', color: 'green' }

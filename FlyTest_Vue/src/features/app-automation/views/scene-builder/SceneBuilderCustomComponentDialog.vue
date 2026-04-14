@@ -53,16 +53,14 @@
 </template>
 
 <script setup lang="ts">
-interface CustomComponentFormModel {
-  name?: string
-  type?: string
-  description?: string
-  stepsText?: string
-}
+import type {
+  SceneBuilderCustomComponentDialogMode,
+  SceneBuilderCustomComponentFormModel,
+} from './sceneBuilderDialogModels'
 
 interface Props {
-  mode: 'create' | 'edit'
-  form: CustomComponentFormModel
+  mode: SceneBuilderCustomComponentDialogMode
+  form: SceneBuilderCustomComponentFormModel
   saving: boolean
 }
 

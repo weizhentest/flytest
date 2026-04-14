@@ -24,20 +24,9 @@
 </template>
 
 <script setup lang="ts">
-interface StatisticsModel {
-  total: number
-  active: number
-  paused: number
-  successRate: number
-  successfulRuns: number
-  totalRuns: number
-}
+import type { ScheduledTaskStatsGridProps } from './scheduledTaskViewModels'
 
-interface Props {
-  statistics: StatisticsModel
-}
-
-defineProps<Props>()
+defineProps<ScheduledTaskStatsGridProps>()
 </script>
 
 <style scoped>

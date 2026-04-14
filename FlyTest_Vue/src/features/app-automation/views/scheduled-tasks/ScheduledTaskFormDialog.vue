@@ -163,50 +163,15 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  AppDevice,
-  AppPackage,
-  AppTestCase,
-  AppTestSuite,
-} from '../../types'
+import type { ScheduledTaskFormDialogEmits } from './scheduledTaskEventModels'
+import type { ScheduledTaskFormDialogProps } from './scheduledTaskViewModels'
 
-interface ScheduledTaskFormModel {
-  id: number
-  name: string
-  description: string
-  task_type: string
-  trigger_type: string
-  cron_expression: string
-  interval_seconds: number
-  execute_at: string
-  device_id: number | undefined
-  package_id: number | undefined
-  test_suite_id: number | undefined
-  test_case_id: number | undefined
-  notify_on_success: boolean
-  notify_on_failure: boolean
-  notification_type: string
-  status: string
-}
-
-interface Props {
-  form: ScheduledTaskFormModel
-  devices: AppDevice[]
-  suites: AppTestSuite[]
-  testCases: AppTestCase[]
-  packages: AppPackage[]
-  notificationsEnabled: boolean
-  needsEmailRecipients: boolean
-}
-
-defineProps<Props>()
+defineProps<ScheduledTaskFormDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 const notifyEmailsTextModel = defineModel<string>('notifyEmailsText', { required: true })
 
-const emit = defineEmits<{
-  'before-ok': [done: (closed: boolean) => void]
-}>()
+const emit = defineEmits<ScheduledTaskFormDialogEmits>()
 </script>
 
 <style scoped>

@@ -3,6 +3,7 @@ import type { FileItem } from '@arco-design/web-vue/es/upload/interfaces'
 import { reactive, ref } from 'vue'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppComponentPackage } from '../../types'
+import type { SceneBuilderComponentPackageExportFormModel } from './sceneBuilderDialogModels'
 
 interface UseSceneBuilderComponentPackagesOptions {
   reloadData: () => Promise<void>
@@ -22,7 +23,7 @@ export const useSceneBuilderComponentPackages = ({
   const componentPackageOverwrite = ref(true)
   const componentPackageIncludeDisabled = ref(false)
 
-  const componentPackageExportForm = reactive({
+  const componentPackageExportForm = reactive<SceneBuilderComponentPackageExportFormModel>({
     name: 'app-component-pack',
     version: '',
     author: '',

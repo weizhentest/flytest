@@ -128,48 +128,15 @@
 </template>
 
 <script setup lang="ts">
-import type { AppScheduledTask } from '../../types'
+import type { ScheduledTaskTableCardEmits } from './scheduledTaskEventModels'
+import type { ScheduledTasksTableCardProps } from './scheduledTaskViewModels'
 
-interface ResultMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  loading: boolean
-  tasks: AppScheduledTask[]
-  total: number
-  formatDateTime: (value?: string | null) => string
-  getTaskTypeLabel: (value: string) => string
-  getTriggerTypeLabel: (value: string) => string
-  getNotificationLabel: (value: string) => string
-  getNotificationColor: (value: string) => string
-  getStatusColor: (value: string) => string
-  getTaskTarget: (task: AppScheduledTask) => string
-  getPackageLabel: (task: AppScheduledTask) => string
-  getTriggerSummary: (task: AppScheduledTask) => string
-  getNotificationSummary: (task: AppScheduledTask) => string
-  getLastResultMeta: (task: AppScheduledTask) => ResultMeta
-  getTaskSuccessRate: (task: AppScheduledTask) => number
-  getLastResultSummary: (task: AppScheduledTask) => string
-  hasExecutionResult: (task: AppScheduledTask) => boolean
-  isActionLoading: (action: string, id: number) => boolean
-}
-
-defineProps<Props>()
+defineProps<ScheduledTasksTableCardProps>()
 
 const currentModel = defineModel<number>('current', { required: true })
 const pageSizeModel = defineModel<number>('pageSize', { required: true })
 
-const emit = defineEmits<{
-  'open-detail': [task: AppScheduledTask]
-  'run-now': [id: number]
-  'open-latest-execution': [task: AppScheduledTask]
-  'open-edit': [task: AppScheduledTask]
-  'pause': [id: number]
-  'resume': [id: number]
-  'remove': [id: number]
-}>()
+const emit = defineEmits<ScheduledTaskTableCardEmits>()
 </script>
 
 <style scoped>

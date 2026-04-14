@@ -2,17 +2,25 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { reactive, ref, type Ref } from 'vue'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppCustomComponent, AppSceneStep } from '../../types'
-
-export type CustomComponentDialogMode = 'create' | 'edit'
+import type {
+  SceneBuilderContainsCustomStep,
+  SceneBuilderLoadData,
+  SceneBuilderStepsNormalizer,
+  SceneBuilderStepSanitizer,
+} from './sceneBuilderComposableModels'
+import type {
+  SceneBuilderCustomComponentDialogMode,
+  SceneBuilderCustomComponentFormModel,
+} from './sceneBuilderDialogModels'
 
 interface UseSceneBuilderCustomComponentsOptions {
   steps: Ref<AppSceneStep[]>
   customComponents: Ref<AppCustomComponent[]>
-  loadData: () => Promise<void>
+  loadData: SceneBuilderLoadData
   onSaved: () => void
-  sanitizeStep: (step: AppSceneStep) => AppSceneStep
-  normalizeSteps: (items: unknown, forcedKind?: 'base' | 'custom') => AppSceneStep[]
-  containsCustomStep: (step: AppSceneStep) => boolean
+  sanitizeStep: SceneBuilderStepSanitizer
+  normalizeSteps: SceneBuilderStepsNormalizer
+  containsCustomStep: SceneBuilderContainsCustomStep
   toComponentType: (value: string) => string
 }
 
@@ -28,10 +36,10 @@ export const useSceneBuilderCustomComponents = ({
 }: UseSceneBuilderCustomComponentsOptions) => {
   const customComponentSaving = ref(false)
   const customComponentVisible = ref(false)
-  const customComponentMode = ref<CustomComponentDialogMode>('create')
+  const customComponentMode = ref<SceneBuilderCustomComponentDialogMode>('create')
   const editingCustomComponentId = ref<number | null>(null)
 
-  const customComponentForm = reactive({
+  const customComponentForm = reactive<SceneBuilderCustomComponentFormModel>({
     name: '',
     type: '',
     description: '',

@@ -7,30 +7,36 @@ import type {
   AppSceneStep,
   AppStepSuggestionResponse,
 } from '../../types'
+import type {
+  SceneBuilderAiPlanFormModel,
+  SceneBuilderAiStepFormModel,
+} from './sceneBuilderDialogModels'
+import type {
+  SceneBuilderErrorNormalizer,
+  SceneBuilderStepMetaResolver,
+  SceneBuilderStepSanitizer,
+  SceneBuilderStepTitleResolver,
+  SceneBuilderVariablePayloadBuilder,
+} from './sceneBuilderComposableModels'
+import type { SceneBuilderDraftIdentityModel } from './sceneBuilderViewModels'
 import type { AiActivityRecord } from './useSceneBuilderAiRuntime'
 
 export type AiApplyMode = 'replace' | 'append'
-
-interface DraftModel {
-  name: string
-  description: string
-  package_id?: number | null
-}
 
 interface UseSceneBuilderAiPlanningOptions {
   currentProjectId: ComputedRef<number | null | undefined>
   selectedSceneStep: ComputedRef<AppSceneStep | null>
   selectedCustomParentSummary: ComputedRef<boolean>
   steps: Ref<AppSceneStep[]>
-  draft: DraftModel
-  sanitizeStep: (step: AppSceneStep) => AppSceneStep
-  buildVariablePayload: () => Array<Record<string, unknown>>
+  draft: SceneBuilderDraftIdentityModel
+  sanitizeStep: SceneBuilderStepSanitizer
+  buildVariablePayload: SceneBuilderVariablePayloadBuilder
   buildLlmConfigSnapshot: () => Promise<AppLlmConfigSnapshot | null>
   activeLlmSnapshot: Ref<AppLlmConfigSnapshot | null>
   rememberAiActivity: (payload: Omit<AiActivityRecord, 'executed_at'>) => void
-  normalizeErrorMessage: (error: any, fallback: string) => string
-  resolveStepMeta: (step?: Partial<AppSceneStep>) => string
-  resolveStepTitle: (step?: Partial<AppSceneStep>) => string
+  normalizeErrorMessage: SceneBuilderErrorNormalizer
+  resolveStepMeta: SceneBuilderStepMetaResolver
+  resolveStepTitle: SceneBuilderStepTitleResolver
   applyGeneratedScenePlan: (plan: AppScenePlanResponse, applyMode: AiApplyMode) => void
   applyStepSuggestion: (suggestion: AppStepSuggestionResponse) => void
 }
@@ -57,12 +63,12 @@ export const useSceneBuilderAiPlanning = ({
   const aiPlanVisible = ref(false)
   const aiStepVisible = ref(false)
 
-  const aiPlanForm = reactive({
+  const aiPlanForm = reactive<SceneBuilderAiPlanFormModel>({
     prompt: '',
     applyMode: 'replace' as AiApplyMode,
   })
 
-  const aiStepForm = reactive({
+  const aiStepForm = reactive<SceneBuilderAiStepFormModel>({
     prompt: '',
   })
 

@@ -108,51 +108,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppTestSuite } from '../../types'
+import type { ReportsSuitePanelEmits } from './reportEventModels'
+import type { ReportsSuitePanelProps } from './reportViewModels'
 
-interface SuiteFilters {
-  search: string
-  status: string
-}
+defineProps<ReportsSuitePanelProps>()
 
-interface PaginationState {
-  current: number
-  pageSize: number
-}
-
-interface SuiteStats {
-  total: number
-  running: number
-  passed: number
-  health: number
-}
-
-interface StatusMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  loading: boolean
-  filters: SuiteFilters
-  pagination: PaginationState
-  statistics: SuiteStats
-  suites: AppTestSuite[]
-  total: number
-  formatDateTime: (value?: string | null) => string
-  getSuiteStatus: (suite: AppTestSuite) => StatusMeta
-  getSuiteHealthRate: (suite: AppTestSuite) => number
-}
-
-defineProps<Props>()
-
-const emit = defineEmits<{
-  search: []
-  reset: []
-  'open-detail': [suite: AppTestSuite]
-  'open-executions': [suite: AppTestSuite]
-  'open-report': [suite: AppTestSuite]
-}>()
+const emit = defineEmits<ReportsSuitePanelEmits>()
 </script>
 
 <style scoped>

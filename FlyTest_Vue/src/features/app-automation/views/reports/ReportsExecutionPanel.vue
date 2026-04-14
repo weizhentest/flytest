@@ -116,54 +116,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppExecution } from '../../types'
+import type { ReportsExecutionPanelEmits } from './reportEventModels'
+import type { ReportsExecutionPanelProps } from './reportViewModels'
 
-interface CaseFilters {
-  search: string
-  status: string
-  source: string
-}
+defineProps<ReportsExecutionPanelProps>()
 
-interface PaginationState {
-  current: number
-  pageSize: number
-}
-
-interface CaseStats {
-  total: number
-  passed: number
-  failed: number
-  passRate: number
-}
-
-interface StatusMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  loading: boolean
-  filters: CaseFilters
-  pagination: PaginationState
-  statistics: CaseStats
-  executions: AppExecution[]
-  total: number
-  formatDateTime: (value?: string | null) => string
-  formatRate: (value?: number | null) => number
-  formatDuration: (value?: number | null) => string
-  getExecutionSource: (record: AppExecution) => string
-  getExecutionStatus: (record: AppExecution) => StatusMeta
-  canOpenReport: (record: AppExecution) => boolean
-}
-
-defineProps<Props>()
-
-const emit = defineEmits<{
-  search: []
-  reset: []
-  'open-detail': [id: number]
-  'open-report': [record: AppExecution]
-}>()
+const emit = defineEmits<ReportsExecutionPanelEmits>()
 </script>
 
 <style scoped>

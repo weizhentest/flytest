@@ -84,13 +84,15 @@
 </template>
 
 <script setup lang="ts">
-import ScheduledTaskDetailDialog from './scheduled-tasks/ScheduledTaskDetailDialog.vue'
-import ScheduledTasksFilterCard from './scheduled-tasks/ScheduledTasksFilterCard.vue'
-import ScheduledTaskFormDialog from './scheduled-tasks/ScheduledTaskFormDialog.vue'
-import ScheduledTasksHeaderBar from './scheduled-tasks/ScheduledTasksHeaderBar.vue'
-import ScheduledTasksStatsGrid from './scheduled-tasks/ScheduledTasksStatsGrid.vue'
-import ScheduledTasksTableCard from './scheduled-tasks/ScheduledTasksTableCard.vue'
-import { useAppAutomationScheduledTasks } from './scheduled-tasks/useAppAutomationScheduledTasks'
+import {
+  ScheduledTaskDetailDialog,
+  ScheduledTaskFormDialog,
+  ScheduledTasksFilterCard,
+  ScheduledTasksHeaderBar,
+  ScheduledTasksStatsGrid,
+  ScheduledTasksTableCard,
+  useAppAutomationScheduledTasks,
+} from './scheduled-tasks'
 
 const {
   projectStore,

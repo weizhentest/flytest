@@ -35,20 +35,15 @@
 </template>
 
 <script setup lang="ts">
-interface ExecuteDeviceOption {
-  id: number | string
-  name?: string | null
-  device_id?: string | null
-}
-
-interface ExecuteFormModel {
-  device_id?: number | string
-}
+import type {
+  SceneBuilderExecuteDeviceOption,
+  SceneBuilderExecuteFormModel,
+} from './sceneBuilderDialogModels'
 
 interface Props {
   executionCaseName: string
-  availableDevices: ExecuteDeviceOption[]
-  form: ExecuteFormModel
+  availableDevices: SceneBuilderExecuteDeviceOption[]
+  form: SceneBuilderExecuteFormModel
   saving: boolean
   executing: boolean
 }

@@ -41,16 +41,11 @@
 </template>
 
 <script setup lang="ts">
-interface ExportFormModel {
-  name?: string
-  version?: string
-  author?: string
-  description?: string
-}
+import type { SceneBuilderComponentPackageExportFormModel } from './sceneBuilderDialogModels'
 
 interface Props {
   exporting: boolean
-  form: ExportFormModel
+  form: SceneBuilderComponentPackageExportFormModel
 }
 
 defineProps<Props>()

@@ -31,23 +31,12 @@
 </template>
 
 <script setup lang="ts">
-interface FiltersModel {
-  search: string
-  status: string
-  task_type: string
-  trigger_type: string
-}
+import type { ScheduledTaskFilterCardEmits } from './scheduledTaskEventModels'
+import type { ScheduledTaskFilterCardProps } from './scheduledTaskViewModels'
 
-interface Props {
-  filters: FiltersModel
-}
+defineProps<ScheduledTaskFilterCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  search: []
-  reset: []
-}>()
+const emit = defineEmits<ScheduledTaskFilterCardEmits>()
 </script>
 
 <style scoped>

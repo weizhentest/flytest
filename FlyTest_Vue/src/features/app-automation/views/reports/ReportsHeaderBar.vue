@@ -12,16 +12,12 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  loading: boolean
-  lastUpdatedText: string
-}
+import type { ReportsHeaderBarEmits } from './reportEventModels'
+import type { ReportsHeaderBarProps } from './reportViewModels'
 
-defineProps<Props>()
+defineProps<ReportsHeaderBarProps>()
 
-const emit = defineEmits<{
-  refresh: []
-}>()
+const emit = defineEmits<ReportsHeaderBarEmits>()
 </script>
 
 <style scoped>

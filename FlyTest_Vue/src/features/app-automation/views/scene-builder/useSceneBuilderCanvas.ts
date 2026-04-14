@@ -2,6 +2,20 @@ import { Message } from '@arco-design/web-vue'
 import type { ComputedRef, Ref } from 'vue'
 import type { AppComponent, AppCustomComponent, AppSceneStep } from '../../types'
 import type { StepChildGroupKey } from './sceneBuilderDraft'
+import type {
+  SceneBuilderContainerChecker,
+  SceneBuilderCustomStepChecker,
+  SceneBuilderFlowContainerTypeChecker,
+  SceneBuilderRecordClearer,
+  SceneBuilderStepGroupReader,
+  SceneBuilderStepNormalizer,
+  SceneBuilderStepsNormalizer,
+  SceneBuilderStepSanitizer,
+  SceneBuilderStepTitleResolver,
+  SceneBuilderSubStepSelectionKeyGetter,
+  SceneBuilderSyncStepEditor,
+  SceneBuilderValueCloner,
+} from './sceneBuilderComposableModels'
 
 interface UseSceneBuilderCanvasOptions {
   steps: Ref<AppSceneStep[]>
@@ -10,18 +24,18 @@ interface UseSceneBuilderCanvasOptions {
   selectedSubStepGroupKey: Ref<StepChildGroupKey | null>
   subStepSelections: Record<string, string | undefined>
   componentMap: ComputedRef<Map<string, AppComponent>>
-  clearRecord: (record: Record<string, unknown>) => void
-  clone: <T>(value: T) => T
-  isContainerStep: (step?: Partial<AppSceneStep> | null) => boolean
-  isCustomStep: (step?: Partial<AppSceneStep> | null) => boolean
-  isFlowContainerType: (value?: string | null) => boolean
-  normalizeStep: (input: Partial<AppSceneStep>, forcedKind?: 'base' | 'custom') => AppSceneStep
-  normalizeSteps: (items: unknown, forcedKind?: 'base' | 'custom') => AppSceneStep[]
-  resolveStepTitle: (step?: Partial<AppSceneStep>) => string
-  sanitizeStep: (step: AppSceneStep) => AppSceneStep
-  getStepGroupSteps: (step: AppSceneStep, groupKey: StepChildGroupKey) => AppSceneStep[]
-  getSubStepSelectionKey: (step: AppSceneStep, groupKey: StepChildGroupKey) => string
-  syncStepEditor: () => void
+  clearRecord: SceneBuilderRecordClearer
+  clone: SceneBuilderValueCloner
+  isContainerStep: SceneBuilderContainerChecker
+  isCustomStep: SceneBuilderCustomStepChecker
+  isFlowContainerType: SceneBuilderFlowContainerTypeChecker
+  normalizeStep: SceneBuilderStepNormalizer
+  normalizeSteps: SceneBuilderStepsNormalizer
+  resolveStepTitle: SceneBuilderStepTitleResolver
+  sanitizeStep: SceneBuilderStepSanitizer
+  getStepGroupSteps: SceneBuilderStepGroupReader
+  getSubStepSelectionKey: SceneBuilderSubStepSelectionKeyGetter
+  syncStepEditor: SceneBuilderSyncStepEditor
   onCustomPaletteActivated?: () => void
 }
 

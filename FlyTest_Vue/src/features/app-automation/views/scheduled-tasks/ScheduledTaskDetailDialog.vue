@@ -112,48 +112,14 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  AppNotificationLog,
-  AppScheduledTask,
-} from '../../types'
+import type { ScheduledTaskDetailDialogEmits } from './scheduledTaskEventModels'
+import type { ScheduledTaskDetailDialogProps } from './scheduledTaskViewModels'
 
-interface ResultMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  detailLoading: boolean
-  taskNotificationsLoading: boolean
-  currentTask: AppScheduledTask | null
-  recentTaskNotifications: AppNotificationLog[]
-  formatDateTime: (value?: string | null) => string
-  getTaskTypeLabel: (value: string) => string
-  getTaskTarget: (task: AppScheduledTask) => string
-  getNotificationLabel: (value: string) => string
-  getNotificationColor: (value: string) => string
-  getNotificationStatusColor: (value: string) => string
-  getLastResultMeta: (task: AppScheduledTask) => ResultMeta
-  getTaskSuccessRate: (task: AppScheduledTask) => number
-  getLastResultSummary: (task: AppScheduledTask) => string
-  getNotificationDetail: (item: AppNotificationLog) => string
-  getPrimaryExecutionIdFromLog: (item: AppNotificationLog) => number | undefined
-  getTriggerSummary: (task: AppScheduledTask) => string
-  getNotificationSummary: (task: AppScheduledTask) => string
-  hasExecutionResult: (task: AppScheduledTask) => boolean
-  hasLatestReport: (task: AppScheduledTask) => boolean
-}
-
-defineProps<Props>()
+defineProps<ScheduledTaskDetailDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  'open-latest-execution': [task: AppScheduledTask]
-  'open-latest-report': [task: AppScheduledTask]
-  'open-task-notifications': [task: AppScheduledTask]
-  'open-notification-execution': [item: AppNotificationLog]
-}>()
+const emit = defineEmits<ScheduledTaskDetailDialogEmits>()
 </script>
 
 <style scoped>
