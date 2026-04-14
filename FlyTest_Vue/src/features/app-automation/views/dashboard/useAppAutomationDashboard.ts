@@ -1,6 +1,6 @@
 import { Message } from '@arco-design/web-vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getActiveLlmConfig, getLlmConfigDetails } from '@/features/langgraph/services/llmConfigService'
 import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
@@ -78,6 +78,7 @@ const statusConfig = {
 export const useAppAutomationDashboard = () => {
   const projectStore = useProjectStore()
   const authStore = useAuthStore()
+  const route = useRoute()
   const router = useRouter()
   const currentProjectId = computed(() => projectStore.currentProjectId)
 
@@ -85,6 +86,7 @@ export const useAppAutomationDashboard = () => {
   const scheduledTasks = ref<AppScheduledTask[]>([])
   const loading = ref(false)
   const aiStatusLoading = ref(false)
+  const loadedProjectId = ref<number | null>(null)
   const lastUpdatedAt = ref<string | null>(null)
   const aiStatus = reactive<AiRuntimeStatus>(createAiStatusState())
   const serviceHealth = reactive<AppServiceHealth>(createServiceHealthState())
@@ -99,6 +101,12 @@ export const useAppAutomationDashboard = () => {
     scheduledTasks.value = []
     lastUpdatedAt.value = null
     Object.assign(serviceHealth, createServiceHealthState())
+    loadedProjectId.value = null
+  }
+
+  const isDashboardActive = () => {
+    const rawTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+    return !rawTab || rawTab === 'overview'
   }
 
   const normalizeErrorMessage = (error: unknown, fallback: string) => {
@@ -379,6 +387,7 @@ export const useAppAutomationDashboard = () => {
       }
 
       lastUpdatedAt.value = new Date().toISOString()
+      loadedProjectId.value = currentProjectId.value
     } catch (error: unknown) {
       Message.error(normalizeErrorMessage(error, '加载 APP 自动化总览失败'))
     } finally {
@@ -464,9 +473,25 @@ export const useAppAutomationDashboard = () => {
         return
       }
 
-      void loadDashboardState({ includeAi: true })
+      resetDashboardState()
+      if (isDashboardActive()) {
+        void loadDashboardState({ includeAi: true })
+      }
     },
     { immediate: true },
+  )
+
+  watch(
+    () => route.query.tab,
+    () => {
+      if (
+        isDashboardActive() &&
+        currentProjectId.value &&
+        loadedProjectId.value !== currentProjectId.value
+      ) {
+        void loadDashboardState({ includeAi: true })
+      }
+    },
   )
 
   onMounted(() => {

@@ -26,6 +26,7 @@ export function useAppAutomationReports() {
 
   const activeTab = ref<'suite' | 'case'>('suite')
   const loading = ref(false)
+  const loadedProjectId = ref<number | null>(null)
   const suites = ref<AppTestSuite[]>([])
   const executions = ref<AppExecution[]>([])
   const selectedSuite = ref<AppTestSuite | null>(null)
@@ -279,10 +280,19 @@ export function useAppAutomationReports() {
       : '暂无执行日志',
   )
 
+  const clearLoadedData = () => {
+    suites.value = []
+    executions.value = []
+    selectedSuite.value = null
+    suiteExecutions.value = []
+    currentExecution.value = null
+    lastUpdatedAt.value = null
+    loadedProjectId.value = null
+  }
+
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
-      suites.value = []
-      executions.value = []
+      clearLoadedData()
       return
     }
 
@@ -296,6 +306,7 @@ export function useAppAutomationReports() {
       suites.value = suiteList
       executions.value = executionList
       lastUpdatedAt.value = new Date().toISOString()
+      loadedProjectId.value = projectStore.currentProjectId
 
       await syncRouteContext()
     } catch (error: any) {
@@ -433,6 +444,12 @@ export function useAppAutomationReports() {
     () => route.query.tab,
     tab => {
       if (tab === 'reports') {
+        if (
+          projectStore.currentProjectId &&
+          loadedProjectId.value !== projectStore.currentProjectId
+        ) {
+          void loadData()
+        }
         return
       }
       suiteDetailVisible.value = false
@@ -534,10 +551,10 @@ export function useAppAutomationReports() {
       suiteDetailVisible.value = false
       suiteExecutionsVisible.value = false
       executionDetailVisible.value = false
-      selectedSuite.value = null
-      currentExecution.value = null
-      suiteExecutions.value = []
-      void loadData()
+      clearLoadedData()
+      if (route.query.tab === 'reports' && projectStore.currentProjectId) {
+        void loadData()
+      }
     },
     { immediate: true },
   )

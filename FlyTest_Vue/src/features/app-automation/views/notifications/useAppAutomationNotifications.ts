@@ -298,8 +298,11 @@ export function useAppAutomationNotifications() {
   )
 
   watch(
-    () => route.query.taskId,
-    () => {
+    () => [route.query.tab, route.query.taskId],
+    ([tab]) => {
+      if (tab !== 'notifications') {
+        return
+      }
       pagination.current = 1
       void Promise.all([loadTaskContext(), loadData()])
     },

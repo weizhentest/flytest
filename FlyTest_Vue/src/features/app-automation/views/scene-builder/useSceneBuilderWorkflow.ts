@@ -68,6 +68,7 @@ export const useSceneBuilderWorkflow = ({
   const loading = ref(false)
   const saving = ref(false)
   const executing = ref(false)
+  const loadedProjectId = ref<number | null>(null)
   const selectedCaseId = ref<number | undefined>()
   const devices = ref<AppDevice[]>([])
   const packages = ref<AppPackage[]>([])
@@ -189,13 +190,18 @@ export const useSceneBuilderWorkflow = ({
     }
   }
 
+  const clearLoadedData = () => {
+    components.value = []
+    customComponents.value = []
+    devices.value = []
+    packages.value = []
+    testCases.value = []
+    loadedProjectId.value = null
+  }
+
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
-      components.value = []
-      customComponents.value = []
-      devices.value = []
-      packages.value = []
-      testCases.value = []
+      clearLoadedData()
       resetDraft()
       return
     }
@@ -216,6 +222,7 @@ export const useSceneBuilderWorkflow = ({
       devices.value = deviceList
       packages.value = packageList
       testCases.value = caseList
+      loadedProjectId.value = projectStore.currentProjectId
 
       const activeCaseId = readRouteCaseId() ?? selectedCaseId.value
       if (activeCaseId) {
@@ -375,14 +382,34 @@ export const useSceneBuilderWorkflow = ({
     () => projectStore.currentProjectId,
     () => {
       resetDraft()
-      void loadData()
+      clearLoadedData()
+      if (route.query.tab === 'scene-builder' && projectStore.currentProjectId) {
+        void loadData()
+      }
     },
     { immediate: true },
   )
 
   watch(
-    () => route.query.caseId,
+    () => route.query.tab,
+    tab => {
+      if (
+        tab === 'scene-builder' &&
+        projectStore.currentProjectId &&
+        loadedProjectId.value !== projectStore.currentProjectId
+      ) {
+        void loadData()
+      }
+    },
+  )
+
+  watch(
+    () => [route.query.tab, route.query.caseId],
     () => {
+      if (route.query.tab !== 'scene-builder') {
+        return
+      }
+
       if (!projectStore.currentProjectId) {
         return
       }

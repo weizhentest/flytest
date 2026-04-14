@@ -36,6 +36,7 @@ export function useAppAutomationScheduledTasks() {
   const detailVisible = ref(false)
   const detailLoading = ref(false)
   const taskNotificationsLoading = ref(false)
+  const loadedProjectId = ref<number | null>(null)
   const notifyEmailsText = ref('')
   const tasks = ref<AppScheduledTask[]>([])
   const suites = ref<AppTestSuite[]>([])
@@ -324,11 +325,20 @@ export function useAppAutomationScheduledTasks() {
     taskNotifications.value = []
   }
 
+  const clearLoadedData = () => {
+    tasks.value = []
+    suites.value = []
+    testCases.value = []
+    devices.value = []
+    packages.value = []
+    currentTask.value = null
+    taskNotifications.value = []
+    loadedProjectId.value = null
+  }
+
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
-      tasks.value = []
-      currentTask.value = null
-      taskNotifications.value = []
+      clearLoadedData()
       return
     }
 
@@ -352,6 +362,7 @@ export function useAppAutomationScheduledTasks() {
       testCases.value = caseList
       devices.value = deviceList
       packages.value = packageList
+      loadedProjectId.value = projectStore.currentProjectId
 
       if (currentTask.value?.id) {
         syncTaskFromList(currentTask.value.id)
@@ -659,6 +670,12 @@ export function useAppAutomationScheduledTasks() {
     () => route.query.tab,
     tab => {
       if (tab === 'scheduled-tasks') {
+        if (
+          projectStore.currentProjectId &&
+          loadedProjectId.value !== projectStore.currentProjectId
+        ) {
+          void loadData()
+        }
         return
       }
       visible.value = false
@@ -748,9 +765,10 @@ export function useAppAutomationScheduledTasks() {
     () => {
       pagination.current = 1
       detailVisible.value = false
-      currentTask.value = null
-      taskNotifications.value = []
-      void loadData()
+      clearLoadedData()
+      if (route.query.tab === 'scheduled-tasks' && projectStore.currentProjectId) {
+        void loadData()
+      }
     },
     { immediate: true },
   )

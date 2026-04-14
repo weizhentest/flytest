@@ -35,6 +35,7 @@ export function useAppAutomationExecutions() {
   const loading = ref(false)
   const detailLoading = ref(false)
   const detailVisible = ref(false)
+  const loadedProjectId = ref<number | null>(null)
   const lastUpdatedAt = ref<string | null>(null)
   const executions = ref<AppExecution[]>([])
   const suites = ref<AppTestSuite[]>([])
@@ -243,6 +244,14 @@ export function useAppAutomationExecutions() {
       .filter(Boolean) as ExecutionArtifact[]
   })
 
+  const clearLoadedData = () => {
+    suites.value = []
+    executions.value = []
+    currentExecution.value = null
+    lastUpdatedAt.value = null
+    loadedProjectId.value = null
+  }
+
   const syncRouteContext = async () => {
     if (route.query.tab !== 'executions' || !projectStore.currentProjectId) {
       return
@@ -317,9 +326,7 @@ export function useAppAutomationExecutions() {
 
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
-      suites.value = []
-      executions.value = []
-      currentExecution.value = null
+      clearLoadedData()
       return
     }
 
@@ -333,6 +340,7 @@ export function useAppAutomationExecutions() {
       suites.value = suiteList
       executions.value = executionList
       lastUpdatedAt.value = new Date().toISOString()
+      loadedProjectId.value = projectStore.currentProjectId
 
       await syncRouteContext()
     } catch (error: any) {
@@ -415,6 +423,12 @@ export function useAppAutomationExecutions() {
     () => route.query.tab,
     tab => {
       if (tab === 'executions') {
+        if (
+          projectStore.currentProjectId &&
+          loadedProjectId.value !== projectStore.currentProjectId
+        ) {
+          void loadData()
+        }
         return
       }
       detailVisible.value = false
@@ -455,11 +469,13 @@ export function useAppAutomationExecutions() {
     () => {
       pagination.current = 1
       detailVisible.value = false
-      currentExecution.value = null
       filters.search = ''
       filters.status = ''
       filters.suite = 'all'
-      void loadData()
+      clearLoadedData()
+      if (route.query.tab === 'executions' && projectStore.currentProjectId) {
+        void loadData()
+      }
     },
     { immediate: true },
   )
