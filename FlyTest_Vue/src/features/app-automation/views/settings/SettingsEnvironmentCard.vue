@@ -31,29 +31,12 @@
 </template>
 
 <script setup lang="ts">
-interface SettingsForm {
-  adb_path: string
-  default_timeout: number
-  workspace_root: string
-  auto_discover_on_open: boolean
-  notes: string
-}
+import type { SettingsEnvironmentCardEmits } from './settingsEventModels'
+import type { SettingsEnvironmentCardProps } from './settingsViewModels'
 
-interface Props {
-  form: SettingsForm
-  saving: boolean
-  detecting: boolean
-  diagnosticsLoading: boolean
-}
+defineProps<SettingsEnvironmentCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'reload-all': []
-  'refresh-diagnostics': []
-  'detect-adb': []
-  save: []
-}>()
+const emit = defineEmits<SettingsEnvironmentCardEmits>()
 </script>
 
 <style scoped>

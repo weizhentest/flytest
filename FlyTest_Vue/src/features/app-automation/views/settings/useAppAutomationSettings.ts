@@ -2,6 +2,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppAdbDiagnostics, AppRuntimeCapabilities, AppServiceHealth } from '../../types'
+import type { SettingsFormModel } from './settingsViewModels'
 
 export function useAppAutomationSettings() {
   const saving = ref(false)
@@ -10,7 +11,7 @@ export function useAppAutomationSettings() {
   const runtimeLoading = ref(false)
   const serviceHealthLoading = ref(false)
 
-  const form = reactive({
+  const form = reactive<SettingsFormModel>({
     adb_path: 'adb',
     default_timeout: 300,
     workspace_root: '',

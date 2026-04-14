@@ -56,30 +56,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppAdbDiagnostics, AppRuntimeCapabilities, AppServiceHealth } from '../../types'
+import type { SettingsServiceHealthCardEmits } from './settingsEventModels'
+import type { SettingsServiceHealthCardProps } from './settingsViewModels'
 
-interface Props {
-  serviceHealth: AppServiceHealth
-  diagnostics: AppAdbDiagnostics
-  runtimeCapabilities: AppRuntimeCapabilities
-  runtimeReady: boolean
-  readyCapabilityCount: number
-  workspaceRoot: string
-  defaultTimeout: number
-  overallStatusColor: string
-  overallStatusLabel: string
-  formatTime: (value: string) => string
-  serviceHealthLoading: boolean
-  diagnosticsLoading: boolean
-  runtimeLoading: boolean
-}
+defineProps<SettingsServiceHealthCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'refresh-service-health': []
-  'reload-all': []
-}>()
+const emit = defineEmits<SettingsServiceHealthCardEmits>()
 </script>
 
 <style scoped>

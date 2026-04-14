@@ -68,21 +68,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppRuntimeCapabilities } from '../../types'
+import type { SettingsRuntimeCardEmits } from './settingsEventModels'
+import type { SettingsRuntimeCardProps } from './settingsViewModels'
 
-interface Props {
-  runtimeCapabilities: AppRuntimeCapabilities
-  runtimeReady: boolean
-  installedDependencyCount: number
-  runtimeLoading: boolean
-  formatTime: (value: string) => string
-}
+defineProps<SettingsRuntimeCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'refresh-runtime': []
-}>()
+const emit = defineEmits<SettingsRuntimeCardEmits>()
 </script>
 
 <style scoped>

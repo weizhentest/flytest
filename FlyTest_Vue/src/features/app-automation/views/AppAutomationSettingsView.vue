@@ -48,11 +48,13 @@
 </template>
 
 <script setup lang="ts">
-import SettingsAdbDiagnosticsCard from './settings/SettingsAdbDiagnosticsCard.vue'
-import SettingsEnvironmentCard from './settings/SettingsEnvironmentCard.vue'
-import SettingsRuntimeCard from './settings/SettingsRuntimeCard.vue'
-import SettingsServiceHealthCard from './settings/SettingsServiceHealthCard.vue'
-import { useAppAutomationSettings } from './settings/useAppAutomationSettings'
+import {
+  SettingsAdbDiagnosticsCard,
+  SettingsEnvironmentCard,
+  SettingsRuntimeCard,
+  SettingsServiceHealthCard,
+  useAppAutomationSettings,
+} from './settings'
 
 const {
   saving,

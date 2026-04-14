@@ -51,16 +51,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppAdbDiagnostics } from '../../types'
+import type { SettingsAdbDiagnosticsCardProps } from './settingsViewModels'
 
-interface Props {
-  diagnostics: AppAdbDiagnostics
-  statusColor: string
-  statusLabel: string
-  formatTime: (value: string) => string
-}
-
-defineProps<Props>()
+defineProps<SettingsAdbDiagnosticsCardProps>()
 </script>
 
 <style scoped>
