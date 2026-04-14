@@ -30,6 +30,7 @@ export function useAppAutomationDevices() {
   const lastUpdatedAt = ref<string>('')
 
   let refreshTimer: ReturnType<typeof setInterval> | null = null
+  let polling = false
 
   const filters = reactive<DeviceFilters>({
     search: '',
@@ -141,7 +142,9 @@ export function useAppAutomationDevices() {
       return
     }
 
-    loading.value = true
+    if (!options.silent) {
+      loading.value = true
+    }
     try {
       devices.value = await AppAutomationService.getDevices({
         search: filters.search.trim() || undefined,
@@ -154,7 +157,9 @@ export function useAppAutomationDevices() {
         Message.error(error.message || '加载设备失败')
       }
     } finally {
-      loading.value = false
+      if (!options.silent) {
+        loading.value = false
+      }
     }
   }
 
@@ -322,7 +327,21 @@ export function useAppAutomationDevices() {
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(() => {
-      void loadDevices({ silent: true })
+      if (
+        polling ||
+        loading.value ||
+        editSaving.value ||
+        showConnectModal.value ||
+        editVisible.value ||
+        detailVisible.value ||
+        screenshotVisible.value
+      ) {
+        return
+      }
+      polling = true
+      void loadDevices({ silent: true }).finally(() => {
+        polling = false
+      })
     }, 30000)
   }
 

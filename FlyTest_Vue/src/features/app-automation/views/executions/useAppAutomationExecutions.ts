@@ -391,19 +391,21 @@ export function useAppAutomationExecutions() {
   let polling = false
 
   const pollRunningExecutions = async () => {
-    if (polling || !hasRunningExecutions.value) {
+    if (polling || loading.value || detailLoading.value || !hasRunningExecutions.value) {
       return
     }
 
     polling = true
     try {
-      await loadExecutions({ silent: true })
       if (detailVisible.value && currentExecution.value?.id) {
         await loadExecutionDetail(currentExecution.value.id, {
           silent: true,
           syncRoute: false,
         })
+        return
       }
+
+      await loadExecutions({ silent: true })
     } finally {
       polling = false
     }

@@ -471,7 +471,7 @@ export const useAppAutomationDashboard = () => {
 
   onMounted(() => {
     timer = window.setInterval(() => {
-      if (polling || !currentProjectId.value) {
+      if (polling || loading.value || aiStatusLoading.value || !currentProjectId.value) {
         return
       }
 
