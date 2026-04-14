@@ -39,24 +39,12 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  aiStatusTitle: string
-  aiStatusDescription: string
-  aiStatusTagColor: string
-  aiStatusTagText: string
-  aiConfigDisplay: string
-  aiProviderDisplay: string
-  aiModelDisplay: string
-  aiCapabilityDisplay: string
-  aiEndpointDisplay: string
-}
+import type { DashboardAiOverviewCardEmits } from './dashboardEventModels'
+import type { DashboardAiOverviewCardProps } from './dashboardViewModels'
 
-defineProps<Props>()
+defineProps<DashboardAiOverviewCardProps>()
 
-const emit = defineEmits<{
-  'open-scene-builder': []
-  'open-llm-config': []
-}>()
+const emit = defineEmits<DashboardAiOverviewCardEmits>()
 </script>
 
 <style scoped>

@@ -184,54 +184,17 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { AppImageCategory } from '../../types'
+import type { ElementsEditorDialogEmits } from './elementEventModels'
+import type { ElementsEditorDialogProps } from './elementViewModels'
 
-interface ElementsEditorForm {
-  id: number
-  name: string
-  element_type: string
-  selector_type: string
-  selector_value: string
-  description: string
-  tagsText: string
-  configText: string
-  image_path: string
-  imageCategory: string
-  fileHash: string
-  is_active: boolean
-  threshold: number
-  rgb: boolean
-  posX: number
-  posY: number
-  regionX1: number
-  regionY1: number
-  regionX2: number
-  regionY2: number
-}
-
-interface Props {
-  form: ElementsEditorForm
-  imageCategories: AppImageCategory[]
-  imagePreviewUrl: string
-  uploading: boolean
-  categorySaving: boolean
-  categoryDeleting: boolean
-}
-
-defineProps<Props>()
+defineProps<ElementsEditorDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 const newCategoryNameModel = defineModel<string>('newCategoryName', { required: true })
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
-const emit = defineEmits<{
-  submit: []
-  cancel: []
-  'file-change': [file: File | null]
-  'create-category': []
-  'delete-current-category': []
-}>()
+const emit = defineEmits<ElementsEditorDialogEmits>()
 
 const triggerUpload = () => {
   fileInputRef.value?.click()

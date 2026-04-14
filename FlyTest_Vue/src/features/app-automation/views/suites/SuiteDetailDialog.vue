@@ -52,21 +52,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppTestSuite } from '../../types'
+import type { SuiteDetailDialogProps } from './suiteViewModels'
 
-interface StatusMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  selectedSuite: AppTestSuite | null
-  formatDateTime: (value?: string | null) => string
-  getSuiteStatusMeta: (record: AppTestSuite) => StatusMeta
-  getSuiteHealthRate: (record: AppTestSuite) => number
-}
-
-defineProps<Props>()
+defineProps<SuiteDetailDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 </script>

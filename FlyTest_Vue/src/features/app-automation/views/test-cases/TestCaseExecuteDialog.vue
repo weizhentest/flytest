@@ -17,23 +17,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppDevice } from '../../types'
+import type { TestCaseExecuteDialogEmits } from './testCaseEventModels'
+import type { TestCaseExecuteDialogProps } from './testCaseViewModels'
 
-interface ExecuteForm {
-  device_id: number | undefined
-}
-
-interface Props {
-  mode: 'single' | 'batch'
-  executeForm: ExecuteForm
-  availableDevices: AppDevice[]
-}
-
-defineProps<Props>()
+defineProps<TestCaseExecuteDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  execute: []
-}>()
+const emit = defineEmits<TestCaseExecuteDialogEmits>()
 </script>

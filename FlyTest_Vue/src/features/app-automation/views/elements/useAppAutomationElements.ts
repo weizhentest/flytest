@@ -3,29 +3,10 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppElement, AppImageCategory } from '../../types'
-
-interface ElementsEditorFormState {
-  id: number
-  name: string
-  element_type: string
-  selector_type: string
-  selector_value: string
-  description: string
-  tagsText: string
-  configText: string
-  image_path: string
-  imageCategory: string
-  fileHash: string
-  is_active: boolean
-  threshold: number
-  rgb: boolean
-  posX: number
-  posY: number
-  regionX1: number
-  regionY1: number
-  regionX2: number
-  regionY2: number
-}
+import type {
+  ElementsEditorFormModel,
+  ElementsPaginationState,
+} from './elementViewModels'
 
 export function useAppAutomationElements() {
   const projectStore = useProjectStore()
@@ -47,7 +28,7 @@ export function useAppAutomationElements() {
   const detailRecord = ref<AppElement | null>(null)
   const selectedElementIds = ref<number[]>([])
 
-  const pagination = reactive({
+  const pagination = reactive<ElementsPaginationState>({
     current: 1,
     pageSize: 10,
   })
@@ -64,7 +45,7 @@ export function useAppAutomationElements() {
     region: 'orange',
   }
 
-  const form = reactive<ElementsEditorFormState>({
+  const form = reactive<ElementsEditorFormModel>({
     id: 0,
     name: '',
     element_type: 'image',

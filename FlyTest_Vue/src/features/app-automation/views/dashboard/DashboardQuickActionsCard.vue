@@ -30,11 +30,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppAutomationTab } from '../../types'
+import type { DashboardQuickActionsCardEmits } from './dashboardEventModels'
 
-const emit = defineEmits<{
-  'open-tab': [tab: AppAutomationTab]
-}>()
+const emit = defineEmits<DashboardQuickActionsCardEmits>()
 </script>
 
 <style scoped>

@@ -79,41 +79,14 @@
 </template>
 
 <script setup lang="ts">
-import type { AppExecution } from '../../types'
+import type { SuiteExecutionDetailDialogEmits } from './suiteEventModels'
+import type { SuiteExecutionDetailDialogProps } from './suiteViewModels'
 
-interface StatusMeta {
-  label: string
-  color: string
-}
-
-interface ExecutionArtifact {
-  key: string
-  relativePath: string
-  message: string
-  level: string
-}
-
-interface Props {
-  currentExecution: AppExecution | null
-  selectedSuiteId: number | null
-  executionArtifacts: ExecutionArtifact[]
-  formatDateTime: (value?: string | null) => string
-  formatRate: (value?: number | null) => number
-  formatDuration: (value?: number | null) => string
-  getExecutionStatusMeta: (record: AppExecution) => StatusMeta
-  canOpenReport: (record: AppExecution) => boolean
-  getLogLevelColor: (value?: string) => string
-}
-
-defineProps<Props>()
+defineProps<SuiteExecutionDetailDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  'open-report': [record: AppExecution]
-  'open-workspace': [executionId?: number, suiteId?: number | null]
-  'open-artifact': [record: AppExecution, relativePath: string]
-}>()
+const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
 </script>
 
 <style scoped>

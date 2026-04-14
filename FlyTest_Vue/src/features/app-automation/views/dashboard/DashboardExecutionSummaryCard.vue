@@ -22,13 +22,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppDashboardStatistics } from '../../types'
+import type { DashboardExecutionSummaryCardProps } from './dashboardViewModels'
 
-interface Props {
-  statistics: AppDashboardStatistics
-}
-
-defineProps<Props>()
+defineProps<DashboardExecutionSummaryCardProps>()
 </script>
 
 <style scoped>

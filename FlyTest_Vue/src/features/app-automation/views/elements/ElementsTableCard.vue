@@ -102,23 +102,10 @@
 </template>
 
 <script setup lang="ts">
-import type { AppElement } from '../../types'
+import type { ElementsTableCardEmits } from './elementEventModels'
+import type { ElementsTableCardProps } from './elementViewModels'
 
-interface Props {
-  loading: boolean
-  batchDeleting: boolean
-  elements: AppElement[]
-  total: number
-  formatDateTime: (value?: string) => string
-  getTypeLabel: (value: string) => string
-  getTypeColor: (value: string) => string
-  getPreviewUrl: (imagePath?: string) => string
-  renderPos: (record: AppElement) => string
-  renderRegion: (record: AppElement) => string
-  getImageCategory: (record: AppElement) => string
-}
-
-defineProps<Props>()
+defineProps<ElementsTableCardProps>()
 
 const selectedElementIdsModel = defineModel<number[]>('selectedElementIds', { required: true })
 const currentModel = defineModel<number>('current', { required: true })
@@ -129,15 +116,7 @@ const rowSelection = {
   showCheckedAll: true,
 }
 
-const emit = defineEmits<{
-  'open-detail': [record: AppElement]
-  'duplicate-element': [record: AppElement]
-  'open-edit': [record: AppElement]
-  remove: [id: number]
-  'toggle-active': [record: AppElement, value: boolean]
-  'remove-selected': []
-  'clear-selection': []
-}>()
+const emit = defineEmits<ElementsTableCardEmits>()
 </script>
 
 <style scoped>

@@ -50,31 +50,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppTestSuite } from '../../types'
+import type { SuitesTableCardEmits } from './suiteEventModels'
+import type { SuitesTableCardProps } from './suiteViewModels'
 
-interface StatusMeta {
-  label: string
-  color: string
-}
+defineProps<SuitesTableCardProps>()
 
-interface Props {
-  loading: boolean
-  suites: AppTestSuite[]
-  formatDateTime: (value?: string | null) => string
-  getSuiteStatusMeta: (record: AppTestSuite) => StatusMeta
-  getSuiteHealthRate: (record: AppTestSuite) => number
-}
-
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'open-run': [record: AppTestSuite]
-  'open-detail': [record: AppTestSuite]
-  'open-history': [record: AppTestSuite]
-  'duplicate-suite': [record: AppTestSuite]
-  'open-edit': [record: AppTestSuite]
-  remove: [id: number]
-}>()
+const emit = defineEmits<SuitesTableCardEmits>()
 </script>
 
 <style scoped>

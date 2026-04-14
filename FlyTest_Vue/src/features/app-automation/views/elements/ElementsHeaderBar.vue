@@ -30,22 +30,15 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  loading: boolean
-}
+import type { ElementsHeaderBarEmits } from './elementEventModels'
+import type { ElementsHeaderBarProps } from './elementViewModels'
 
-defineProps<Props>()
+defineProps<ElementsHeaderBarProps>()
 
 const searchModel = defineModel<string>('search', { required: true })
 const typeFilterModel = defineModel<string | undefined>('typeFilter', { required: true })
 
-const emit = defineEmits<{
-  search: []
-  'type-change': []
-  refresh: []
-  'open-capture': []
-  'open-create': []
-}>()
+const emit = defineEmits<ElementsHeaderBarEmits>()
 </script>
 
 <style scoped>

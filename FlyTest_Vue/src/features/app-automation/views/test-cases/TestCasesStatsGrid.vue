@@ -20,18 +20,9 @@
 </template>
 
 <script setup lang="ts">
-interface CaseStats {
-  total: number
-  passed: number
-  failed: number
-  pending: number
-}
+import type { TestCasesStatsGridProps } from './testCaseViewModels'
 
-interface Props {
-  statistics: CaseStats
-}
-
-defineProps<Props>()
+defineProps<TestCasesStatsGridProps>()
 </script>
 
 <style scoped>

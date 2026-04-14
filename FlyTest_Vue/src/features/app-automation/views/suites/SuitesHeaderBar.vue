@@ -27,15 +27,12 @@
 </template>
 
 <script setup lang="ts">
+import type { SuitesHeaderBarEmits } from './suiteEventModels'
+
 const searchModel = defineModel<string>('search', { required: true })
 const statusModel = defineModel<string>('status', { required: true })
 
-const emit = defineEmits<{
-  search: []
-  reset: []
-  refresh: []
-  create: []
-}>()
+const emit = defineEmits<SuitesHeaderBarEmits>()
 </script>
 
 <style scoped>

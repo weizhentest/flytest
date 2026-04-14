@@ -24,19 +24,9 @@
 </template>
 
 <script setup lang="ts">
-interface SuiteStats {
-  total: number
-  running: number
-  passed: number
-  stopped: number
-  health: number
-}
+import type { SuitesStatsGridProps } from './suiteViewModels'
 
-interface Props {
-  statistics: SuiteStats
-}
-
-defineProps<Props>()
+defineProps<SuitesStatsGridProps>()
 </script>
 
 <style scoped>

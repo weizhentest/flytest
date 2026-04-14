@@ -46,29 +46,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppPackage } from '../../types'
+import type { TestCaseEditorDialogEmits } from './testCaseEventModels'
+import type { TestCaseEditorDialogProps } from './testCaseViewModels'
 
-interface TestCaseForm {
-  id: number
-  name: string
-  description: string
-  package_id: number | undefined
-  timeout: number
-  retry_count: number
-  variablesText: string
-  uiFlowText: string
-}
-
-interface Props {
-  form: TestCaseForm
-  packages: AppPackage[]
-}
-
-defineProps<Props>()
+defineProps<TestCaseEditorDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  submit: []
-}>()
+const emit = defineEmits<TestCaseEditorDialogEmits>()
 </script>

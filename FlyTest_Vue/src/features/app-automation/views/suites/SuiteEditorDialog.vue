@@ -39,29 +39,14 @@
 </template>
 
 <script setup lang="ts">
-import type { AppTestCase } from '../../types'
+import type { SuiteEditorDialogEmits } from './suiteEventModels'
+import type { SuiteEditorDialogProps } from './suiteViewModels'
 
-interface SuiteForm {
-  id: number
-  name: string
-  description: string
-  test_case_ids: number[]
-}
-
-interface Props {
-  form: SuiteForm
-  testCases: AppTestCase[]
-  selectedCases: AppTestCase[]
-}
-
-defineProps<Props>()
+defineProps<SuiteEditorDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  save: []
-  'move-case': [index: number, delta: -1 | 1]
-}>()
+const emit = defineEmits<SuiteEditorDialogEmits>()
 </script>
 
 <style scoped>

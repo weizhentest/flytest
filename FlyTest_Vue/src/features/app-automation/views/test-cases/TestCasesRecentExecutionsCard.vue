@@ -41,25 +41,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppExecution } from '../../types'
+import type { TestCasesRecentExecutionsCardEmits } from './testCaseEventModels'
+import type { TestCasesRecentExecutionsCardProps } from './testCaseViewModels'
 
-interface Props {
-  executions: AppExecution[]
-  loading: boolean
-  formatDateTime: (value?: string | null) => string
-  getResultColor: (result?: string) => string
-  getExecutionResultLabel: (record: AppExecution) => string
-  formatProgress: (value?: number | null) => number
-  formatRate: (value?: number | null) => number
-  canOpenExecutionReport: (record: AppExecution) => boolean
-}
+defineProps<TestCasesRecentExecutionsCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'open-execution-workspace': [executionId: number]
-  'open-execution-report': [executionId: number]
-}>()
+const emit = defineEmits<TestCasesRecentExecutionsCardEmits>()
 </script>
 
 <style scoped>

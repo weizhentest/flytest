@@ -5,29 +5,14 @@ import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppDevice, AppExecution, AppTestCase, AppTestSuite } from '../../types'
-
-interface SuiteFilters {
-  search: string
-  status: string
-}
-
-interface SuiteFormState {
-  id: number
-  name: string
-  description: string
-  test_case_ids: number[]
-}
-
-interface RunFormState {
-  device_id: number | undefined
-}
-
-interface ExecutionArtifact {
-  key: string
-  relativePath: string
-  message: string
-  level: string
-}
+import type {
+  SuiteFilters,
+  SuiteFormModel,
+  SuiteExecutionArtifact,
+  SuiteRunFormModel,
+  SuiteStats,
+  SuiteStatusMeta,
+} from './suiteViewModels'
 
 export function useAppAutomationSuites() {
   const authStore = useAuthStore()
@@ -55,14 +40,14 @@ export function useAppAutomationSuites() {
     status: '',
   })
 
-  const form = reactive<SuiteFormState>({
+  const form = reactive<SuiteFormModel>({
     id: 0,
     name: '',
     description: '',
     test_case_ids: [],
   })
 
-  const runForm = reactive<RunFormState>({
+  const runForm = reactive<SuiteRunFormModel>({
     device_id: undefined,
   })
 
@@ -86,7 +71,7 @@ export function useAppAutomationSuites() {
     return 'not_run'
   }
 
-  const getSuiteStatusMeta = (record: AppTestSuite) => {
+  const getSuiteStatusMeta = (record: AppTestSuite): SuiteStatusMeta => {
     const state = getSuiteState(record)
     if (state === 'running') return { label: '执行中', color: 'arcoblue' }
     if (state === 'passed') return { label: '执行通过', color: 'green' }
@@ -112,7 +97,7 @@ export function useAppAutomationSuites() {
     return 'unknown'
   }
 
-  const getExecutionStatusMeta = (record: AppExecution) => {
+  const getExecutionStatusMeta = (record: AppExecution): SuiteStatusMeta => {
     const state = getExecutionState(record)
     if (state === 'running') return { label: '执行中', color: 'arcoblue' }
     if (state === 'pending') return { label: '等待执行', color: 'gold' }
@@ -180,7 +165,7 @@ export function useAppAutomationSuites() {
     }),
   )
 
-  const suiteStats = computed(() => ({
+  const suiteStats = computed<SuiteStats>(() => ({
     total: filteredSuites.value.length,
     running: filteredSuites.value.filter(item => getSuiteState(item) === 'running').length,
     passed: filteredSuites.value.filter(item => getSuiteState(item) === 'passed').length,
@@ -194,7 +179,7 @@ export function useAppAutomationSuites() {
       : 0,
   }))
 
-  const executionArtifacts = computed<ExecutionArtifact[]>(() => {
+  const executionArtifacts = computed<SuiteExecutionArtifact[]>(() => {
     if (!currentExecution.value?.logs?.length) return []
 
     const seen = new Set<string>()
@@ -211,7 +196,7 @@ export function useAppAutomationSuites() {
           level: item.level || 'info',
         }
       })
-      .filter(Boolean) as ExecutionArtifact[]
+      .filter(Boolean) as SuiteExecutionArtifact[]
   })
 
   const resetForm = () => {

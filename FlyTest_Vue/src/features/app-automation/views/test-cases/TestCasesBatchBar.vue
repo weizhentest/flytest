@@ -9,16 +9,12 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  selectedCount: number
-}
+import type { TestCasesBatchBarEmits } from './testCaseEventModels'
+import type { TestCasesBatchBarProps } from './testCaseViewModels'
 
-defineProps<Props>()
+defineProps<TestCasesBatchBarProps>()
 
-const emit = defineEmits<{
-  'open-batch-execute': []
-  'clear-selection': []
-}>()
+const emit = defineEmits<TestCasesBatchBarEmits>()
 </script>
 
 <style scoped>

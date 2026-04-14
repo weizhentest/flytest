@@ -69,19 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppElement } from '../../types'
+import type { ElementsDetailDialogProps } from './elementViewModels'
 
-interface Props {
-  detailRecord: AppElement | null
-  getPreviewUrl: (imagePath?: string) => string
-  getTypeLabel: (value: string) => string
-  renderPos: (record: AppElement) => string
-  renderRegion: (record: AppElement) => string
-  formatDateTime: (value?: string) => string
-  formatConfig: (value: Record<string, unknown>) => string
-}
-
-defineProps<Props>()
+defineProps<ElementsDetailDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 </script>

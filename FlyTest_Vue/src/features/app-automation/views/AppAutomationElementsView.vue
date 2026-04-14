@@ -77,11 +77,13 @@
 
 <script setup lang="ts">
 import AppAutomationCaptureElementModal from '../components/AppAutomationCaptureElementModal.vue'
-import ElementsDetailDialog from './elements/ElementsDetailDialog.vue'
-import ElementsEditorDialog from './elements/ElementsEditorDialog.vue'
-import ElementsHeaderBar from './elements/ElementsHeaderBar.vue'
-import ElementsTableCard from './elements/ElementsTableCard.vue'
-import { useAppAutomationElements } from './elements/useAppAutomationElements'
+import {
+  ElementsDetailDialog,
+  ElementsEditorDialog,
+  ElementsHeaderBar,
+  ElementsTableCard,
+  useAppAutomationElements,
+} from './elements'
 
 const {
   projectStore,

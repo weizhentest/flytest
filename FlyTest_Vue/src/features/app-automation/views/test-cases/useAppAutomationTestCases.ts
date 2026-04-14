@@ -5,21 +5,11 @@ import { useAuthStore } from '@/store/authStore'
 import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppDevice, AppExecution, AppPackage, AppTestCase } from '../../types'
-
-interface TestCaseFormState {
-  id: number
-  name: string
-  description: string
-  package_id: number | undefined
-  timeout: number
-  retry_count: number
-  variablesText: string
-  uiFlowText: string
-}
-
-interface ExecuteFormState {
-  device_id: number | undefined
-}
+import type {
+  TestCaseExecuteFormModel,
+  TestCaseFormModel,
+  TestCaseStats,
+} from './testCaseViewModels'
 
 export function useAppAutomationTestCases() {
   const authStore = useAuthStore()
@@ -39,7 +29,7 @@ export function useAppAutomationTestCases() {
   const currentExecutionCaseId = ref<number | null>(null)
   const selectedCaseIds = ref<number[]>([])
 
-  const form = reactive<TestCaseFormState>({
+  const form = reactive<TestCaseFormModel>({
     id: 0,
     name: '',
     description: '',
@@ -50,7 +40,7 @@ export function useAppAutomationTestCases() {
     uiFlowText: '{\n  "steps": []\n}',
   })
 
-  const executeForm = reactive<ExecuteFormState>({
+  const executeForm = reactive<TestCaseExecuteFormModel>({
     device_id: undefined,
   })
 
@@ -84,7 +74,7 @@ export function useAppAutomationTestCases() {
     return testCases.value.filter(item => item.package_id === packageFilter.value)
   })
 
-  const caseStats = computed(() => {
+  const caseStats = computed<TestCaseStats>(() => {
     const total = filteredCases.value.length
     const passed = filteredCases.value.filter(item => item.last_result === 'passed').length
     const failed = filteredCases.value.filter(item => item.last_result === 'failed').length

@@ -51,18 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import type { AppTestCase } from '../../types'
+import type { TestCasesTableCardEmits } from './testCaseEventModels'
+import type { TestCasesTableCardProps } from './testCaseViewModels'
 
-interface Props {
-  cases: AppTestCase[]
-  loading: boolean
-  formatDateTime: (value?: string | null) => string
-  getStepCount: (record: AppTestCase) => number
-  getResultLabel: (result?: string) => string
-  getResultColor: (result?: string) => string
-}
-
-defineProps<Props>()
+defineProps<TestCasesTableCardProps>()
 
 const selectedCaseIdsModel = defineModel<number[]>('selectedCaseIds', { required: true })
 
@@ -71,13 +63,7 @@ const rowSelection = {
   showCheckedAll: true,
 }
 
-const emit = defineEmits<{
-  'open-execute': [record: AppTestCase]
-  'open-scene-builder': [record: AppTestCase]
-  'open-edit': [record: AppTestCase]
-  'duplicate-case': [record: AppTestCase]
-  remove: [id: number]
-}>()
+const emit = defineEmits<TestCasesTableCardEmits>()
 </script>
 
 <style scoped>

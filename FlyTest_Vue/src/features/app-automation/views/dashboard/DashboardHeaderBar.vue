@@ -14,20 +14,12 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  serviceStatusTagColor: string
-  serviceStatusTagText: string
-  lastUpdatedText: string
-  aiStatusLoading: boolean
-  loading: boolean
-}
+import type { DashboardHeaderBarEmits } from './dashboardEventModels'
+import type { DashboardHeaderBarProps } from './dashboardViewModels'
 
-defineProps<Props>()
+defineProps<DashboardHeaderBarProps>()
 
-const emit = defineEmits<{
-  'refresh-ai-status': []
-  'refresh-dashboard': []
-}>()
+const emit = defineEmits<DashboardHeaderBarEmits>()
 </script>
 
 <style scoped>

@@ -34,19 +34,9 @@
 </template>
 
 <script setup lang="ts">
-import type { AppDashboardStatistics } from '../../types'
+import type { DashboardStatsGridProps } from './dashboardViewModels'
 
-interface Props {
-  statistics: AppDashboardStatistics
-  activeTaskCount: number
-  pausedTaskCount: number
-  failedTaskCount: number
-  aiReady: boolean
-  aiHasConfig: boolean
-  aiCapabilityDisplay: string
-}
-
-defineProps<Props>()
+defineProps<DashboardStatsGridProps>()
 </script>
 
 <style scoped>

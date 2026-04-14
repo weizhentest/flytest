@@ -40,28 +40,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppScheduledTask } from '../../types'
+import type { DashboardTaskSnapshotCardEmits } from './dashboardEventModels'
+import type { DashboardTaskSnapshotCardProps } from './dashboardViewModels'
 
-interface Props {
-  tasks: AppScheduledTask[]
-  getTaskTypeLabel: (value: string) => string
-  getTriggerSummary: (task: AppScheduledTask) => string
-  getTaskTarget: (task: AppScheduledTask) => string
-  formatDateTime: (value?: string | null) => string
-  getTaskStatusColor: (value: string) => string
-  getPrimaryExecutionId: (task: AppScheduledTask) => number | undefined
-  isTaskActionLoading: (action: string, taskId: number) => boolean
-}
+defineProps<DashboardTaskSnapshotCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'open-all': []
-  'open-task': [task: AppScheduledTask]
-  'run-task': [task: AppScheduledTask]
-  'resume-task': [task: AppScheduledTask]
-  'open-latest-execution': [task: AppScheduledTask]
-}>()
+const emit = defineEmits<DashboardTaskSnapshotCardEmits>()
 </script>
 
 <style scoped>

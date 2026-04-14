@@ -75,14 +75,16 @@
 </template>
 
 <script setup lang="ts">
-import DashboardAiOverviewCard from './dashboard/DashboardAiOverviewCard.vue'
-import DashboardExecutionSummaryCard from './dashboard/DashboardExecutionSummaryCard.vue'
-import DashboardHeaderBar from './dashboard/DashboardHeaderBar.vue'
-import DashboardQuickActionsCard from './dashboard/DashboardQuickActionsCard.vue'
-import DashboardRecentExecutionsCard from './dashboard/DashboardRecentExecutionsCard.vue'
-import DashboardStatsGrid from './dashboard/DashboardStatsGrid.vue'
-import DashboardTaskSnapshotCard from './dashboard/DashboardTaskSnapshotCard.vue'
-import { useAppAutomationDashboard } from './dashboard/useAppAutomationDashboard'
+import {
+  DashboardAiOverviewCard,
+  DashboardExecutionSummaryCard,
+  DashboardHeaderBar,
+  DashboardQuickActionsCard,
+  DashboardRecentExecutionsCard,
+  DashboardStatsGrid,
+  DashboardTaskSnapshotCard,
+  useAppAutomationDashboard,
+} from './dashboard'
 
 const {
   currentProjectId,

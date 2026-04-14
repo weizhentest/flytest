@@ -33,24 +33,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppExecution } from '../../types'
+import type { DashboardRecentExecutionsCardEmits } from './dashboardEventModels'
+import type { DashboardRecentExecutionsCardProps } from './dashboardViewModels'
 
-interface Props {
-  executions: AppExecution[]
-  getExecutionStatusColor: (record: AppExecution) => string
-  getExecutionStatusLabel: (record: AppExecution) => string
-  formatProgress: (value?: number | null) => number
-  formatDateTime: (value?: string | null) => string
-  canOpenReport: (record: AppExecution) => boolean
-}
+defineProps<DashboardRecentExecutionsCardProps>()
 
-defineProps<Props>()
-
-const emit = defineEmits<{
-  'open-all': []
-  'open-execution': [executionId: number]
-  'open-report': [executionId: number]
-}>()
+const emit = defineEmits<DashboardRecentExecutionsCardEmits>()
 </script>
 
 <style scoped>

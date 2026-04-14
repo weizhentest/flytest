@@ -88,15 +88,17 @@
 </template>
 
 <script setup lang="ts">
-import SuiteDetailDialog from './suites/SuiteDetailDialog.vue'
-import SuiteEditorDialog from './suites/SuiteEditorDialog.vue'
-import SuiteExecutionDetailDialog from './suites/SuiteExecutionDetailDialog.vue'
-import SuiteHistoryDialog from './suites/SuiteHistoryDialog.vue'
-import SuitesHeaderBar from './suites/SuitesHeaderBar.vue'
-import SuiteRunDialog from './suites/SuiteRunDialog.vue'
-import SuitesStatsGrid from './suites/SuitesStatsGrid.vue'
-import SuitesTableCard from './suites/SuitesTableCard.vue'
-import { useAppAutomationSuites } from './suites/useAppAutomationSuites'
+import {
+  SuiteDetailDialog,
+  SuiteEditorDialog,
+  SuiteExecutionDetailDialog,
+  SuiteHistoryDialog,
+  SuiteRunDialog,
+  SuitesHeaderBar,
+  SuitesStatsGrid,
+  SuitesTableCard,
+  useAppAutomationSuites,
+} from './suites'
 
 const {
   projectStore,

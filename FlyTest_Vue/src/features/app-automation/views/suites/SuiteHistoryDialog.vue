@@ -46,33 +46,14 @@
 </template>
 
 <script setup lang="ts">
-import type { AppExecution, AppTestSuite } from '../../types'
+import type { SuiteHistoryDialogEmits } from './suiteEventModels'
+import type { SuiteHistoryDialogProps } from './suiteViewModels'
 
-interface StatusMeta {
-  label: string
-  color: string
-}
-
-interface Props {
-  selectedSuite: AppTestSuite | null
-  history: AppExecution[]
-  loading: boolean
-  formatDateTime: (value?: string | null) => string
-  formatRate: (value?: number | null) => number
-  formatDuration: (value?: number | null) => string
-  getExecutionStatusMeta: (record: AppExecution) => StatusMeta
-  canOpenReport: (record: AppExecution) => boolean
-}
-
-defineProps<Props>()
+defineProps<SuiteHistoryDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  'open-execution-detail': [id: number]
-  'open-workspace': [executionId?: number, suiteId?: number | null]
-  'open-report': [record: AppExecution]
-}>()
+const emit = defineEmits<SuiteHistoryDialogEmits>()
 </script>
 
 <style scoped>

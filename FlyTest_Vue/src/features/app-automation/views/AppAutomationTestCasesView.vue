@@ -69,14 +69,16 @@
 </template>
 
 <script setup lang="ts">
-import TestCasesBatchBar from './test-cases/TestCasesBatchBar.vue'
-import TestCaseEditorDialog from './test-cases/TestCaseEditorDialog.vue'
-import TestCaseExecuteDialog from './test-cases/TestCaseExecuteDialog.vue'
-import TestCasesHeaderBar from './test-cases/TestCasesHeaderBar.vue'
-import TestCasesRecentExecutionsCard from './test-cases/TestCasesRecentExecutionsCard.vue'
-import TestCasesStatsGrid from './test-cases/TestCasesStatsGrid.vue'
-import TestCasesTableCard from './test-cases/TestCasesTableCard.vue'
-import { useAppAutomationTestCases } from './test-cases/useAppAutomationTestCases'
+import {
+  TestCaseEditorDialog,
+  TestCaseExecuteDialog,
+  TestCasesBatchBar,
+  TestCasesHeaderBar,
+  TestCasesRecentExecutionsCard,
+  TestCasesStatsGrid,
+  TestCasesTableCard,
+  useAppAutomationTestCases,
+} from './test-cases'
 
 const {
   projectStore,

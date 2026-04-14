@@ -13,22 +13,12 @@
 </template>
 
 <script setup lang="ts">
-import type { AppDevice } from '../../types'
+import type { SuiteRunDialogEmits } from './suiteEventModels'
+import type { SuiteRunDialogProps } from './suiteViewModels'
 
-interface RunForm {
-  device_id: number | undefined
-}
-
-interface Props {
-  runForm: RunForm
-  availableDevices: AppDevice[]
-}
-
-defineProps<Props>()
+defineProps<SuiteRunDialogProps>()
 
 const visibleModel = defineModel<boolean>('visible', { required: true })
 
-const emit = defineEmits<{
-  run: []
-}>()
+const emit = defineEmits<SuiteRunDialogEmits>()
 </script>

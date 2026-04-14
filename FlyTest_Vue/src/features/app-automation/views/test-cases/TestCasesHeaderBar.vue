@@ -23,23 +23,15 @@
 </template>
 
 <script setup lang="ts">
-import type { AppPackage } from '../../types'
+import type { TestCasesHeaderBarEmits } from './testCaseEventModels'
+import type { TestCasesHeaderBarProps } from './testCaseViewModels'
 
-interface Props {
-  packages: AppPackage[]
-}
-
-defineProps<Props>()
+defineProps<TestCasesHeaderBarProps>()
 
 const searchModel = defineModel<string>('search', { required: true })
 const packageFilterModel = defineModel<number | ''>('packageFilter', { required: true })
 
-const emit = defineEmits<{
-  search: []
-  reset: []
-  'quick-create': []
-  'open-scene-builder-draft': []
-}>()
+const emit = defineEmits<TestCasesHeaderBarEmits>()
 </script>
 
 <style scoped>
