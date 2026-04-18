@@ -169,6 +169,34 @@ class ExecutionRuntimeTests(unittest.TestCase):
         finally:
             temp_dir.cleanup()
 
+    def test_resolve_asset_path_allows_current_project_asset(self):
+        temp_dir, executor = self.create_executor()
+        try:
+            asset_path = Path(temp_dir.name) / "uploads" / "elements" / "common" / "project-1001" / "ok.png"
+            asset_path.parent.mkdir(parents=True, exist_ok=True)
+            asset_path.write_bytes(b"ok")
+
+            with patch("app.execution_runtime.resolve_upload_asset_path", return_value=asset_path):
+                resolved = executor._resolve_asset_path("elements/common/project-1001/ok.png")
+
+            self.assertEqual(resolved, asset_path)
+        finally:
+            temp_dir.cleanup()
+
+    def test_resolve_asset_path_rejects_other_project_asset(self):
+        temp_dir, executor = self.create_executor()
+        try:
+            asset_path = Path(temp_dir.name) / "uploads" / "elements" / "common" / "project-2002" / "secret.png"
+            asset_path.parent.mkdir(parents=True, exist_ok=True)
+            asset_path.write_bytes(b"secret")
+
+            with patch("app.execution_runtime.resolve_upload_asset_path", return_value=asset_path):
+                resolved = executor._resolve_asset_path("elements/common/project-2002/secret.png")
+
+            self.assertIsNone(resolved)
+        finally:
+            temp_dir.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -409,13 +409,39 @@ export interface AppScheduledTaskTriggerPayload {
   test_case_count?: number
 }
 
+export type AppScheduledTaskType = 'TEST_SUITE' | 'TEST_CASE'
+export type AppScheduledTaskTriggerType = 'CRON' | 'INTERVAL' | 'ONCE'
+export type AppScheduledTaskNotificationType = '' | 'email' | 'webhook' | 'both'
+export type AppScheduledTaskStatus = 'ACTIVE' | 'PAUSED' | 'FAILED' | 'COMPLETED'
+
+export interface AppScheduledTaskMutationPayload {
+  project_id: number
+  name: string
+  description: string
+  task_type: AppScheduledTaskType
+  trigger_type: AppScheduledTaskTriggerType
+  cron_expression: string
+  interval_seconds: number | null
+  execute_at: string | null
+  device_id: number | null
+  package_id: number | null
+  test_suite_id: number | null
+  test_case_id: number | null
+  notify_on_success: boolean
+  notify_on_failure: boolean
+  notification_type: AppScheduledTaskNotificationType
+  notify_emails: string[]
+  status?: AppScheduledTaskStatus
+  created_by?: string
+}
+
 export interface AppScheduledTask {
   id: number
   project_id: number
   name: string
   description: string
-  task_type: string
-  trigger_type: string
+  task_type: AppScheduledTaskType
+  trigger_type: AppScheduledTaskTriggerType
   cron_expression: string
   interval_seconds: number | null
   execute_at: string | null
@@ -429,9 +455,9 @@ export interface AppScheduledTask {
   test_case_name?: string
   notify_on_success: boolean
   notify_on_failure: boolean
-  notification_type: string
+  notification_type: AppScheduledTaskNotificationType
   notify_emails: string[]
-  status: string
+  status: AppScheduledTaskStatus
   last_run_time: string | null
   next_run_time: string | null
   total_runs: number

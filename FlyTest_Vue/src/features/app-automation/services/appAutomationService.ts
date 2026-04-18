@@ -23,6 +23,7 @@ import type {
   AppScenePlanResponse,
   AppStepSuggestionRequest,
   AppStepSuggestionResponse,
+  AppScheduledTaskMutationPayload,
   AppScheduledTask,
   AppScheduledTaskRunResult,
   AppTestCase,
@@ -550,7 +551,7 @@ export const AppAutomationService = {
     })
   },
 
-  createScheduledTask(payload: Omit<AppScheduledTask, 'id' | 'device_name' | 'app_package_name' | 'test_suite_name' | 'test_case_name' | 'last_run_time' | 'next_run_time' | 'total_runs' | 'successful_runs' | 'failed_runs' | 'last_result' | 'error_message' | 'created_at' | 'updated_at'>) {
+  createScheduledTask(payload: AppScheduledTaskMutationPayload) {
     return unwrap<AppScheduledTask>({
       url: `${APP_BASE}/scheduled-tasks/`,
       method: 'POST',
@@ -558,7 +559,7 @@ export const AppAutomationService = {
     })
   },
 
-  updateScheduledTask(id: number, payload: Omit<AppScheduledTask, 'id' | 'device_name' | 'app_package_name' | 'test_suite_name' | 'test_case_name' | 'last_run_time' | 'next_run_time' | 'total_runs' | 'successful_runs' | 'failed_runs' | 'last_result' | 'error_message' | 'created_at' | 'updated_at'>) {
+  updateScheduledTask(id: number, payload: AppScheduledTaskMutationPayload) {
     return unwrap<AppScheduledTask>({
       url: `${APP_BASE}/scheduled-tasks/${id}/`,
       method: 'PUT',

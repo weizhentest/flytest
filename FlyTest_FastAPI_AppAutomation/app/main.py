@@ -36,6 +36,11 @@ from .access_control import (
     resolve_scoped_project_ids,
 )
 from .ai_planner import build_scene_plan, build_step_suggestion
+from .asset_paths import (
+    extract_project_id_from_asset_path as extract_project_id_from_element_asset_path,
+    normalize_asset_path as normalize_element_asset_path,
+    resolve_upload_asset_path,
+)
 from .database import (
     ELEMENT_UPLOADS_DIR,
     connection,
@@ -241,7 +246,7 @@ def get_element_asset_root() -> Path:
 
 
 def normalize_asset_path(asset_path: str) -> str:
-    return (asset_path or "").replace("\\", "/").strip().lstrip("/")
+    return normalize_element_asset_path(asset_path)
 
 
 def resolve_element_asset_path(asset_path: str) -> Path:
@@ -267,7 +272,14 @@ def build_element_image_path(element: dict[str, Any]) -> str:
     if isinstance(config, str):
         config = json_loads(config, {})
     if isinstance(config, dict):
-        return str(config.get("image_path") or "").strip()
+        config_image_path = str(config.get("image_path") or "").strip()
+        if config_image_path:
+            return config_image_path
+
+    element_type = str(element.get("element_type") or "").strip().lower()
+    selector_type = str(element.get("selector_type") or "").strip().lower()
+    if element_type == "image" or selector_type == "image":
+        return str(element.get("selector_value") or "").strip()
     return ""
 
 
@@ -327,6 +339,71 @@ def ensure_element_asset_access(conn, asset_path: str) -> None:
         return
 
     raise HTTPException(status_code=403, detail="当前用户无权访问该元素资源")
+
+
+def resolve_element_asset_file(asset_path: str) -> Path:
+    cleaned = normalize_asset_path(asset_path)
+    if not cleaned:
+        raise HTTPException(status_code=404, detail="Element asset not found")
+
+    candidate = resolve_upload_asset_path(cleaned)
+    if candidate is None:
+        raise HTTPException(status_code=400, detail="Invalid element asset path")
+    return candidate
+
+
+def _collect_element_asset_references(payload: ElementPayload) -> list[str]:
+    references: list[str] = []
+
+    def add_reference(value: Any) -> None:
+        text = str(value or "").strip()
+        if text and text not in references:
+            references.append(text)
+
+    add_reference(payload.image_path)
+
+    element_type = payload.element_type.strip().lower()
+    selector_type = payload.selector_type.strip().lower()
+    if element_type == "image" or selector_type == "image":
+        add_reference(payload.selector_value)
+
+    config = payload.config if isinstance(payload.config, dict) else {}
+    add_reference(config.get("image_path"))
+    return references
+
+
+def ensure_element_assets_belong_to_project(
+    conn,
+    *,
+    project_id: int,
+    asset_paths: list[str],
+) -> None:
+    for asset_path in asset_paths:
+        normalized_path = normalize_asset_path(asset_path)
+        if not normalized_path:
+            continue
+
+        if resolve_upload_asset_path(normalized_path) is None:
+            raise HTTPException(status_code=400, detail="Invalid element asset path")
+
+        scoped_project_id = extract_project_id_from_asset_path(normalized_path)
+        if scoped_project_id is not None:
+            if scoped_project_id != project_id:
+                raise HTTPException(status_code=400, detail="Element asset does not belong to the current project")
+            continue
+
+        existing_reference = fetch_one(
+            conn,
+            """
+            SELECT id
+            FROM elements
+            WHERE project_id = ? AND (image_path = ? OR selector_value = ?)
+            LIMIT 1
+            """,
+            (project_id, normalized_path, normalized_path),
+        )
+        if existing_reference is None:
+            raise HTTPException(status_code=400, detail="Element asset does not belong to the current project")
 
 
 def compute_file_hash(content: bytes) -> str:
@@ -1241,7 +1318,7 @@ def delete_element_image_category(category_name: str, project_id: int = Query(..
 
 @app.get("/elements/assets/{asset_path:path}")
 def get_element_asset(asset_path: str) -> FileResponse:
-    file_path = resolve_element_asset_path(asset_path)
+    file_path = resolve_element_asset_file(asset_path)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="元素资源不存在")
     with connection() as conn:
@@ -1254,7 +1331,7 @@ def preview_element(element_id: int) -> FileResponse:
     with connection() as conn:
         element = get_element_or_404(conn, element_id)
         image_path = build_element_image_path(element)
-    file_path = resolve_element_asset_path(image_path)
+    file_path = resolve_element_asset_file(image_path)
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="元素图片不存在")
     with connection() as conn:
@@ -1266,6 +1343,11 @@ def preview_element(element_id: int) -> FileResponse:
 def create_element(payload: ElementPayload) -> dict[str, Any]:
     with connection() as conn:
         ensure_project_access(payload.project_id)
+        ensure_element_assets_belong_to_project(
+            conn,
+            project_id=payload.project_id,
+            asset_paths=_collect_element_asset_references(payload),
+        )
         now = utc_now()
         conn.execute(
             """
@@ -1298,6 +1380,11 @@ def update_element(element_id: int, payload: ElementPayload) -> dict[str, Any]:
     with connection() as conn:
         _ = get_element_or_404(conn, element_id)
         ensure_project_access(payload.project_id)
+        ensure_element_assets_belong_to_project(
+            conn,
+            project_id=payload.project_id,
+            asset_paths=_collect_element_asset_references(payload),
+        )
         conn.execute(
             """
             UPDATE elements

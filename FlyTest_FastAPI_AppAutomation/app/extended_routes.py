@@ -34,6 +34,9 @@ except Exception:  # pragma: no cover
 
 router = APIRouter()
 
+MUTABLE_TASK_STATUSES = {"ACTIVE", "PAUSED"}
+TERMINAL_TASK_STATUSES = {"FAILED", "COMPLETED"}
+
 
 def success(data: Any = None, message: str = "success", code: int = 200) -> dict[str, Any]:
     return {"status": "success", "code": code, "message": message, "data": data}
@@ -84,6 +87,42 @@ def compute_task_next_run(task: dict[str, Any]) -> str | None:
         int(task.get("interval_seconds") or 0) or None,
         str(task.get("execute_at") or "").strip() or None,
     )
+
+
+def compute_next_run_or_raise(
+    trigger_type: str,
+    cron_expression: str,
+    interval_seconds: int | None,
+    execute_at: str | None,
+) -> str | None:
+    next_run_time = compute_next_run(trigger_type, cron_expression, interval_seconds, execute_at)
+    if trigger_type == "CRON":
+        if next_run_time is None:
+            raise HTTPException(status_code=400, detail="Invalid cron expression")
+    if trigger_type == "ONCE" and next_run_time is None:
+        raise HTTPException(status_code=400, detail="execute_at must be in the future")
+    return next_run_time
+
+
+def validate_create_task_status(status: str) -> str:
+    normalized = str(status or "ACTIVE").upper()
+    if normalized not in MUTABLE_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="New tasks must start as ACTIVE or PAUSED")
+    return normalized
+
+
+def resolve_update_task_status(current_status: str, requested_status: str) -> str:
+    normalized_current = str(current_status or "ACTIVE").upper()
+    normalized_requested = str(requested_status or normalized_current).upper()
+    if normalized_current in TERMINAL_TASK_STATUSES:
+        if normalized_requested != normalized_current:
+            raise HTTPException(status_code=400, detail="Terminal tasks cannot change status from the edit form")
+        return normalized_current
+    if normalized_current not in MUTABLE_TASK_STATUSES:
+        raise HTTPException(status_code=409, detail="Task status is not editable")
+    if normalized_requested not in MUTABLE_TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Editable tasks must remain ACTIVE or PAUSED")
+    return normalized_current
 
 
 def serialize_component(row: dict[str, Any]) -> dict[str, Any]:
@@ -1783,7 +1822,13 @@ def get_scheduled_task(task_id: int) -> dict[str, Any]:
 
 @router.post("/scheduled-tasks/")
 def create_scheduled_task(payload: ScheduledTaskPayload) -> dict[str, Any]:
-    next_run_time = compute_next_run(payload.trigger_type, payload.cron_expression, payload.interval_seconds, payload.execute_at)
+    status = validate_create_task_status(payload.status)
+    next_run_time = compute_next_run_or_raise(
+        payload.trigger_type,
+        payload.cron_expression,
+        payload.interval_seconds,
+        payload.execute_at,
+    )
     with connection() as conn:
         validate_scheduled_task_payload(conn, payload)
         now = utc_now()
@@ -1813,7 +1858,7 @@ def create_scheduled_task(payload: ScheduledTaskPayload) -> dict[str, Any]:
                 1 if payload.notify_on_failure else 0,
                 payload.notification_type,
                 json_dumps(payload.notify_emails),
-                payload.status,
+                status,
                 next_run_time,
                 payload.created_by,
                 now,
@@ -1827,10 +1872,16 @@ def create_scheduled_task(payload: ScheduledTaskPayload) -> dict[str, Any]:
 
 @router.put("/scheduled-tasks/{task_id}/")
 def update_scheduled_task(task_id: int, payload: ScheduledTaskPayload) -> dict[str, Any]:
-    next_run_time = compute_next_run(payload.trigger_type, payload.cron_expression, payload.interval_seconds, payload.execute_at)
     with connection() as conn:
-        _ = get_task_or_404(conn, task_id)
+        current_task = get_task_or_404(conn, task_id)
         validate_scheduled_task_payload(conn, payload)
+        status = resolve_update_task_status(current_task.get("status", "ACTIVE"), payload.status)
+        next_run_time = None if status in TERMINAL_TASK_STATUSES else compute_next_run_or_raise(
+            payload.trigger_type,
+            payload.cron_expression,
+            payload.interval_seconds,
+            payload.execute_at,
+        )
         conn.execute(
             """
             UPDATE scheduled_tasks
@@ -1857,9 +1908,9 @@ def update_scheduled_task(task_id: int, payload: ScheduledTaskPayload) -> dict[s
                 1 if payload.notify_on_failure else 0,
                 payload.notification_type,
                 json_dumps(payload.notify_emails),
-                payload.status,
+                status,
                 next_run_time,
-                payload.created_by,
+                current_task.get("created_by", payload.created_by),
                 utc_now(),
                 task_id,
             ),
@@ -1879,7 +1930,9 @@ def delete_scheduled_task(task_id: int) -> dict[str, Any]:
 @router.post("/scheduled-tasks/{task_id}/pause/")
 def pause_scheduled_task(task_id: int) -> dict[str, Any]:
     with connection() as conn:
-        _ = get_task_or_404(conn, task_id)
+        task = get_task_or_404(conn, task_id)
+        if str(task.get("status") or "").upper() in TERMINAL_TASK_STATUSES:
+            raise HTTPException(status_code=409, detail="Terminal tasks cannot be paused")
         conn.execute("UPDATE scheduled_tasks SET status = 'PAUSED', updated_at = ? WHERE id = ?", (utc_now(), task_id))
         row = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
     return success(serialize_task(row or {}), "任务已暂停")
@@ -1889,7 +1942,14 @@ def pause_scheduled_task(task_id: int) -> dict[str, Any]:
 def resume_scheduled_task(task_id: int) -> dict[str, Any]:
     with connection() as conn:
         task = get_task_or_404(conn, task_id)
-        next_run_time = compute_next_run(task["trigger_type"], task["cron_expression"], task["interval_seconds"], task["execute_at"])
+        if str(task.get("status") or "").upper() in TERMINAL_TASK_STATUSES:
+            raise HTTPException(status_code=409, detail="Completed tasks cannot be resumed")
+        next_run_time = compute_next_run_or_raise(
+            task["trigger_type"],
+            task["cron_expression"],
+            task["interval_seconds"],
+            task["execute_at"],
+        )
         conn.execute(
             "UPDATE scheduled_tasks SET status = 'ACTIVE', next_run_time = ?, updated_at = ? WHERE id = ?",
             (next_run_time, utc_now(), task_id),

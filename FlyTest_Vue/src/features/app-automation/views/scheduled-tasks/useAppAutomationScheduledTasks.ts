@@ -12,8 +12,13 @@ import type {
   AppDevice,
   AppNotificationLog,
   AppPackage,
+  AppScheduledTaskNotificationType,
   AppScheduledTask,
+  AppScheduledTaskMutationPayload,
   AppScheduledTaskRunResult,
+  AppScheduledTaskStatus,
+  AppScheduledTaskTriggerType,
+  AppScheduledTaskType,
   AppTestCase,
   AppTestSuite,
 } from '../../types'
@@ -434,7 +439,7 @@ export function useAppAutomationScheduledTasks() {
     form.notification_type =
       record.notification_type ||
       (record.notify_on_success || record.notify_on_failure ? 'email' : '')
-    form.status = ['ACTIVE', 'PAUSED'].includes(record.status) ? record.status : 'ACTIVE'
+    form.status = record.status
     notifyEmailsText.value = record.notify_emails.join(', ')
     visible.value = true
   }
@@ -479,26 +484,30 @@ export function useAppAutomationScheduledTasks() {
     return true
   }
 
-  const buildPayload = () => ({
-    project_id: projectStore.currentProjectId || 0,
-    name: form.name.trim(),
-    description: form.description.trim(),
-    task_type: form.task_type,
-    trigger_type: form.trigger_type,
-    cron_expression: form.trigger_type === 'CRON' ? form.cron_expression.trim() : '',
-    interval_seconds: form.trigger_type === 'INTERVAL' ? form.interval_seconds : null,
-    execute_at: form.trigger_type === 'ONCE' ? form.execute_at || null : null,
-    device_id: form.device_id ?? null,
-    package_id: form.package_id ?? null,
-    test_suite_id: form.task_type === 'TEST_SUITE' ? form.test_suite_id ?? null : null,
-    test_case_id: form.task_type === 'TEST_CASE' ? form.test_case_id ?? null : null,
-    notify_on_success: form.notify_on_success,
-    notify_on_failure: form.notify_on_failure,
-    notification_type: notificationsEnabled.value ? form.notification_type || '' : '',
-    notify_emails: needsEmailRecipients.value ? parseNotifyEmails() : [],
-    status: form.status,
-    created_by: authStore.currentUser?.username || 'FlyTest',
-  })
+  const buildPayload = (includeStatus = true): AppScheduledTaskMutationPayload => {
+    const payload: AppScheduledTaskMutationPayload = {
+      project_id: projectStore.currentProjectId || 0,
+      name: form.name.trim(),
+      description: form.description.trim(),
+      task_type: form.task_type as AppScheduledTaskType,
+      trigger_type: form.trigger_type as AppScheduledTaskTriggerType,
+      cron_expression: form.trigger_type === 'CRON' ? form.cron_expression.trim() : '',
+      interval_seconds: form.trigger_type === 'INTERVAL' ? form.interval_seconds : null,
+      execute_at: form.trigger_type === 'ONCE' ? form.execute_at || null : null,
+      device_id: form.device_id ?? null,
+      package_id: form.package_id ?? null,
+      test_suite_id: form.task_type === 'TEST_SUITE' ? form.test_suite_id ?? null : null,
+      test_case_id: form.task_type === 'TEST_CASE' ? form.test_case_id ?? null : null,
+      notify_on_success: form.notify_on_success,
+      notify_on_failure: form.notify_on_failure,
+      notification_type: (notificationsEnabled.value ? form.notification_type || '' : '') as AppScheduledTaskNotificationType,
+      notify_emails: needsEmailRecipients.value ? parseNotifyEmails() : [],
+    }
+    if (includeStatus) {
+      payload.status = form.status as AppScheduledTaskStatus
+    }
+    return payload
+  }
 
   const saveTask = async () => {
     if (!projectStore.currentProjectId || !validateForm()) {
@@ -506,12 +515,16 @@ export function useAppAutomationScheduledTasks() {
     }
 
     try {
-      const payload = buildPayload()
       if (form.id) {
+        const payload = buildPayload(false)
         await AppAutomationService.updateScheduledTask(form.id, payload)
         Message.success('定时任务已更新')
       } else {
-        await AppAutomationService.createScheduledTask(payload)
+        const payload = buildPayload()
+        await AppAutomationService.createScheduledTask({
+          ...payload,
+          created_by: authStore.currentUser?.username || 'FlyTest',
+        })
         Message.success('定时任务已创建')
       }
       await loadData()

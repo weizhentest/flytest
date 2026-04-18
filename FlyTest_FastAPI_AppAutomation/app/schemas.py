@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DeviceConnectPayload(BaseModel):
@@ -122,8 +122,8 @@ class ScheduledTaskPayload(BaseModel):
     project_id: int
     name: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=2000)
-    task_type: str = Field(..., min_length=1, max_length=20)
-    trigger_type: str = Field(..., min_length=1, max_length=20)
+    task_type: Literal["TEST_SUITE", "TEST_CASE"]
+    trigger_type: Literal["CRON", "INTERVAL", "ONCE"]
     cron_expression: str = Field(default="", max_length=100)
     interval_seconds: int | None = Field(default=None, ge=60, le=86400)
     execute_at: str | None = None
@@ -133,10 +133,34 @@ class ScheduledTaskPayload(BaseModel):
     test_case_id: int | None = None
     notify_on_success: bool = False
     notify_on_failure: bool = True
-    notification_type: str = Field(default="", max_length=20)
+    notification_type: Literal["", "email", "webhook", "both"] = ""
     notify_emails: list[str] = Field(default_factory=list)
-    status: str = Field(default="ACTIVE", max_length=20)
+    status: Literal["ACTIVE", "PAUSED", "FAILED", "COMPLETED"] = "ACTIVE"
     created_by: str = Field(default="FlyTest", max_length=64)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "ScheduledTaskPayload":
+        if self.trigger_type == "CRON" and not self.cron_expression.strip():
+            raise ValueError("cron_expression is required for CRON tasks")
+        if self.trigger_type == "INTERVAL" and self.interval_seconds is None:
+            raise ValueError("interval_seconds is required for INTERVAL tasks")
+        if self.trigger_type == "ONCE" and not str(self.execute_at or "").strip():
+            raise ValueError("execute_at is required for ONCE tasks")
+
+        if self.task_type == "TEST_SUITE" and self.test_suite_id is None:
+            raise ValueError("test_suite_id is required for TEST_SUITE tasks")
+        if self.task_type == "TEST_CASE" and self.test_case_id is None:
+            raise ValueError("test_case_id is required for TEST_CASE tasks")
+
+        notifications_enabled = self.notify_on_success or self.notify_on_failure
+        if notifications_enabled and not self.notification_type:
+            raise ValueError("notification_type is required when notifications are enabled")
+        if not notifications_enabled and self.notification_type:
+            raise ValueError("notification_type must be empty when notifications are disabled")
+        if self.notification_type in {"email", "both"} and notifications_enabled and not self.notify_emails:
+            raise ValueError("notify_emails is required for email notifications")
+
+        return self
 
 
 class LlmConfigSnapshotPayload(BaseModel):

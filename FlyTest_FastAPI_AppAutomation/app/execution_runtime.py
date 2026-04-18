@@ -25,7 +25,8 @@ from .adb import (
     swipe_device,
     tap_device,
 )
-from .database import ELEMENT_UPLOADS_DIR, connection, fetch_one, json_loads
+from .asset_paths import extract_project_id_from_asset_path, normalize_asset_path, resolve_upload_asset_path
+from .database import connection, fetch_one, json_loads
 from .ocr_helper import get_ocr_helper
 
 try:
@@ -178,7 +179,6 @@ class AppFlowExecutor:
         if self.artifact_dir:
             self.artifact_dir.mkdir(parents=True, exist_ok=True)
 
-        self.assets_root = ELEMENT_UPLOADS_DIR.parent.resolve()
         self._element_cache: dict[str, dict[str, Any] | None] = {}
         self._custom_component_cache: dict[str, dict[str, Any] | None] = {}
         self._ocr_helper = None
@@ -1402,14 +1402,33 @@ class AppFlowExecutor:
         return bounds, similarity
 
     def _resolve_asset_path(self, image_path: str) -> Path | None:
-        cleaned = str(image_path or "").replace("\\", "/").strip().lstrip("/")
+        cleaned = normalize_asset_path(image_path)
         if not cleaned:
             return None
-        candidate = (self.assets_root / cleaned).resolve()
-        try:
-            candidate.relative_to(self.assets_root)
-        except ValueError:
+
+        candidate = resolve_upload_asset_path(cleaned)
+        if candidate is None:
             return None
+
+        scoped_project_id = extract_project_id_from_asset_path(cleaned)
+        if scoped_project_id is not None and scoped_project_id != self.project_id:
+            return None
+
+        if scoped_project_id is None:
+            with connection() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    SELECT id
+                    FROM elements
+                    WHERE project_id = ? AND (image_path = ? OR selector_value = ?)
+                    LIMIT 1
+                    """,
+                    (self.project_id, cleaned, cleaned),
+                )
+            if row is None:
+                return None
+
         return candidate
 
     def _resolve_point(self, value: Any) -> tuple[int, int] | None:

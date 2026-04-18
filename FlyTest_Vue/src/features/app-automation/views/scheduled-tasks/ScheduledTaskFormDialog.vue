@@ -13,11 +13,17 @@
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item field="status" label="初始状态">
+          <a-form-item v-if="!form.id" field="status" label="初始状态">
             <a-select v-model="form.status">
               <a-option value="ACTIVE">ACTIVE</a-option>
               <a-option value="PAUSED">PAUSED</a-option>
             </a-select>
+          </a-form-item>
+          <a-form-item v-else label="当前状态">
+            <div class="status-card">
+              <a-tag>{{ form.status }}</a-tag>
+              <span>编辑任务不会改变状态，暂停或恢复请在列表中操作。</span>
+            </div>
           </a-form-item>
         </a-col>
       </a-row>
@@ -189,5 +195,17 @@ const emit = defineEmits<ScheduledTaskFormDialogEmits>()
 
 .helper-card strong {
   color: var(--theme-text);
+}
+
+.status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-card span {
+  color: var(--theme-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

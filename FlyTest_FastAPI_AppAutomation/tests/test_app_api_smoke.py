@@ -1348,6 +1348,293 @@ class AppApiSmokeTests(unittest.TestCase):
 
         self.assertIsNone(task)
 
+    def test_create_scheduled_task_rejects_invalid_cron_expression(self):
+        fixture = self.create_execution_fixture(case_name="invalid-cron-task")
+
+        response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "invalid-cron-task",
+                "description": "",
+                "task_type": "TEST_CASE",
+                "trigger_type": "CRON",
+                "cron_expression": "not-a-cron",
+                "interval_seconds": None,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "tester",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.json())
+
+    def test_update_scheduled_task_preserves_created_by(self):
+        fixture = self.create_execution_fixture(case_name="scheduled-update-task")
+
+        create_response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-update-task",
+                "description": "before edit",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "creator-user",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        task_id = create_response.json()["data"]["id"]
+
+        update_response = self.client.put(
+            f"/scheduled-tasks/{task_id}/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-update-task",
+                "description": "after edit",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 7200,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "editor-user",
+            },
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["data"]["created_by"], "creator-user")
+
+        with database.connection() as conn:
+            row = database.fetch_one(conn, "SELECT created_by FROM scheduled_tasks WHERE id = ?", (task_id,))
+
+        self.assertEqual(row["created_by"], "creator-user")
+
+    def test_update_scheduled_task_preserves_current_mutable_status(self):
+        fixture = self.create_execution_fixture(case_name="scheduled-status-race-task")
+
+        create_response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-status-race-task",
+                "description": "before edit",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "creator-user",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        task_id = create_response.json()["data"]["id"]
+
+        with database.connection() as conn:
+            conn.execute(
+                "UPDATE scheduled_tasks SET status = 'PAUSED', updated_at = ? WHERE id = ?",
+                (database.utc_now(), task_id),
+            )
+
+        update_response = self.client.put(
+            f"/scheduled-tasks/{task_id}/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-status-race-task",
+                "description": "after edit",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 7200,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "editor-user",
+            },
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.json()["data"]["status"], "PAUSED")
+
+        with database.connection() as conn:
+            row = database.fetch_one(conn, "SELECT status FROM scheduled_tasks WHERE id = ?", (task_id,))
+
+        self.assertEqual(row["status"], "PAUSED")
+
+    def test_update_terminal_scheduled_task_rejects_status_change(self):
+        fixture = self.create_execution_fixture(case_name="terminal-status-task")
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                """
+                INSERT INTO scheduled_tasks (
+                    project_id, name, description, task_type, trigger_type, cron_expression, interval_seconds, execute_at,
+                    device_id, package_id, test_suite_id, test_case_id, notify_on_success, notify_on_failure,
+                    notification_type, notify_emails, status, last_run_time, next_run_time, total_runs, successful_runs,
+                    failed_runs, last_result, error_message, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    1001,
+                    "terminal-status-task",
+                    "terminal",
+                    "TEST_CASE",
+                    "INTERVAL",
+                    "",
+                    3600,
+                    None,
+                    fixture["device_id"],
+                    fixture["package_id"],
+                    None,
+                    fixture["test_case_id"],
+                    0,
+                    1,
+                    "email",
+                    json.dumps(["qa@example.com"]),
+                    "FAILED",
+                    now,
+                    None,
+                    1,
+                    0,
+                    1,
+                    "{}",
+                    "boom",
+                    "creator-user",
+                    now,
+                    now,
+                ),
+            )
+            task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        response = self.client.put(
+            f"/scheduled-tasks/{task_id}/",
+            json={
+                "project_id": 1001,
+                "name": "terminal-status-task",
+                "description": "edited",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": fixture["device_id"],
+                "package_id": fixture["package_id"],
+                "test_suite_id": None,
+                "test_case_id": fixture["test_case_id"],
+                "notify_on_success": False,
+                "notify_on_failure": True,
+                "notification_type": "email",
+                "notify_emails": ["qa@example.com"],
+                "status": "ACTIVE",
+                "created_by": "editor-user",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.json())
+
+    def test_pause_terminal_scheduled_task_rejects_request(self):
+        fixture = self.create_execution_fixture(case_name="terminal-pause-task")
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                """
+                INSERT INTO scheduled_tasks (
+                    project_id, name, description, task_type, trigger_type, cron_expression, interval_seconds, execute_at,
+                    device_id, package_id, test_suite_id, test_case_id, notify_on_success, notify_on_failure,
+                    notification_type, notify_emails, status, last_run_time, next_run_time, total_runs, successful_runs,
+                    failed_runs, last_result, error_message, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    1001,
+                    "terminal-pause-task",
+                    "terminal",
+                    "TEST_CASE",
+                    "ONCE",
+                    "",
+                    None,
+                    now,
+                    fixture["device_id"],
+                    fixture["package_id"],
+                    None,
+                    fixture["test_case_id"],
+                    0,
+                    1,
+                    "email",
+                    json.dumps(["qa@example.com"]),
+                    "COMPLETED",
+                    now,
+                    None,
+                    1,
+                    1,
+                    0,
+                    "{}",
+                    "",
+                    "creator-user",
+                    now,
+                    now,
+                ),
+            )
+            task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        response = self.client.post(f"/scheduled-tasks/{task_id}/pause/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("detail", response.json())
+
+        with database.connection() as conn:
+            row = database.fetch_one(conn, "SELECT status FROM scheduled_tasks WHERE id = ?", (task_id,))
+
+        self.assertEqual(row["status"], "COMPLETED")
+
     def test_retry_notification_updates_response_info(self):
         with database.connection() as conn:
             now = database.utc_now()
@@ -1882,6 +2169,33 @@ class AppApiAuthTests(unittest.TestCase):
         self.assertEqual(asset_response.status_code, 200)
         self.assertEqual(asset_response.content, b"legacy-image")
 
+    def test_selector_only_image_element_supports_preview_and_asset_access(self):
+        asset_path = "elements/common/selector-only.png"
+        file_path = database.ELEMENT_UPLOADS_DIR / "common" / "selector-only.png"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(b"selector-only-image")
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                """
+                INSERT INTO elements (
+                    project_id, name, element_type, selector_type, selector_value, description,
+                    tags, config, image_path, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (1001, "selector-only-image", "image", "image", asset_path, "", "[]", "{}", "", 1, now, now),
+            )
+            element_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        asset_response = self.client.get(f"/elements/assets/{asset_path}", headers=self.build_auth_header())
+        preview_response = self.client.get(f"/elements/{element_id}/preview/", headers=self.build_auth_header())
+
+        self.assertEqual(asset_response.status_code, 200)
+        self.assertEqual(asset_response.content, b"selector-only-image")
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.content, b"selector-only-image")
+
     def test_project_scoped_asset_url_rejects_inaccessible_project_file(self):
         file_path = database.ELEMENT_UPLOADS_DIR / "common" / "project-2002" / "secret.png"
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1914,6 +2228,29 @@ class AppApiAuthTests(unittest.TestCase):
         response = self.client.get(f"/elements/{element_id}/preview/", headers=self.build_auth_header())
 
         self.assertEqual(response.status_code, 403)
+        self.assertIn("detail", response.json())
+
+    def test_create_element_rejects_cross_project_image_path(self):
+        asset_path = "elements/common/project-2002/secret.png"
+
+        response = self.client.post(
+            "/elements/",
+            headers=self.build_auth_header(),
+            json={
+                "project_id": 1001,
+                "name": "cross-project-image",
+                "element_type": "image",
+                "selector_type": "image",
+                "selector_value": asset_path,
+                "description": "cross project asset",
+                "tags": [],
+                "config": {"image_path": asset_path},
+                "image_path": asset_path,
+                "is_active": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
         self.assertIn("detail", response.json())
 
     def test_image_categories_are_scoped_by_project(self):
