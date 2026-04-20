@@ -13,11 +13,9 @@
         <a-select v-model="editForm.status" placeholder="选择设备状态">
           <a-option value="available">可用</a-option>
           <a-option value="online">在线</a-option>
-          <a-option value="locked">锁定</a-option>
-          <a-option value="stopping" disabled>正在停止</a-option>
           <a-option value="offline">离线</a-option>
         </a-select>
-        <div class="status-hint">“正在停止”由系统自动维护，用于等待执行线程完成收尾。</div>
+        <div class="status-hint">锁定和正在停止状态由系统或执行流程自动维护。</div>
       </a-form-item>
       <a-form-item field="location" label="位置">
         <a-input v-model="editForm.location" placeholder="例如 QA 机房 / 本地模拟器" />

@@ -527,6 +527,36 @@ class AppApiSmokeTests(unittest.TestCase):
         self.assertEqual(device["locked_by"], "")
         self.assertEqual(executions, [])
 
+    def test_delete_package_rejects_execution_reference(self):
+        fixture = self.create_execution_fixture(case_name="package-delete-execution-case")
+
+        response = self.client.delete(f"/packages/{fixture['package_id']}/")
+        self.assertEqual(response.status_code, 409)
+
+        with database.connection() as conn:
+            package_row = database.fetch_one(
+                conn,
+                "SELECT id FROM packages WHERE id = ?",
+                (fixture["package_id"],),
+            )
+
+        self.assertIsNotNone(package_row)
+
+    def test_delete_test_case_rejects_execution_reference(self):
+        fixture = self.create_execution_fixture(case_name="test-case-delete-execution-case")
+
+        response = self.client.delete(f"/test-cases/{fixture['test_case_id']}/")
+        self.assertEqual(response.status_code, 409)
+
+        with database.connection() as conn:
+            test_case_row = database.fetch_one(
+                conn,
+                "SELECT id FROM test_cases WHERE id = ?",
+                (fixture["test_case_id"],),
+            )
+
+        self.assertIsNotNone(test_case_row)
+
     def test_device_discovery_preserves_stopping_status(self):
         device_id = self.create_device_record()
 

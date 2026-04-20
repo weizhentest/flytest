@@ -1295,6 +1295,15 @@ def update_package(package_id: int, payload: PackagePayload) -> dict[str, Any]:
 def delete_package(package_id: int) -> dict[str, Any]:
     with connection() as conn:
         _ = get_package_or_404(conn, package_id)
+        referenced_case = fetch_one(conn, "SELECT id FROM test_cases WHERE package_id = ? LIMIT 1", (package_id,))
+        if referenced_case is not None:
+            raise HTTPException(status_code=409, detail="package is referenced by test cases")
+        referenced_execution = fetch_one(conn, "SELECT id FROM executions WHERE package_id = ? LIMIT 1", (package_id,))
+        if referenced_execution is not None:
+            raise HTTPException(status_code=409, detail="package is referenced by executions")
+        referenced_task = fetch_one(conn, "SELECT id FROM scheduled_tasks WHERE package_id = ? LIMIT 1", (package_id,))
+        if referenced_task is not None:
+            raise HTTPException(status_code=409, detail="package is referenced by scheduled tasks")
         conn.execute("DELETE FROM packages WHERE id = ?", (package_id,))
         return success(None, "应用包已删除")
 
@@ -1634,6 +1643,12 @@ def update_test_case(test_case_id: int, payload: TestCasePayload) -> dict[str, A
 def delete_test_case(test_case_id: int) -> dict[str, Any]:
     with connection() as conn:
         _ = get_test_case_or_404(conn, test_case_id)
+        referenced_execution = fetch_one(conn, "SELECT id FROM executions WHERE test_case_id = ? LIMIT 1", (test_case_id,))
+        if referenced_execution is not None:
+            raise HTTPException(status_code=409, detail="test case is referenced by executions")
+        referenced_task = fetch_one(conn, "SELECT id FROM scheduled_tasks WHERE test_case_id = ? LIMIT 1", (test_case_id,))
+        if referenced_task is not None:
+            raise HTTPException(status_code=409, detail="test case is referenced by scheduled tasks")
         conn.execute("DELETE FROM test_cases WHERE id = ?", (test_case_id,))
         return success(None, "测试用例已删除")
 

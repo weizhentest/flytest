@@ -120,6 +120,7 @@ export function useAppAutomationDevices() {
 
   const canDisconnect = (record: AppDevice) =>
     record.status !== 'offline' &&
+    record.status !== 'locked' &&
     record.status !== 'stopping' &&
     Boolean(record.ip_address) &&
     record.connection_type !== 'emulator'
