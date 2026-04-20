@@ -1,5 +1,5 @@
 import { Message, Modal } from '@arco-design/web-vue'
-import { reactive, ref, type Ref } from 'vue'
+import { reactive, ref, watch, type Ref } from 'vue'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type { AppCustomComponent, AppSceneStep } from '../../types'
 import type {
@@ -45,6 +45,15 @@ export const useSceneBuilderCustomComponents = ({
     description: '',
     stepsText: '[]',
   })
+
+  const resetCustomComponentDialogState = () => {
+    customComponentMode.value = 'create'
+    editingCustomComponentId.value = null
+    customComponentForm.name = ''
+    customComponentForm.type = ''
+    customComponentForm.description = ''
+    customComponentForm.stepsText = '[]'
+  }
 
   const openCreateCustomComponent = () => {
     if (!steps.value.length) {
@@ -162,6 +171,15 @@ export const useSceneBuilderCustomComponents = ({
       },
     })
   }
+
+  watch(
+    () => customComponentVisible.value,
+    value => {
+      if (!value && !customComponentSaving.value) {
+        resetCustomComponentDialogState()
+      }
+    },
+  )
 
   return {
     customComponentSaving,

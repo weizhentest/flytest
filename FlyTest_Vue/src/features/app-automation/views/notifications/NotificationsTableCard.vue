@@ -59,7 +59,7 @@
                 执行
               </a-button>
               <a-button
-                v-if="record.status !== 'success'"
+                v-if="false"
                 type="text"
                 :loading="retryingId === record.id"
                 @click="emit('retry', record.id)"

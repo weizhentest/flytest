@@ -252,6 +252,8 @@ export function useAppAutomationNotifications() {
   const retry = async (id: number) => {
     retryingId.value = id
     try {
+      Message.warning('当前版本暂未实现通知重发')
+      return
       const updated = await AppAutomationService.retryNotification(id)
       const retryStatus = String(updated.response_info?.retry_status || '').trim().toLowerCase()
       if (retryStatus === 'not_sent') {

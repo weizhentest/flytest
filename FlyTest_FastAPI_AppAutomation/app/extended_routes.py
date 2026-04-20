@@ -2427,36 +2427,4 @@ def retry_notification(log_id: int) -> dict[str, Any]:
         if row is None:
             raise HTTPException(status_code=404, detail="通知日志不存在")
         ensure_row_project_access(row)
-        current_retry_count = int(row.get("retry_count") or 0) + 1
-        retried_at = utc_now()
-        response_info = json_loads(row.get("response_info"), {})
-        current_status = str(row.get("status") or "failed")
-        current_error_message = str(row.get("error_message") or "")
-        response_info.update(
-            {
-                "delivery_status": "simulated",
-                "retry_status": "not_sent",
-                "retry_count": current_retry_count,
-                "retried_at": retried_at,
-                "detail": "Retry requested, but notification resend is not implemented.",
-            }
-        )
-        conn.execute(
-            """
-            UPDATE notification_logs
-            SET retry_count = ?, is_retried = 1, status = ?, error_message = ?, response_info = ?
-            WHERE id = ?
-            """,
-            (
-                current_retry_count,
-                current_status,
-                current_error_message,
-                json_dumps(response_info),
-                log_id,
-            ),
-        )
-        updated = fetch_one(conn, "SELECT * FROM notification_logs WHERE id = ?", (log_id,))
-    return success(
-        serialize_notification(updated or {}),
-        "Retry request recorded; notification resend is not implemented yet.",
-    )
+    raise HTTPException(status_code=501, detail="notification retry is not implemented yet")

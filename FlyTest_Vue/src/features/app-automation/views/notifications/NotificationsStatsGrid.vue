@@ -13,12 +13,12 @@
     <a-card class="stat-card">
       <span class="stat-label">发送失败</span>
       <strong>{{ statistics.failed }}</strong>
-      <span class="stat-desc">失败记录可进入详情查看并重试</span>
+      <span class="stat-desc">失败记录可进入详情查看投递上下文</span>
     </a-card>
     <a-card class="stat-card">
-      <span class="stat-label">已重试</span>
+      <span class="stat-label">历史重试</span>
       <strong>{{ statistics.retried }}</strong>
-      <span class="stat-desc">已经触发过重试的通知条目</span>
+      <span class="stat-desc">保留历史上的已重试记录统计</span>
     </a-card>
   </div>
 </template>

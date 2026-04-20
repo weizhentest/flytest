@@ -27,6 +27,13 @@ export const useSceneBuilderComponentPackages = ({
     componentPackageFile.value = null
     componentPackageOverwrite.value = true
   }
+  const resetComponentPackageExportState = () => {
+    componentPackageIncludeDisabled.value = false
+    componentPackageExportForm.name = 'app-component-pack'
+    componentPackageExportForm.version = ''
+    componentPackageExportForm.author = ''
+    componentPackageExportForm.description = 'FlyTest APP 鑷姩鍖栫粍浠跺寘'
+  }
 
   const componentPackageExportForm = reactive<SceneBuilderComponentPackageExportFormModel>({
     name: 'app-component-pack',
@@ -111,6 +118,15 @@ export const useSceneBuilderComponentPackages = ({
     value => {
       if (!value && !componentPackageUploading.value) {
         resetComponentPackageImportState()
+      }
+    },
+  )
+
+  watch(
+    () => componentPackageExportVisible.value,
+    value => {
+      if (!value && !componentPackageExporting.value) {
+        resetComponentPackageExportState()
       }
     },
   )

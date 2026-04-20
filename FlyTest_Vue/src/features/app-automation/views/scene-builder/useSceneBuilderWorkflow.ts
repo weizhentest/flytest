@@ -393,6 +393,9 @@ export const useSceneBuilderWorkflow = ({
   watch(
     () => route.query.tab,
     tab => {
+      if (tab !== 'scene-builder' && readRouteCaseId() !== undefined) {
+        syncRouteCaseId()
+      }
       if (
         tab === 'scene-builder' &&
         projectStore.currentProjectId &&

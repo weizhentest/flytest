@@ -1,5 +1,5 @@
 import { Message } from '@arco-design/web-vue'
-import { reactive, ref, type ComputedRef, type Ref } from 'vue'
+import { reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { AppAutomationService } from '../../services/appAutomationService'
 import type {
   AppLlmConfigSnapshot,
@@ -71,6 +71,15 @@ export const useSceneBuilderAiPlanning = ({
   const aiStepForm = reactive<SceneBuilderAiStepFormModel>({
     prompt: '',
   })
+
+  const resetAiPlanState = () => {
+    aiPlanForm.prompt = ''
+    aiPlanForm.applyMode = 'replace'
+  }
+
+  const resetAiStepState = () => {
+    aiStepForm.prompt = ''
+  }
 
   const readCurrentVariables = () => {
     try {
@@ -239,6 +248,24 @@ export const useSceneBuilderAiPlanning = ({
       aiGenerating.value = false
     }
   }
+
+  watch(
+    () => aiPlanVisible.value,
+    value => {
+      if (!value && !aiGenerating.value) {
+        resetAiPlanState()
+      }
+    },
+  )
+
+  watch(
+    () => aiStepVisible.value,
+    value => {
+      if (!value && !aiStepSuggesting.value) {
+        resetAiStepState()
+      }
+    },
+  )
 
   return {
     aiGenerating,

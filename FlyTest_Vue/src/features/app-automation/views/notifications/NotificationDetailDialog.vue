@@ -40,7 +40,7 @@
             查看执行
           </a-button>
           <a-button
-            v-if="currentLog.status !== 'success'"
+            v-if="false"
             :loading="retryingId === currentLog.id"
             @click="emit('retry', currentLog.id)"
           >

@@ -2,7 +2,7 @@
   <div class="page-header">
     <div>
       <h3>通知日志</h3>
-      <p>查看 APP 自动化任务的通知投递结果、重试状态和关联执行上下文。</p>
+      <p>查看 APP 自动化任务的通知投递结果、历史状态和关联执行上下文。</p>
     </div>
     <a-space>
       <a-button :loading="loading" @click="emit('refresh')">刷新</a-button>
