@@ -22,7 +22,6 @@
       :loading="loading"
       :logs="pagedLogs"
       :total="filteredLogs.length"
-      :retrying-id="retryingId"
       :format-date-time="formatDateTime"
       :get-task-type-label="getTaskTypeLabel"
       :get-notification-type-label="getNotificationTypeLabel"
@@ -34,13 +33,11 @@
       @view-detail="viewDetail"
       @open-task-detail="openTaskDetail"
       @open-execution="openExecution"
-      @retry="retry"
     />
 
     <NotificationDetailDialog
       v-model:visible="detailVisible"
       :current-log="currentLog"
-      :retrying-id="retryingId"
       :parsed-content="parsedContent"
       :format-date-time="formatDateTime"
       :get-task-type-label="getTaskTypeLabel"
@@ -49,7 +46,6 @@
       :get-primary-execution-id="getPrimaryExecutionId"
       @open-task-detail="openTaskDetail"
       @open-execution="openExecution"
-      @retry="retry"
     />
   </div>
 </template>
@@ -67,7 +63,6 @@ import {
 
 const {
   loading,
-  retryingId,
   detailVisible,
   currentLog,
   taskContext,
@@ -91,7 +86,6 @@ const {
   openTaskDetail,
   clearTaskContext,
   openExecution,
-  retry,
   viewDetail,
 } = useAppAutomationNotifications()
 </script>

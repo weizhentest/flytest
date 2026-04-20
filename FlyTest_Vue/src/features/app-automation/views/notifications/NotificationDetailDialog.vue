@@ -39,13 +39,6 @@
           <a-button v-if="getPrimaryExecutionId(currentLog)" type="primary" @click="emit('open-execution', currentLog)">
             查看执行
           </a-button>
-          <a-button
-            v-if="false"
-            :loading="retryingId === currentLog.id"
-            @click="emit('retry', currentLog.id)"
-          >
-            立即重试
-          </a-button>
         </a-space>
       </a-card>
 

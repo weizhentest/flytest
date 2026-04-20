@@ -18,7 +18,6 @@ export function useAppAutomationNotifications() {
   const projectStore = useProjectStore()
 
   const loading = ref(false)
-  const retryingId = ref<number | null>(null)
   const detailVisible = ref(false)
   const currentLog = ref<AppNotificationLog | null>(null)
   const logs = ref<AppNotificationLog[]>([])
@@ -164,8 +163,9 @@ export function useAppAutomationNotifications() {
 
   const getDeliverySummary = (record: AppNotificationLog) => {
     if (record.error_message) return record.error_message
-    if (record.response_info.retry_status)
+    if (record.response_info.retry_status) {
       return `重试状态：${String(record.response_info.retry_status)}`
+    }
     if (record.response_info.detail) return String(record.response_info.detail)
     return `重试 ${record.retry_count || 0} 次`
   }
@@ -249,30 +249,6 @@ export function useAppAutomationNotifications() {
     })
   }
 
-  const retry = async (id: number) => {
-    retryingId.value = id
-    try {
-      Message.warning('当前版本暂未实现通知重发')
-      return
-      const updated = await AppAutomationService.retryNotification(id)
-      const retryStatus = String(updated.response_info?.retry_status || '').trim().toLowerCase()
-      if (retryStatus === 'not_sent') {
-        Message.warning('已记录重试请求，但当前版本尚未真正重发通知')
-      } else {
-        Message.success('通知已重试')
-      }
-      logs.value = logs.value.map(item => (item.id === updated.id ? updated : item))
-      if (currentLog.value?.id === updated.id) {
-        currentLog.value = updated
-      }
-      await loadData()
-    } catch (error: any) {
-      Message.error(error.message || '重试通知失败')
-    } finally {
-      retryingId.value = null
-    }
-  }
-
   const viewDetail = (record: AppNotificationLog) => {
     currentLog.value = record
     detailVisible.value = true
@@ -344,7 +320,6 @@ export function useAppAutomationNotifications() {
 
   return {
     loading,
-    retryingId,
     detailVisible,
     currentLog,
     taskContext,
@@ -368,7 +343,6 @@ export function useAppAutomationNotifications() {
     openTaskDetail,
     clearTaskContext,
     openExecution,
-    retry,
     viewDetail,
   }
 }

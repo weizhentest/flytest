@@ -58,14 +58,6 @@
               >
                 执行
               </a-button>
-              <a-button
-                v-if="false"
-                type="text"
-                :loading="retryingId === record.id"
-                @click="emit('retry', record.id)"
-              >
-                重试
-              </a-button>
             </a-space>
           </template>
         </a-table-column>
