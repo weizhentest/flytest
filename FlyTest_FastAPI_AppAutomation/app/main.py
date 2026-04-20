@@ -738,6 +738,45 @@ def finish_device_lock(conn, device_id: int) -> None:
     )
 
 
+def _release_stopped_execution_device_after_grace(
+    execution_id: int,
+    device_id: int,
+    *,
+    delay_seconds: int = 30,
+) -> None:
+    time.sleep(max(int(delay_seconds or 0), 0))
+    with connection() as conn:
+        execution = fetch_one(
+            conn,
+            "SELECT status, device_id FROM executions WHERE id = ?",
+            (execution_id,),
+        )
+        if execution is None:
+            return
+        if str(execution.get("status") or "").strip() != "stopped":
+            return
+        if int(execution.get("device_id") or 0) != int(device_id):
+            return
+        active_execution = fetch_one(
+            conn,
+            """
+            SELECT id
+            FROM executions
+            WHERE device_id = ? AND status IN ('pending', 'running')
+            LIMIT 1
+            """,
+            (device_id,),
+        )
+        if active_execution is not None:
+            return
+        device = fetch_one(conn, "SELECT status FROM devices WHERE id = ?", (device_id,))
+        if device is None:
+            return
+        if str(device.get("status") or "").strip() not in {"locked", "stopping"}:
+            return
+        finish_device_lock(conn, device_id)
+
+
 def _execution_is_stopped(execution_id: int) -> bool:
     with connection() as conn:
         row = fetch_one(conn, "SELECT status FROM executions WHERE id = ?", (execution_id,))
@@ -1990,6 +2029,11 @@ def stop_execution(execution_id: int) -> dict[str, Any]:
                 """,
                 (now, execution["device_id"]),
             )
+            threading.Thread(
+                target=_release_stopped_execution_device_after_grace,
+                args=(execution_id, int(execution["device_id"])),
+                daemon=True,
+            ).start()
         write_execution_report(conn, execution_id)
         _refresh_suite_stats_for_execution(conn, execution_id)
         return success(get_execution_or_404(conn, execution_id), "执行已停止")

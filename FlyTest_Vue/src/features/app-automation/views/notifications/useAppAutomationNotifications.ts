@@ -253,7 +253,12 @@ export function useAppAutomationNotifications() {
     retryingId.value = id
     try {
       const updated = await AppAutomationService.retryNotification(id)
-      Message.success('通知已重试')
+      const retryStatus = String(updated.response_info?.retry_status || '').trim().toLowerCase()
+      if (retryStatus === 'not_sent') {
+        Message.warning('已记录重试请求，但当前版本尚未真正重发通知')
+      } else {
+        Message.success('通知已重试')
+      }
       logs.value = logs.value.map(item => (item.id === updated.id ? updated : item))
       if (currentLog.value?.id === updated.id) {
         currentLog.value = updated

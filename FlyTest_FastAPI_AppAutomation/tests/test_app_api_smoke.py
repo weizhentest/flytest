@@ -441,6 +441,98 @@ class AppApiSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn("detail", response.json())
 
+    def test_import_component_package_rejects_recursive_custom_component_manifest(self):
+        manifest = {
+            "name": "recursive-pack",
+            "version": "1.0.0",
+            "custom_components": [
+                {
+                    "name": "Recursive Flow",
+                    "type": "recursive_import_flow",
+                    "description": "should be rejected during import",
+                    "schema": {},
+                    "default_config": {},
+                    "steps": [
+                        {
+                            "name": "self call",
+                            "kind": "custom",
+                            "type": "recursive_import_flow",
+                            "component_type": "recursive_import_flow",
+                            "config": {},
+                        }
+                    ],
+                    "enabled": True,
+                    "sort_order": 1,
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/component-packages/import/",
+            files={
+                "file": (
+                    "recursive-pack.json",
+                    json.dumps(manifest, ensure_ascii=False).encode("utf-8"),
+                    "application/json",
+                )
+            },
+            data={"overwrite": "1"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nested custom components", response.json()["detail"])
+
+    def test_import_component_package_rejects_nested_reference_between_new_custom_components(self):
+        manifest = {
+            "name": "nested-pack",
+            "version": "1.0.0",
+            "custom_components": [
+                {
+                    "name": "Flow A",
+                    "type": "nested_import_flow_a",
+                    "description": "references another new custom component",
+                    "schema": {},
+                    "default_config": {},
+                    "steps": [
+                        {
+                            "name": "call flow b",
+                            "kind": "custom",
+                            "type": "nested_import_flow_b",
+                            "component_type": "nested_import_flow_b",
+                            "config": {},
+                        }
+                    ],
+                    "enabled": True,
+                    "sort_order": 1,
+                },
+                {
+                    "name": "Flow B",
+                    "type": "nested_import_flow_b",
+                    "description": "second new custom component",
+                    "schema": {},
+                    "default_config": {},
+                    "steps": [{"name": "tap login", "type": "touch", "config": {"selector": "login"}}],
+                    "enabled": True,
+                    "sort_order": 2,
+                },
+            ],
+        }
+
+        response = self.client.post(
+            "/component-packages/import/",
+            files={
+                "file": (
+                    "nested-pack.json",
+                    json.dumps(manifest, ensure_ascii=False).encode("utf-8"),
+                    "application/json",
+                )
+            },
+            data={"overwrite": "1"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nested custom components", response.json()["detail"])
+
     def test_create_custom_component_rejects_duplicate_type(self):
         payload = {
             "name": "Login Flow",
@@ -507,6 +599,185 @@ class AppApiSmokeTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertIn("detail", response.json())
+
+    def test_create_custom_component_rejects_recursive_custom_steps(self):
+        response = self.client.post(
+            "/custom-components/",
+            json={
+                "name": "Recursive Flow",
+                "type": "recursive_login_flow",
+                "description": "should be rejected",
+                "schema": {},
+                "default_config": {},
+                "steps": [
+                    {
+                        "name": "self call",
+                        "kind": "custom",
+                        "type": "recursive_login_flow",
+                        "component_type": "recursive_login_flow",
+                        "config": {},
+                    }
+                ],
+                "enabled": True,
+                "sort_order": 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nested custom components", response.json()["detail"])
+
+    def test_create_custom_component_rejects_nested_custom_component_reference(self):
+        base_response = self.client.post(
+            "/custom-components/",
+            json={
+                "name": "Base Flow",
+                "type": "base_login_flow",
+                "description": "base login flow",
+                "schema": {},
+                "default_config": {},
+                "steps": [{"name": "tap login", "type": "touch", "config": {"selector": "login"}}],
+                "enabled": True,
+                "sort_order": 1,
+            },
+        )
+        self.assertEqual(base_response.status_code, 200)
+
+        response = self.client.post(
+            "/custom-components/",
+            json={
+                "name": "Nested Flow",
+                "type": "nested_login_flow",
+                "description": "tries to call another custom component",
+                "schema": {},
+                "default_config": {},
+                "steps": [
+                    {
+                        "name": "call base flow",
+                        "kind": "custom",
+                        "type": "base_login_flow",
+                        "component_type": "base_login_flow",
+                        "config": {},
+                    }
+                ],
+                "enabled": True,
+                "sort_order": 2,
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nested custom components", response.json()["detail"])
+
+    def test_update_custom_component_rejects_recursive_custom_steps(self):
+        create_response = self.client.post(
+            "/custom-components/",
+            json={
+                "name": "Safe Flow",
+                "type": "safe_login_flow",
+                "description": "shared login flow",
+                "schema": {},
+                "default_config": {},
+                "steps": [{"name": "tap login", "type": "touch", "config": {"selector": "login"}}],
+                "enabled": True,
+                "sort_order": 1,
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        component = create_response.json()["data"]
+
+        response = self.client.put(
+            f"/custom-components/{component['id']}/",
+            json={
+                "name": component["name"],
+                "type": component["type"],
+                "description": component["description"],
+                "schema": component["schema"],
+                "default_config": component["default_config"],
+                "steps": [
+                    {
+                        "name": "self call",
+                        "kind": "custom",
+                        "type": component["type"],
+                        "component_type": component["type"],
+                        "config": {},
+                    }
+                ],
+                "enabled": component["enabled"],
+                "sort_order": component["sort_order"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nested custom components", response.json()["detail"])
+
+    def test_import_component_package_rejects_overwriting_referenced_custom_component(self):
+        component_response = self.client.post(
+            "/custom-components/",
+            json={
+                "name": "Shared Login Flow",
+                "type": "shared_login_flow_component",
+                "description": "shared login flow",
+                "schema": {},
+                "default_config": {},
+                "steps": [{"name": "tap login", "type": "touch", "config": {"selector": "login"}}],
+                "enabled": True,
+                "sort_order": 1,
+            },
+        )
+        self.assertEqual(component_response.status_code, 200)
+        component = component_response.json()["data"]
+        package = self.create_package()
+
+        case_response = self.client.post(
+            "/test-cases/",
+            json={
+                "project_id": 1001,
+                "name": "package-overwrite-guard-case",
+                "description": "uses shared custom component",
+                "package_id": package["id"],
+                "ui_flow": {
+                    "steps": [
+                        {
+                            "name": "use shared flow",
+                            "kind": "custom",
+                            "type": component["type"],
+                            "component_type": component["type"],
+                            "config": {},
+                        }
+                    ]
+                },
+                "variables": [],
+                "tags": [],
+                "timeout": 60,
+                "retry_count": 0,
+            },
+        )
+        self.assertEqual(case_response.status_code, 200)
+
+        manifest = {
+            "name": "overwrite-pack",
+            "version": "1.0.0",
+            "custom_components": [
+                {
+                    "name": "Shared Login Flow Updated",
+                    "type": component["type"],
+                    "description": "attempts to overwrite live behavior",
+                    "schema": {"selector": "string"},
+                    "default_config": {"selector": "new-login"},
+                    "steps": [{"name": "tap updated login", "type": "touch", "config": {"selector": "new-login"}}],
+                    "enabled": True,
+                    "sort_order": 2,
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/component-packages/import/",
+            files={"file": ("overwrite-pack.json", json.dumps(manifest, ensure_ascii=False).encode("utf-8"), "application/json")},
+            data={"overwrite": "1"},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("cannot be overwritten while referenced", response.json()["detail"])
 
     def test_delete_custom_component_rejects_test_case_reference(self):
         component_response = self.client.post(
@@ -658,6 +929,51 @@ class AppApiSmokeTests(unittest.TestCase):
 
         self.assertEqual(device["status"], "available")
         self.assertEqual(device["locked_by"], "")
+        self.assertEqual(executions, [])
+
+    def test_run_test_suite_creation_failure_releases_device_and_resets_suite_state(self):
+        test_case = self.create_test_case(name="suite-create-failure-case")
+        suite_response = self.client.post(
+            "/test-suites/",
+            json={
+                "project_id": 1001,
+                "name": "suite-create-failure",
+                "description": "suite fixture",
+                "test_case_ids": [test_case["id"]],
+            },
+        )
+        self.assertEqual(suite_response.status_code, 200)
+        suite_id = suite_response.json()["data"]["id"]
+        device_id = self.create_device_record()
+
+        with patch("app.extended_routes.create_execution", side_effect=RuntimeError("create execution boom")):
+            with self.assertRaisesRegex(RuntimeError, "create execution boom"):
+                self.client.post(
+                    f"/test-suites/{suite_id}/run/",
+                    json={"device_id": device_id, "triggered_by": "smoke", "package_name": ""},
+                )
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (device_id,),
+            )
+            suite = database.fetch_one(
+                conn,
+                "SELECT execution_status, execution_result FROM test_suites WHERE id = ?",
+                (suite_id,),
+            )
+            executions = database.fetch_all(
+                conn,
+                "SELECT id FROM executions WHERE test_suite_id = ?",
+                (suite_id,),
+            )
+
+        self.assertEqual(device["status"], "available")
+        self.assertEqual(device["locked_by"], "")
+        self.assertEqual(suite["execution_status"], "not_run")
+        self.assertEqual(suite["execution_result"], "")
         self.assertEqual(executions, [])
 
     def test_delete_package_rejects_execution_reference(self):
@@ -1075,6 +1391,68 @@ class AppApiSmokeTests(unittest.TestCase):
                 conn,
                 "SELECT id FROM executions WHERE test_suite_id = ? AND trigger_mode = 'scheduled'",
                 (suite_id,),
+            )
+
+        self.assertEqual(device["status"], "available")
+        self.assertEqual(device["locked_by"], "")
+        self.assertEqual(executions, [])
+
+    def test_run_now_case_package_validation_failure_does_not_leave_device_locked(self):
+        test_case = self.create_test_case(name="scheduled-invalid-case-package")
+        device_id = self.create_device_record()
+
+        with database.connection() as conn:
+            package = database.fetch_one(
+                conn,
+                "SELECT id FROM packages WHERE project_id = ? AND package_name = ?",
+                (1001, "com.tencent.wework"),
+            )
+
+        create_response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-invalid-case-package-task",
+                "description": "scheduled trigger",
+                "task_type": "TEST_CASE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": device_id,
+                "package_id": package["id"],
+                "test_suite_id": None,
+                "test_case_id": test_case["id"],
+                "notify_on_success": False,
+                "notify_on_failure": False,
+                "notification_type": "",
+                "notify_emails": [],
+                "status": "ACTIVE",
+                "created_by": "tester",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        task_id = create_response.json()["data"]["id"]
+
+        with database.connection() as conn:
+            conn.execute(
+                "UPDATE packages SET project_id = ?, updated_at = ? WHERE id = ?",
+                (2002, database.utc_now(), package["id"]),
+            )
+
+        response = self.client.post(f"/scheduled-tasks/{task_id}/run_now/", params={"triggered_by": "smoke"})
+        self.assertEqual(response.status_code, 404)
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (device_id,),
+            )
+            executions = database.fetch_all(
+                conn,
+                "SELECT id FROM executions WHERE test_case_id = ? AND trigger_mode = 'scheduled'",
+                (test_case["id"],),
             )
 
         self.assertEqual(device["status"], "available")
@@ -2521,12 +2899,14 @@ class AppApiSmokeTests(unittest.TestCase):
 
         response = self.client.post(f"/notification-logs/{log_id}/retry/")
         self.assertEqual(response.status_code, 200)
-        payload = response.json()["data"]
+        body = response.json()
+        payload = body["data"]
 
         self.assertEqual(payload["status"], "failed")
         self.assertEqual(payload["error_message"], "network timeout")
         self.assertTrue(payload["is_retried"])
         self.assertEqual(payload["retry_count"], 1)
+        self.assertIn("not implemented", body["message"])
         self.assertEqual(payload["response_info"]["retry_status"], "not_sent")
         self.assertEqual(payload["response_info"]["retry_count"], 1)
         self.assertTrue(payload["response_info"]["retried_at"])

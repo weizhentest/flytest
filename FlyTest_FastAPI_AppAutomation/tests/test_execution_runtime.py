@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.execution_runtime import AppFlowExecutor
@@ -194,6 +195,90 @@ class ExecutionRuntimeTests(unittest.TestCase):
                 resolved = executor._resolve_asset_path("elements/common/project-2002/secret.png")
 
             self.assertIsNone(resolved)
+        finally:
+            temp_dir.cleanup()
+
+    def test_run_rejects_recursive_custom_component_chain(self):
+        temp_dir, executor = self.create_executor()
+        try:
+            executor._get_custom_component = MagicMock(
+                side_effect=lambda component_type: {
+                    "default_config": {},
+                    "steps": [
+                        {
+                            "name": "self reference",
+                            "kind": "custom",
+                            "type": component_type,
+                            "component_type": component_type,
+                            "config": {},
+                        }
+                    ],
+                }
+                if component_type == "loop_component"
+                else None
+            )
+
+            with self.assertRaisesRegex(ValueError, "Recursive custom component reference detected"):
+                executor.run(
+                    [
+                        {
+                            "name": "entry",
+                            "kind": "custom",
+                            "type": "loop_component",
+                            "component_type": "loop_component",
+                            "config": {},
+                        }
+                    ]
+                )
+        finally:
+            temp_dir.cleanup()
+
+    def test_run_rejects_indirect_recursive_custom_component_chain(self):
+        temp_dir, executor = self.create_executor()
+        try:
+            components = {
+                "component_a": {
+                    "default_config": {},
+                    "steps": [
+                        {
+                            "name": "call b",
+                            "kind": "custom",
+                            "type": "component_b",
+                            "component_type": "component_b",
+                            "config": {},
+                        }
+                    ],
+                },
+                "component_b": {
+                    "default_config": {},
+                    "steps": [
+                        {
+                            "name": "call a",
+                            "kind": "custom",
+                            "type": "component_a",
+                            "component_type": "component_a",
+                            "config": {},
+                        }
+                    ],
+                },
+            }
+            executor._get_custom_component = MagicMock(side_effect=lambda component_type: components.get(component_type))
+
+            with self.assertRaisesRegex(
+                ValueError,
+                r"Recursive custom component reference detected: .*component_a.*component_b.*component_a",
+            ):
+                executor.run(
+                    [
+                        {
+                            "name": "entry",
+                            "kind": "custom",
+                            "type": "component_a",
+                            "component_type": "component_a",
+                            "config": {},
+                        }
+                    ]
+                )
         finally:
             temp_dir.cleanup()
 

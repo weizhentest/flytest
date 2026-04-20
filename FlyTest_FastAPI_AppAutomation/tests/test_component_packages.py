@@ -1,6 +1,8 @@
 import sqlite3
 import unittest
 
+from fastapi import HTTPException
+
 from app.extended_routes import (
     _build_component_package_manifest,
     _install_component_package,
@@ -119,6 +121,90 @@ class ComponentPackageTests(unittest.TestCase):
         self.assertEqual(len(manifest["components"]), 1)
         self.assertEqual(len(manifest["custom_components"]), 1)
         self.assertEqual(manifest["custom_components"][0]["type"], "login_flow_component")
+
+    def test_install_component_package_rejects_recursive_custom_components(self):
+        conn = make_conn()
+
+        with self.assertRaises(HTTPException) as context:
+            _install_component_package(
+                conn,
+                {
+                    "name": "bad-pack",
+                    "version": "1.0.0",
+                    "custom_components": [
+                        {
+                            "name": "Nested Flow",
+                            "type": "nested_flow_component",
+                            "description": "invalid recursive component",
+                            "schema": {},
+                            "default_config": {},
+                            "steps": [
+                                {
+                                    "name": "call nested component",
+                                    "kind": "custom",
+                                    "type": "nested_flow_component",
+                                    "component_type": "nested_flow_component",
+                                    "config": {},
+                                }
+                            ],
+                            "enabled": True,
+                            "sort_order": 1,
+                        }
+                    ],
+                },
+                overwrite=True,
+                source="upload",
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("nested custom components", str(context.exception.detail))
+
+    def test_install_component_package_rejects_nested_references_between_new_custom_components(self):
+        conn = make_conn()
+
+        with self.assertRaises(HTTPException) as context:
+            _install_component_package(
+                conn,
+                {
+                    "name": "bad-pack",
+                    "version": "1.0.0",
+                    "custom_components": [
+                        {
+                            "name": "Flow A",
+                            "type": "flow_a",
+                            "description": "references another new custom component",
+                            "schema": {},
+                            "default_config": {},
+                            "steps": [
+                                {
+                                    "name": "call flow b",
+                                    "kind": "custom",
+                                    "type": "flow_b",
+                                    "component_type": "flow_b",
+                                    "config": {},
+                                }
+                            ],
+                            "enabled": True,
+                            "sort_order": 1,
+                        },
+                        {
+                            "name": "Flow B",
+                            "type": "flow_b",
+                            "description": "second custom component in same package",
+                            "schema": {},
+                            "default_config": {},
+                            "steps": [{"name": "tap login", "type": "touch", "config": {"selector": "login"}}],
+                            "enabled": True,
+                            "sort_order": 2,
+                        },
+                    ],
+                },
+                overwrite=True,
+                source="upload",
+            )
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertIn("nested custom components", str(context.exception.detail))
 
 
 if __name__ == "__main__":

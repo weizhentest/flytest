@@ -209,12 +209,19 @@ def ensure_custom_component_steps_are_safe(
     steps: list[dict[str, Any]],
     *,
     current_component_type: str = "",
+    extra_known_custom_types: set[str] | None = None,
 ) -> None:
     known_custom_types = {
         str(row.get("type") or "").strip().lower()
         for row in fetch_all(conn, "SELECT type FROM custom_components")
         if str(row.get("type") or "").strip()
     }
+    if extra_known_custom_types:
+        known_custom_types.update(
+            str(item or "").strip().lower()
+            for item in extra_known_custom_types
+            if str(item or "").strip()
+        )
     normalized_current_type = str(current_component_type or "").strip().lower()
     if normalized_current_type:
         known_custom_types.add(normalized_current_type)
@@ -320,6 +327,11 @@ def _install_component_package(conn, manifest: dict[str, Any], *, overwrite: boo
     custom_skipped = 0
     errors: list[str] = []
     now = utc_now()
+    manifest_custom_types = {
+        str(item.get("type") or "").strip()
+        for item in custom_component_items
+        if isinstance(item, dict) and str(item.get("type") or "").strip()
+    }
 
     for item in component_items:
         if not isinstance(item, dict):
@@ -395,6 +407,7 @@ def _install_component_package(conn, manifest: dict[str, Any], *, overwrite: boo
                 conn,
                 normalized["steps"],
                 current_component_type=normalized["type"],
+                extra_known_custom_types=manifest_custom_types,
             )
             conn.execute(
                 """
@@ -437,6 +450,7 @@ def _install_component_package(conn, manifest: dict[str, Any], *, overwrite: boo
             conn,
             normalized["steps"],
             current_component_type=normalized["type"],
+            extra_known_custom_types=manifest_custom_types,
         )
 
         conn.execute(
@@ -1721,47 +1735,63 @@ def update_suite_case_order(suite_id: int, test_case_orders: list[dict[str, int]
 
 @router.post("/test-suites/{suite_id}/run/")
 def run_test_suite(suite_id: int, payload: TestSuiteRunPayload) -> dict[str, Any]:
-    with connection() as conn:
-        from .main import reserve_device_for_execution
+    execution_ids: list[int] = []
+    reserved_device_id: int | None = None
+    try:
+        with connection() as conn:
+            from .main import reserve_device_for_execution
 
-        suite = get_suite_or_404(conn, suite_id)
-        if not suite["suite_cases"]:
-            raise HTTPException(status_code=400, detail="该测试套件没有可执行的用例")
-        device = fetch_one(conn, "SELECT id FROM devices WHERE id = ?", (payload.device_id,))
-        if device is None:
-            raise HTTPException(status_code=404, detail="执行设备不存在")
-        package_override = get_package_override_or_404(
-            conn,
-            suite["project_id"],
-            package_name=payload.package_name,
-        )
-        reserve_device_for_execution(
-            conn,
-            payload.device_id,
-            locked_by=payload.triggered_by or "FlyTest",
-        )
-        conn.execute(
-            "UPDATE test_suites SET execution_status = 'running', execution_result = '', updated_at = ? WHERE id = ?",
-            (utc_now(), suite_id),
-        )
-        execution_ids: list[int] = []
-        for item in suite["suite_cases"]:
-            execution_ids.append(
-                create_execution(
-                    conn,
-                    suite["project_id"],
-                    item["test_case"]["id"],
-                    payload.device_id,
-                    payload.triggered_by,
-                    suite_id,
-                    trigger_mode="manual",
-                    package_id=package_override["id"] if package_override else None,
-                )
+            suite = get_suite_or_404(conn, suite_id)
+            if not suite["suite_cases"]:
+                raise HTTPException(status_code=400, detail="test suite has no executable test cases")
+            device = fetch_one(conn, "SELECT id FROM devices WHERE id = ?", (payload.device_id,))
+            if device is None:
+                raise HTTPException(status_code=404, detail="execution device does not exist")
+            package_override = get_package_override_or_404(
+                conn,
+                suite["project_id"],
+                package_name=payload.package_name,
             )
+            reserve_device_for_execution(
+                conn,
+                payload.device_id,
+                locked_by=payload.triggered_by or "FlyTest",
+            )
+            reserved_device_id = payload.device_id
+            conn.execute(
+                "UPDATE test_suites SET execution_status = 'running', execution_result = '', updated_at = ? WHERE id = ?",
+                (utc_now(), suite_id),
+            )
+            for item in suite["suite_cases"]:
+                execution_ids.append(
+                    create_execution(
+                        conn,
+                        suite["project_id"],
+                        item["test_case"]["id"],
+                        payload.device_id,
+                        payload.triggered_by,
+                        suite_id,
+                        trigger_mode="manual",
+                        package_id=package_override["id"] if package_override else None,
+                    )
+                )
+    except Exception:
+        with connection() as conn:
+            if execution_ids:
+                conn.executemany("DELETE FROM executions WHERE id = ?", [(execution_id,) for execution_id in execution_ids])
+            if reserved_device_id is not None:
+                from .main import finish_device_lock
+
+                finish_device_lock(conn, reserved_device_id)
+            conn.execute(
+                "UPDATE test_suites SET execution_status = 'not_run', execution_result = '', updated_at = ? WHERE id = ?",
+                (utc_now(), suite_id),
+            )
+        raise
     Thread(target=run_suite_background, args=(suite_id, execution_ids), daemon=True).start()
     return success(
         {"suite_id": suite_id, "execution_ids": execution_ids, "test_case_count": len(execution_ids)},
-        f"测试套件已提交执行，共 {len(execution_ids)} 个用例",
+        f"suite execution submitted with {len(execution_ids)} test cases",
         201,
     )
 
@@ -1789,6 +1819,7 @@ def get_suite_executions(suite_id: int) -> dict[str, Any]:
 
 
 def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, Any]:
+    reserved_device_id: int | None = None
     try:
         with connection() as conn:
             from .main import reserve_device_for_execution
@@ -1816,6 +1847,7 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                         int(task["device_id"]),
                         locked_by=triggered_by,
                     )
+                    reserved_device_id = int(task["device_id"])
                 execution_ids: list[int] = []
                 for item in suite["suite_cases"]:
                     execution_ids.append(
@@ -1863,6 +1895,7 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                         int(task["device_id"]),
                         locked_by=triggered_by,
                     )
+                    reserved_device_id = int(task["device_id"])
                 execution_id = create_execution(
                     conn,
                     task["project_id"],
@@ -1923,6 +1956,11 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
         return serialize_task(row or {}) | {"trigger_payload": payload}
     except HTTPException as exc:
         with connection() as conn:
+            if reserved_device_id is not None:
+                from .main import finish_device_lock
+
+                finish_device_lock(conn, reserved_device_id)
+                reserved_device_id = None
             existing = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
             if existing is not None:
                 existing_status = str(existing.get("status") or "ACTIVE").upper()
@@ -1959,6 +1997,11 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
         raise
     except Exception as exc:
         with connection() as conn:
+            if reserved_device_id is not None:
+                from .main import finish_device_lock
+
+                finish_device_lock(conn, reserved_device_id)
+                reserved_device_id = None
             existing = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
             if existing is not None:
                 next_status = "FAILED" if existing["trigger_type"] == "ONCE" else existing["status"]
@@ -2274,4 +2317,7 @@ def retry_notification(log_id: int) -> dict[str, Any]:
             ),
         )
         updated = fetch_one(conn, "SELECT * FROM notification_logs WHERE id = ?", (log_id,))
-    return success(serialize_notification(updated or {}), "通知已重试")
+    return success(
+        serialize_notification(updated or {}),
+        "Retry request recorded; notification resend is not implemented yet.",
+    )
