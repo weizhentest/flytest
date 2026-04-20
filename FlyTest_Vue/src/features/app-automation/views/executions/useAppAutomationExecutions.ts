@@ -260,7 +260,7 @@ export function useAppAutomationExecutions() {
     const suiteId = Number(route.query.suiteId || 0)
     if (suiteId > 0) {
       filters.suite = String(suiteId)
-    } else if (route.query.executionId) {
+    } else {
       filters.suite = 'all'
     }
 

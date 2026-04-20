@@ -904,7 +904,17 @@ def run_execution(execution_id: int) -> None:
             _refresh_suite_stats_for_execution(conn, execution_id)
     except StopRequested:
         with connection() as conn:
-            execution = fetch_one(conn, "SELECT device_id, test_case_id, logs FROM executions WHERE id = ?", (execution_id,))
+            execution = fetch_one(
+                conn,
+                "SELECT status, device_id, test_case_id, logs FROM executions WHERE id = ?",
+                (execution_id,),
+            )
+            if execution and execution.get("status") == "stopped":
+                if execution.get("device_id"):
+                    finish_device_lock(conn, execution["device_id"])
+                write_execution_report(conn, execution_id)
+                _refresh_suite_stats_for_execution(conn, execution_id)
+                return
             logs = append_log(json_loads(execution.get("logs") if execution else "[]", []), "执行已停止", "warning")
             now = utc_now()
             conn.execute(
@@ -922,7 +932,17 @@ def run_execution(execution_id: int) -> None:
             _refresh_suite_stats_for_execution(conn, execution_id)
     except StepExecutionError as exc:
         with connection() as conn:
-            execution = fetch_one(conn, "SELECT device_id, test_case_id, logs FROM executions WHERE id = ?", (execution_id,))
+            execution = fetch_one(
+                conn,
+                "SELECT status, device_id, test_case_id, logs FROM executions WHERE id = ?",
+                (execution_id,),
+            )
+            if execution and execution.get("status") == "stopped":
+                if execution.get("device_id"):
+                    finish_device_lock(conn, execution["device_id"])
+                write_execution_report(conn, execution_id)
+                _refresh_suite_stats_for_execution(conn, execution_id)
+                return
             logs = append_log(
                 json_loads(execution.get("logs") if execution else "[]", []),
                 f"步骤失败 {exc.index}: {exc.step_name} - {exc.cause}",
@@ -953,7 +973,17 @@ def run_execution(execution_id: int) -> None:
             _refresh_suite_stats_for_execution(conn, execution_id)
     except Exception as exc:
         with connection() as conn:
-            execution = fetch_one(conn, "SELECT device_id, test_case_id, logs FROM executions WHERE id = ?", (execution_id,))
+            execution = fetch_one(
+                conn,
+                "SELECT status, device_id, test_case_id, logs FROM executions WHERE id = ?",
+                (execution_id,),
+            )
+            if execution and execution.get("status") == "stopped":
+                if execution.get("device_id"):
+                    finish_device_lock(conn, execution["device_id"])
+                write_execution_report(conn, execution_id)
+                _refresh_suite_stats_for_execution(conn, execution_id)
+                return
             logs = append_log(json_loads(execution.get("logs") if execution else "[]", []), f"执行异常: {exc}", "error")
             now = utc_now()
             conn.execute(

@@ -578,6 +578,78 @@ class AppApiSmokeTests(unittest.TestCase):
             datetime.fromisoformat(original_next_run),
         )
 
+    def test_run_now_validation_failure_does_not_leave_device_locked(self):
+        test_case = self.create_test_case(name="scheduled-empty-suite-case")
+        suite_response = self.client.post(
+            "/test-suites/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-empty-suite",
+                "description": "suite fixture",
+                "test_case_ids": [test_case["id"]],
+            },
+        )
+        self.assertEqual(suite_response.status_code, 200)
+        suite_id = suite_response.json()["data"]["id"]
+        device_id = self.create_device_record()
+        with database.connection() as conn:
+            package = database.fetch_one(
+                conn,
+                "SELECT id FROM packages WHERE project_id = ? AND package_name = ?",
+                (1001, "com.tencent.wework"),
+            )
+
+        create_response = self.client.post(
+            "/scheduled-tasks/",
+            json={
+                "project_id": 1001,
+                "name": "scheduled-invalid-package-task",
+                "description": "scheduled trigger",
+                "task_type": "TEST_SUITE",
+                "trigger_type": "INTERVAL",
+                "cron_expression": "",
+                "interval_seconds": 3600,
+                "execute_at": None,
+                "device_id": device_id,
+                "package_id": package["id"],
+                "test_suite_id": suite_id,
+                "test_case_id": None,
+                "notify_on_success": False,
+                "notify_on_failure": False,
+                "notification_type": "",
+                "notify_emails": [],
+                "status": "ACTIVE",
+                "created_by": "tester",
+            },
+        )
+        self.assertEqual(create_response.status_code, 200)
+        task_id = create_response.json()["data"]["id"]
+
+        with database.connection() as conn:
+            conn.execute(
+                "DELETE FROM test_suite_cases WHERE test_suite_id = ?",
+                (suite_id,),
+            )
+
+        response = self.client.post(f"/scheduled-tasks/{task_id}/run_now/", params={"triggered_by": "smoke"})
+        self.assertEqual(response.status_code, 400)
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (device_id,),
+            )
+            executions = database.fetch_all(
+                conn,
+                "SELECT id FROM executions WHERE test_suite_id = ? AND trigger_mode = 'scheduled'",
+                (suite_id,),
+            )
+
+        self.assertEqual(device["status"], "available")
+        self.assertEqual(device["locked_by"], "")
+        self.assertEqual(executions, [])
+
     def test_upload_element_asset_reuses_duplicate_image_within_project(self):
         upload_response = self.client.post(
             "/elements/upload/",
@@ -1029,6 +1101,43 @@ class AppApiSmokeTests(unittest.TestCase):
         self.assertEqual(suite["failed_count"], 1)
         self.assertEqual(test_case["last_result"], "failed")
         self.assertIsNotNone(test_case["last_run_at"])
+
+    def test_run_execution_preserves_stopped_status_after_late_exception(self):
+        fixture = self.create_execution_fixture(case_name="late-stop-case")
+
+        class StopThenCrashExecutor(FakeExecutor):
+            def run(self, steps, on_step_complete):
+                with database.connection() as conn:
+                    now = database.utc_now()
+                    conn.execute(
+                        "UPDATE executions SET status = 'stopped', result = 'stopped', finished_at = ?, updated_at = ? WHERE id = ?",
+                        (now, now, fixture["execution_id"]),
+                    )
+                    conn.execute(
+                        "UPDATE devices SET status = 'stopping', updated_at = ? WHERE id = ?",
+                        (now, fixture["device_id"]),
+                    )
+                raise RuntimeError("late crash after stop")
+
+        with patch.object(self.main_module, "AppFlowExecutor", StopThenCrashExecutor):
+            self.main_module.run_execution(fixture["execution_id"])
+
+        with database.connection() as conn:
+            execution = database.fetch_one(
+                conn,
+                "SELECT status, result, error_message FROM executions WHERE id = ?",
+                (fixture["execution_id"],),
+            )
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (fixture["device_id"],),
+            )
+
+        self.assertEqual(execution["status"], "stopped")
+        self.assertEqual(execution["result"], "stopped")
+        self.assertEqual(device["status"], "available")
+        self.assertEqual(device["locked_by"], "")
 
     def test_delete_execution_rejects_active_runs(self):
         fixture = self.create_execution_fixture(case_name="active-delete-case")

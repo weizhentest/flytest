@@ -1590,13 +1590,6 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
             triggered_at = utc_now()
             next_run_time = compute_task_next_run(task)
             next_status = current_status
-            if task.get("device_id"):
-                reserve_device_for_execution(
-                    conn,
-                    int(task["device_id"]),
-                    locked_by=triggered_by,
-                )
-
             if task["task_type"] == "TEST_SUITE":
                 suite = get_suite_or_404(conn, task["test_suite_id"])
                 if not suite["suite_cases"]:
@@ -1606,6 +1599,12 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                     task["project_id"],
                     package_id=task.get("package_id"),
                 )
+                if task.get("device_id"):
+                    reserve_device_for_execution(
+                        conn,
+                        int(task["device_id"]),
+                        locked_by=triggered_by,
+                    )
                 execution_ids: list[int] = []
                 for item in suite["suite_cases"]:
                     execution_ids.append(
@@ -1647,6 +1646,12 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                     task["project_id"],
                     package_id=task.get("package_id"),
                 )
+                if task.get("device_id"):
+                    reserve_device_for_execution(
+                        conn,
+                        int(task["device_id"]),
+                        locked_by=triggered_by,
+                    )
                 execution_id = create_execution(
                     conn,
                     task["project_id"],
