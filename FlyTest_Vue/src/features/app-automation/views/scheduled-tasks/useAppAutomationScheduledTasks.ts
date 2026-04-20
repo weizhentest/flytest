@@ -676,7 +676,15 @@ export function useAppAutomationScheduledTasks() {
       return
     }
     const taskId = Number(route.query.taskId || 0)
-    if (!taskId || currentTask.value?.id === taskId) {
+    if (!taskId) {
+      detailVisible.value = false
+      currentTask.value = null
+      taskNotifications.value = []
+      detailLoading.value = false
+      taskNotificationsLoading.value = false
+      return
+    }
+    if (currentTask.value?.id === taskId) {
       return
     }
     await loadTaskDetail(taskId, { syncRoute: false })

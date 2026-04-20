@@ -489,6 +489,44 @@ class AppApiSmokeTests(unittest.TestCase):
 
         self.assertEqual(executions, [])
 
+    def test_run_test_suite_invalid_package_does_not_lock_device(self):
+        test_case = self.create_test_case(name="suite-invalid-package-case")
+        suite_response = self.client.post(
+            "/test-suites/",
+            json={
+                "project_id": 1001,
+                "name": "invalid-package-suite",
+                "description": "suite fixture",
+                "test_case_ids": [test_case["id"]],
+            },
+        )
+        self.assertEqual(suite_response.status_code, 200)
+        suite_id = suite_response.json()["data"]["id"]
+        device_id = self.create_device_record()
+
+        response = self.client.post(
+            f"/test-suites/{suite_id}/run/",
+            json={"device_id": device_id, "triggered_by": "smoke", "package_name": "missing.package"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (device_id,),
+            )
+            executions = database.fetch_all(
+                conn,
+                "SELECT id FROM executions WHERE test_suite_id = ?",
+                (suite_id,),
+            )
+
+        self.assertEqual(device["status"], "available")
+        self.assertEqual(device["locked_by"], "")
+        self.assertEqual(executions, [])
+
     def test_device_discovery_preserves_stopping_status(self):
         device_id = self.create_device_record()
 
@@ -538,6 +576,56 @@ class AppApiSmokeTests(unittest.TestCase):
 
         self.assertEqual(device["status"], "locked")
         self.assertEqual(device["locked_by"], "existing-run")
+
+    def test_disconnect_rejects_locked_device(self):
+        device_id = self.create_device_record()
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                "UPDATE devices SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ? WHERE id = ?",
+                ("existing-run", now, now, device_id),
+            )
+
+        response = self.client.post(f"/devices/{device_id}/disconnect/")
+        self.assertEqual(response.status_code, 409)
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by FROM devices WHERE id = ?",
+                (device_id,),
+            )
+
+        self.assertEqual(device["status"], "locked")
+        self.assertEqual(device["locked_by"], "existing-run")
+
+    def test_update_device_rejects_status_change_while_locked(self):
+        device_id = self.create_device_record()
+
+        with database.connection() as conn:
+            now = database.utc_now()
+            conn.execute(
+                "UPDATE devices SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ? WHERE id = ?",
+                ("existing-run", now, now, device_id),
+            )
+
+        response = self.client.patch(
+            f"/devices/{device_id}/",
+            json={"status": "available", "name": "Updated Name"},
+        )
+        self.assertEqual(response.status_code, 409)
+
+        with database.connection() as conn:
+            device = database.fetch_one(
+                conn,
+                "SELECT status, locked_by, name FROM devices WHERE id = ?",
+                (device_id,),
+            )
+
+        self.assertEqual(device["status"], "locked")
+        self.assertEqual(device["locked_by"], "existing-run")
+        self.assertEqual(device["name"], "Pixel_6")
 
     def test_stop_pending_execution_releases_device_and_blocks_late_start(self):
         fixture = self.create_execution_fixture(case_name="pending-stop-case")

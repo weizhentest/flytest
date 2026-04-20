@@ -1519,15 +1519,15 @@ def run_test_suite(suite_id: int, payload: TestSuiteRunPayload) -> dict[str, Any
         device = fetch_one(conn, "SELECT id FROM devices WHERE id = ?", (payload.device_id,))
         if device is None:
             raise HTTPException(status_code=404, detail="执行设备不存在")
-        reserve_device_for_execution(
-            conn,
-            payload.device_id,
-            locked_by=payload.triggered_by or "FlyTest",
-        )
         package_override = get_package_override_or_404(
             conn,
             suite["project_id"],
             package_name=payload.package_name,
+        )
+        reserve_device_for_execution(
+            conn,
+            payload.device_id,
+            locked_by=payload.triggered_by or "FlyTest",
         )
         conn.execute(
             "UPDATE test_suites SET execution_status = 'running', execution_result = '', updated_at = ? WHERE id = ?",

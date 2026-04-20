@@ -1139,6 +1139,8 @@ def disconnect_device(device_id: int) -> dict[str, Any]:
     with connection() as conn:
         settings = get_settings(conn)
         device = get_device_or_404(conn, device_id)
+        if device["status"] in {"locked", "stopping"}:
+            raise HTTPException(status_code=409, detail="device is currently in use and cannot be disconnected")
         try:
             disconnect_remote_device(settings["adb_path"], device["device_id"])
         except AdbError:
@@ -1181,6 +1183,17 @@ def screenshot_device(device_id: int) -> dict[str, Any]:
 def update_device(device_id: int, payload: DeviceUpdatePayload) -> dict[str, Any]:
     with connection() as conn:
         device = get_device_or_404(conn, device_id)
+        next_status = payload.status if payload.status is not None else device["status"]
+        allowed_statuses = {"available", "online", "offline", "locked", "stopping"}
+        if next_status not in allowed_statuses:
+            raise HTTPException(status_code=400, detail="unsupported device status")
+        current_status = str(device.get("status") or "")
+        if current_status in {"locked", "stopping"} and next_status != current_status:
+            raise HTTPException(status_code=409, detail="device is currently in use and cannot change status")
+        if next_status == "locked" and current_status != "locked":
+            raise HTTPException(status_code=400, detail="use the lock endpoint to lock a device")
+        if next_status == "stopping" and current_status != "stopping":
+            raise HTTPException(status_code=400, detail="device stopping status is system managed")
         now = utc_now()
         conn.execute(
             """
@@ -1192,7 +1205,7 @@ def update_device(device_id: int, payload: DeviceUpdatePayload) -> dict[str, Any
                 payload.name if payload.name is not None else device["name"],
                 payload.description if payload.description is not None else device["description"],
                 payload.location if payload.location is not None else device["location"],
-                payload.status if payload.status is not None else device["status"],
+                next_status,
                 now,
                 device_id,
             ),
