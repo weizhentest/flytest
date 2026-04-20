@@ -479,6 +479,92 @@ def serialize_execution(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def _merge_delete_block_reasons(
+    reason_map: dict[int, str],
+    blocked_ids: set[int],
+    reason: str,
+) -> None:
+    for item_id in blocked_ids:
+        reason_map.setdefault(item_id, reason)
+
+
+def _collect_referenced_ids(conn, table: str, column: str, item_ids: list[int]) -> set[int]:
+    if not item_ids:
+        return set()
+    placeholders = ", ".join("?" for _ in item_ids)
+    rows = fetch_all(
+        conn,
+        f"SELECT DISTINCT {column} AS item_id FROM {table} WHERE {column} IN ({placeholders})",
+        tuple(item_ids),
+    )
+    return {int(row["item_id"]) for row in rows if row.get("item_id") is not None}
+
+
+def annotate_device_delete_state(conn, devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reason_map: dict[int, str] = {}
+    device_ids = [int(item["id"]) for item in devices if item.get("id") is not None]
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "executions", "device_id", device_ids),
+        "设备已被执行记录引用，无法删除",
+    )
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "scheduled_tasks", "device_id", device_ids),
+        "设备已被定时任务引用，无法删除",
+    )
+    for item in devices:
+        reason = reason_map.get(int(item["id"]))
+        item["can_delete"] = reason is None
+        item["delete_block_reason"] = reason or ""
+    return devices
+
+
+def annotate_package_delete_state(conn, packages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reason_map: dict[int, str] = {}
+    package_ids = [int(item["id"]) for item in packages if item.get("id") is not None]
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "test_cases", "package_id", package_ids),
+        "应用包已被测试用例引用，无法删除",
+    )
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "executions", "package_id", package_ids),
+        "应用包已被执行记录引用，无法删除",
+    )
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "scheduled_tasks", "package_id", package_ids),
+        "应用包已被定时任务引用，无法删除",
+    )
+    for item in packages:
+        reason = reason_map.get(int(item["id"]))
+        item["can_delete"] = reason is None
+        item["delete_block_reason"] = reason or ""
+    return packages
+
+
+def annotate_test_case_delete_state(conn, test_cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reason_map: dict[int, str] = {}
+    test_case_ids = [int(item["id"]) for item in test_cases if item.get("id") is not None]
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "executions", "test_case_id", test_case_ids),
+        "测试用例已被执行记录引用，无法删除",
+    )
+    _merge_delete_block_reasons(
+        reason_map,
+        _collect_referenced_ids(conn, "scheduled_tasks", "test_case_id", test_case_ids),
+        "测试用例已被定时任务引用，无法删除",
+    )
+    for item in test_cases:
+        reason = reason_map.get(int(item["id"]))
+        item["can_delete"] = reason is None
+        item["delete_block_reason"] = reason or ""
+    return test_cases
+
+
 def ensure_package_belongs_to_project(package: dict[str, Any], project_id: int) -> None:
     package_project_id = package.get("project_id")
     if isinstance(package_project_id, str) and package_project_id.isdigit():
@@ -1220,7 +1306,10 @@ def list_devices(search: str | None = Query(default=None), status: str | None = 
         params.append(status)
     query += " ORDER BY updated_at DESC"
     with connection() as conn:
-        devices = [serialize_device(item) for item in fetch_all(conn, query, params)]
+        devices = annotate_device_delete_state(
+            conn,
+            [serialize_device(item) for item in fetch_all(conn, query, params)],
+        )
     return success(devices)
 
 
@@ -1368,7 +1457,7 @@ def list_packages(project_id: int | None = Query(default=None), search: str | No
         params.extend([f"%{search}%", f"%{search}%"])
     query += " ORDER BY updated_at DESC"
     with connection() as conn:
-        rows = fetch_all(conn, query, params)
+        rows = annotate_package_delete_state(conn, fetch_all(conn, query, params))
     return success(rows)
 
 
@@ -1781,7 +1870,10 @@ def list_test_cases(project_id: int | None = Query(default=None), search: str | 
         params.extend([f"%{search}%", f"%{search}%"])
     query += " ORDER BY tc.updated_at DESC"
     with connection() as conn:
-        rows = [serialize_test_case(item) for item in fetch_all(conn, query, params)]
+        rows = annotate_test_case_delete_state(
+            conn,
+            [serialize_test_case(item) for item in fetch_all(conn, query, params)],
+        )
     return success(rows)
 
 

@@ -1750,6 +1750,7 @@ def run_test_suite(suite_id: int, payload: TestSuiteRunPayload) -> dict[str, Any
     reserved_device_id: int | None = None
     previous_suite_status = "not_run"
     previous_suite_result = ""
+    response_payload: dict[str, Any] | None = None
     try:
         with connection() as conn:
             from .main import reserve_device_for_execution
@@ -1790,12 +1791,17 @@ def run_test_suite(suite_id: int, payload: TestSuiteRunPayload) -> dict[str, Any
                         package_id=package_override["id"] if package_override else None,
                     )
                 )
-            Thread(target=run_suite_background, args=(suite_id, execution_ids), daemon=True).start()
-            return success(
-                {"suite_id": suite_id, "execution_ids": execution_ids, "test_case_count": len(execution_ids)},
-                f"suite execution submitted with {len(execution_ids)} test cases",
-                201,
-            )
+            response_payload = {
+                "suite_id": suite_id,
+                "execution_ids": list(execution_ids),
+                "test_case_count": len(execution_ids),
+            }
+        Thread(target=run_suite_background, args=(suite_id, list(execution_ids)), daemon=True).start()
+        return success(
+            response_payload or {"suite_id": suite_id, "execution_ids": execution_ids, "test_case_count": len(execution_ids)},
+            f"suite execution submitted with {len(execution_ids)} test cases",
+            201,
+        )
     except Exception:
         with connection() as conn:
             if execution_ids:
@@ -1839,6 +1845,12 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
     affected_suite_id: int | None = None
     previous_suite_status = "not_run"
     previous_suite_result = ""
+    row: dict[str, Any] | None = None
+    task: dict[str, Any] | None = None
+    payload: dict[str, Any] = {}
+    background_target = None
+    background_args: tuple[Any, ...] = ()
+    background_kwargs: dict[str, Any] = {}
     try:
         with connection() as conn:
             from .main import reserve_device_for_execution
@@ -1888,12 +1900,9 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                     "UPDATE test_suites SET execution_status = 'running', execution_result = '', updated_at = ? WHERE id = ?",
                     (triggered_at, suite["id"]),
                 )
-                Thread(
-                    target=_run_suite_task_in_background,
-                    args=(task_id, suite["id"], execution_ids),
-                    kwargs={"triggered_by": triggered_by, "triggered_at": triggered_at},
-                    daemon=True,
-                ).start()
+                background_target = _run_suite_task_in_background
+                background_args = (task_id, suite["id"], list(execution_ids))
+                background_kwargs = {"triggered_by": triggered_by, "triggered_at": triggered_at}
                 payload = {"task_id": task_id, "execution_ids": execution_ids, "test_case_count": len(execution_ids)}
                 last_result = {
                     "task_id": task_id,
@@ -1929,12 +1938,9 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                     package_id=package_override["id"] if package_override else None,
                 )
                 created_execution_ids.append(execution_id)
-                Thread(
-                    target=_run_case_task_in_background,
-                    args=(task_id, execution_id),
-                    kwargs={"triggered_by": triggered_by, "triggered_at": triggered_at},
-                    daemon=True,
-                ).start()
+                background_target = _run_case_task_in_background
+                background_args = (task_id, execution_id)
+                background_kwargs = {"triggered_by": triggered_by, "triggered_at": triggered_at}
                 payload = {"task_id": task_id, "execution_id": execution_id}
                 last_result = {
                     "task_id": task_id,
@@ -1954,6 +1960,14 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 last_result=last_result,
             )
             row = fetch_one(conn, "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,))
+
+        if background_target is not None:
+            Thread(
+                target=background_target,
+                args=background_args,
+                kwargs=background_kwargs,
+                daemon=True,
+            ).start()
 
         if False and task.get("notification_type") and (task.get("notify_on_success") or task.get("notify_on_failure")):
             create_notification_log(

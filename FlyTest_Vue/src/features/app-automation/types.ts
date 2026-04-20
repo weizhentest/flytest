@@ -30,6 +30,8 @@ export interface AppDevice {
   last_seen_at?: string | null
   updated_at: string
   is_locked: boolean
+  can_delete?: boolean
+  delete_block_reason?: string
 }
 
 export interface AppDeviceScreenshot {
@@ -49,6 +51,8 @@ export interface AppPackage {
   description: string
   created_at?: string
   updated_at: string
+  can_delete?: boolean
+  delete_block_reason?: string
 }
 
 export interface AppElement {
@@ -176,6 +180,8 @@ export interface AppTestCase {
   last_result: string
   last_run_at: string | null
   updated_at: string
+  can_delete?: boolean
+  delete_block_reason?: string
 }
 
 export interface AppExecutionLog {
