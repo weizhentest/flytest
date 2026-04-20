@@ -528,6 +528,7 @@ export function useAppAutomationElements() {
     () => projectStore.currentProjectId,
     () => {
       clearPreviewCache()
+      captureVisible.value = false
       detailVisible.value = false
       detailRecord.value = null
       closeEditor()

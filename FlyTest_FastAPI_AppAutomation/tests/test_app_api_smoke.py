@@ -1011,6 +1011,45 @@ class AppApiSmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_update_element_rejects_project_change_when_referenced_by_test_case_flow(self):
+        element = self.create_element("project-move-element", "button", "project-move-selector")
+
+        test_case = self.create_test_case(
+            name="element-project-move-case",
+            steps=[
+                {
+                    "name": "tap element",
+                    "type": "tap",
+                    "element_id": element["id"],
+                    "selector_value": element["name"],
+                    "config": {"image_path": element["image_path"]},
+                }
+            ],
+        )
+        self.assertIsNotNone(test_case["id"])
+
+        response = self.client.put(
+            f"/elements/{element['id']}/",
+            json={
+                "project_id": 2002,
+                "name": element["name"],
+                "element_type": element["element_type"],
+                "selector_type": element["selector_type"],
+                "selector_value": element["selector_value"],
+                "description": element["description"],
+                "tags": element["tags"],
+                "config": element["config"],
+                "image_path": element["image_path"],
+                "is_active": element["is_active"],
+            },
+        )
+        self.assertEqual(response.status_code, 409)
+
+        with database.connection() as conn:
+            updated = database.fetch_one(conn, "SELECT project_id FROM elements WHERE id = ?", (element["id"],))
+
+        self.assertEqual(updated["project_id"], 1001)
         self.assertIn("detail", response.json())
 
     def test_add_test_case_to_suite_rejects_cross_project_case(self):

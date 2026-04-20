@@ -480,6 +480,41 @@ def extract_steps(ui_flow: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _flow_references_element_value(value: Any, candidates: set[str]) -> bool:
+    if isinstance(value, dict):
+        return any(_flow_references_element_value(item, candidates) for item in value.values())
+    if isinstance(value, list):
+        return any(_flow_references_element_value(item, candidates) for item in value)
+    if value in (None, ""):
+        return False
+
+    normalized = str(value).strip()
+    return bool(normalized and normalized in candidates)
+
+
+def element_is_referenced_by_test_cases(
+    conn,
+    *,
+    element_id: int,
+    project_id: int,
+    element_name: str,
+    selector_value: str,
+    image_path: str,
+) -> bool:
+    candidates = {str(element_id).strip()}
+    for item in (element_name, selector_value, image_path):
+        normalized = str(item or "").strip()
+        if normalized:
+            candidates.add(normalized)
+
+    rows = fetch_all(conn, "SELECT ui_flow FROM test_cases WHERE project_id = ?", (project_id,))
+    for row in rows:
+        ui_flow = json_loads(row.get("ui_flow"), {})
+        if _flow_references_element_value(ui_flow, candidates):
+            return True
+    return False
+
+
 def append_log(
     logs: list[dict[str, Any]],
     message: str,
@@ -1446,8 +1481,22 @@ def create_element(payload: ElementPayload) -> dict[str, Any]:
 @app.put("/elements/{element_id}/")
 def update_element(element_id: int, payload: ElementPayload) -> dict[str, Any]:
     with connection() as conn:
-        _ = get_element_or_404(conn, element_id)
+        element = get_element_or_404(conn, element_id)
         ensure_project_access(payload.project_id)
+        current_project_id = int(element["project_id"])
+        if payload.project_id != current_project_id:
+            if element_is_referenced_by_test_cases(
+                conn,
+                element_id=element_id,
+                project_id=current_project_id,
+                element_name=str(element.get("name") or ""),
+                selector_value=str(element.get("selector_value") or ""),
+                image_path=build_element_image_path(element),
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="element cannot move projects while referenced by test cases",
+                )
         ensure_element_assets_belong_to_project(
             conn,
             project_id=payload.project_id,
