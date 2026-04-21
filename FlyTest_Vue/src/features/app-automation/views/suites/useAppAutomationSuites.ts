@@ -220,6 +220,11 @@ export function useAppAutomationSuites() {
   const loadData = async () => {
     if (!projectStore.currentProjectId) {
       suites.value = []
+      testCases.value = []
+      devices.value = []
+      history.value = []
+      selectedSuite.value = null
+      currentExecution.value = null
       return
     }
 

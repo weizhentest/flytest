@@ -4,56 +4,56 @@
 }
 
 export const selectorTypeOptions: QuickOption[] = [
-  { label: '???', value: 'element' },
-  { label: '??', value: 'text' },
-  { label: '?? ID', value: 'id' },
-  { label: '??', value: 'desc' },
+  { label: '元素', value: 'element' },
+  { label: '文本', value: 'text' },
+  { label: '资源 ID', value: 'id' },
+  { label: '描述', value: 'desc' },
   { label: 'XPath', value: 'xpath' },
-  { label: '??', value: 'image' },
-  { label: '??', value: 'region' },
-  { label: '??', value: 'pos' },
+  { label: '图像', value: 'image' },
+  { label: '区域', value: 'region' },
+  { label: '坐标', value: 'pos' },
 ]
 
 export const matchModeOptions: QuickOption[] = [
-  { label: '??', value: 'contains' },
-  { label: '????', value: 'exact' },
-  { label: '????', value: 'regex' },
+  { label: '包含', value: 'contains' },
+  { label: '完全匹配', value: 'exact' },
+  { label: '正则匹配', value: 'regex' },
 ]
 
 export const assertTypeOptions: QuickOption[] = [
-  { label: '????', value: 'condition' },
-  { label: '????', value: 'exists' },
-  { label: '?????', value: 'not_exists' },
-  { label: '????', value: 'image' },
-  { label: 'OCR ??', value: 'text' },
-  { label: 'OCR ??', value: 'number' },
-  { label: 'OCR ??', value: 'regex' },
-  { label: 'OCR ??', value: 'range' },
+  { label: '条件判断', value: 'condition' },
+  { label: '元素存在', value: 'exists' },
+  { label: '元素不存在', value: 'not_exists' },
+  { label: '图像断言', value: 'image' },
+  { label: 'OCR 文本', value: 'text' },
+  { label: 'OCR 数字', value: 'number' },
+  { label: 'OCR 正则', value: 'regex' },
+  { label: 'OCR 范围', value: 'range' },
 ]
 
 export const assertOperatorOptions: QuickOption[] = [
-  { label: '??', value: '==' },
-  { label: '???', value: '!=' },
-  { label: '??', value: '>' },
-  { label: '????', value: '>=' },
-  { label: '??', value: '<' },
-  { label: '????', value: '<=' },
-  { label: '??', value: 'contains' },
-  { label: '??', value: 'regex' },
-  { label: '??', value: 'truthy' },
-  { label: '??', value: 'falsy' },
+  { label: '等于', value: '==' },
+  { label: '不等于', value: '!=' },
+  { label: '大于', value: '>' },
+  { label: '大于等于', value: '>=' },
+  { label: '小于', value: '<' },
+  { label: '小于等于', value: '<=' },
+  { label: '包含', value: 'contains' },
+  { label: '匹配', value: 'regex' },
+  { label: '为真', value: 'truthy' },
+  { label: '为假', value: 'falsy' },
 ]
 
 export const swipeDirectionOptions: QuickOption[] = [
-  { label: '??', value: 'up' },
-  { label: '??', value: 'down' },
-  { label: '??', value: 'left' },
-  { label: '??', value: 'right' },
+  { label: '上滑', value: 'up' },
+  { label: '下滑', value: 'down' },
+  { label: '左滑', value: 'left' },
+  { label: '右滑', value: 'right' },
 ]
 
 export const variableScopeOptions: QuickOption[] = [
-  { label: '??', value: 'local' },
-  { label: '??', value: 'global' },
+  { label: '局部', value: 'local' },
+  { label: '全局', value: 'global' },
 ]
 
 export const httpMethodOptions: QuickOption[] = [
@@ -65,9 +65,9 @@ export const httpMethodOptions: QuickOption[] = [
 ]
 
 export const responseTypeOptions: QuickOption[] = [
-  { label: '????', value: 'auto' },
+  { label: '自动识别', value: 'auto' },
   { label: 'JSON', value: 'json' },
-  { label: '??', value: 'text' },
-  { label: '???', value: 'binary' },
+  { label: '文本', value: 'text' },
+  { label: '二进制', value: 'binary' },
 ]
 

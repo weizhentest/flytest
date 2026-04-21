@@ -2060,7 +2060,7 @@ def execute_test_case(test_case_id: int, payload: ExecuteTestCasePayload) -> dic
                 conn.execute("DELETE FROM executions WHERE id = ?", (execution_id,))
             if reserved_device_id is not None:
                 finish_device_lock(conn, reserved_device_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="failed to start execution worker") from exc
     return success(execution, "执行任务已启动", 201)
 
 

@@ -147,6 +147,8 @@ export function useAppAutomationTestCases() {
     if (!projectStore.currentProjectId) {
       testCases.value = []
       packages.value = []
+      devices.value = []
+      recentExecutionList.value = []
       return
     }
 
@@ -342,7 +344,7 @@ export function useAppAutomationTestCases() {
                   message:
                     (item.reason as { message?: string; error?: string } | undefined)?.message ||
                     (item.reason as { message?: string; error?: string } | undefined)?.error ||
-                    '????',
+                    '未知错误',
                 }
               : null,
           )
@@ -363,26 +365,26 @@ export function useAppAutomationTestCases() {
           const failedSummary = failedCases
             .slice(0, 3)
             .map(item => `${item.record.name}: ${item.message}`)
-            .join('?')
+            .join('；')
           Message.error(
-            failedSummary ? `?????????${failedSummary}` : '????????',
+            failedSummary ? `批量执行启动失败：${failedSummary}` : '批量执行启动失败',
           )
           return
         }
 
         executeVisible.value = false
         if (failedCases.length === 0) {
-          Message.success(`??? ${executions.length} ???????`)
+          Message.success(`已成功启动 ${executions.length} 条执行任务`)
           clearSelection()
         } else {
           selectedCaseIds.value = failedCases.map(item => item.record.id)
           const failedNames = failedCases
             .slice(0, 3)
             .map(item => item.record.name)
-            .join('?')
-          const suffix = failedCases.length > 3 ? ' ??????' : ' ?????'
+            .join('、')
+          const suffix = failedCases.length > 3 ? ' 等用例未成功启动' : ' 未成功启动'
           Message.warning(
-            `??? ${executions.length}/${submittedCases.length} ?????????${failedNames}${suffix}`,
+            `已启动 ${executions.length}/${submittedCases.length} 条执行任务，${failedNames}${suffix}`,
           )
         }
         await openExecutionWorkspace(executions[0].id)

@@ -2061,27 +2061,6 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                 daemon=True,
             ).start()
 
-        if False and task.get("notification_type") and (task.get("notify_on_success") or task.get("notify_on_failure")):
-            create_notification_log(
-                project_id=task["project_id"],
-                task_id=task_id,
-                task_name=task["name"],
-                task_type=task["task_type"],
-                actual_notification_type=task["notification_type"],
-                content=f"任务 {task['name']} 已触发执行",
-                status="success",
-                recipients=task["notify_emails"],
-                response_info={
-                    "delivery_status": "simulated",
-                    "detail": "task execution notification created",
-                    "task_id": task_id,
-                    "task_type": task["task_type"],
-                    "triggered_by": triggered_by,
-                    "triggered_at": triggered_at,
-                    **payload,
-                },
-            )
-
         return serialize_task(row or {}) | {"trigger_payload": payload}
     except HTTPException as exc:
         with connection() as conn:
@@ -2185,7 +2164,7 @@ def trigger_task_run(task_id: int, triggered_by: str = "FlyTest") -> dict[str, A
                             "detail": str(exc),
                         },
                     )
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="failed to start scheduled task execution") from exc
 
 
 def build_scheduled_task_query() -> str:
