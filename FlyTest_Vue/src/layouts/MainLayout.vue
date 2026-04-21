@@ -438,6 +438,10 @@
               <template #icon><icon-safe /></template>
               <span class="menu-link" title="权限管理">权限管理</span>
             </a-menu-item>
+            <a-menu-item key="project-deletion-logs" v-if="hasProjectDeletionLogsPermission">
+              <template #icon><icon-history /></template>
+              <span class="menu-link" title="项目删除记录">项目删除记录</span>
+            </a-menu-item>
             <a-menu-item key="llm-configs" v-if="hasLlmConfigsPermission">
               <template #icon><icon-tool /></template>
               <span class="menu-link" title="AI大模型配置">AI大模型配置</span>
@@ -786,6 +790,7 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   users: { route: '/users' },
   organizations: { route: '/organizations' },
   permissions: { route: '/permissions' },
+  'project-deletion-logs': { route: '/project-deletion-logs' },
   'llm-configs': { route: '/llm-configs' },
   'api-keys': { route: '/api-keys' },
   'remote-mcp-configs': { route: '/remote-mcp-configs' },
@@ -804,6 +809,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/users')) return 'users';
   if (path.startsWith('/organizations')) return 'organizations';
   if (path.startsWith('/permissions')) return 'permissions';
+  if (path.startsWith('/project-deletion-logs')) return 'project-deletion-logs';
   if (path.startsWith('/llm-configs')) return 'llm-configs';
   if (path.startsWith('/langgraph-chat')) return 'langgraph-chat';
   if (path.startsWith('/knowledge-management')) return 'knowledge-management';
@@ -867,7 +873,7 @@ const activeGroupKey = computed(() => {
   if (activeMenu.value.startsWith('ui-automation-')) return 'ui-automation';
   if (activeMenu.value.startsWith('data-factory-')) return 'data-factory';
   if (['testcases', 'testsuites', 'test-executions'].includes(activeMenu.value)) return 'test-management';
-  if (['users', 'organizations', 'permissions', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
+  if (['users', 'organizations', 'permissions', 'project-deletion-logs', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
     return 'settings';
   }
   return '';
@@ -1041,6 +1047,10 @@ const hasPermissionsPermission = computed(() => {
   return authStore.hasPermission('auth.view_permission');
 });
 
+const hasProjectDeletionLogsPermission = computed(() => {
+  return authStore.user?.is_staff || authStore.hasPermission('projects.view_projectdeletionrequest');
+});
+
 const hasLlmConfigsPermission = computed(() => {
   return authStore.hasPermission('langgraph_integration.view_llmconfig') ||
          authStore.hasPermission('llm_config.view_llmconfiguration') ||
@@ -1070,6 +1080,7 @@ const hasSystemMenuItems = computed(() => {
   return hasUsersPermission.value ||
          hasOrganizationsPermission.value ||
          hasPermissionsPermission.value ||
+         hasProjectDeletionLogsPermission.value ||
          hasLlmConfigsPermission.value ||
          hasApiKeysPermission.value ||
          hasMcpConfigsPermission.value ||

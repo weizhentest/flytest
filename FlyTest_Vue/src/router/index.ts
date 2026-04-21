@@ -10,6 +10,7 @@ const UserManagementView = () => import('../views/UserManagementView.vue')
 const OrganizationManagementView = () => import('../views/OrganizationManagementView.vue')
 const PermissionManagementView = () => import('../views/PermissionManagementView.vue')
 const ProjectManagementView = () => import('../views/ProjectManagementView.vue')
+const ProjectDeletionLogView = () => import('../views/ProjectDeletionLogView.vue')
 const TestCaseManagementView = () => import('../views/TestCaseManagementView.vue')
 const TestSuiteManagementView = () => import('../views/TestSuiteManagementView.vue')
 const TestExecutionHistoryView = () => import('../views/TestExecutionHistoryView.vue')
@@ -35,6 +36,7 @@ const privateRoutePreloaders = [
   DashboardView,
   PersonalCenterView,
   ProjectManagementView,
+  ProjectDeletionLogView,
   UserManagementView,
   OrganizationManagementView,
   PermissionManagementView,
@@ -86,6 +88,11 @@ const routes: RouteRecordRaw[] = [
         path: 'projects',
         name: 'ProjectManagement',
         component: ProjectManagementView,
+      },
+      {
+        path: 'project-deletion-logs',
+        name: 'ProjectDeletionLogs',
+        component: ProjectDeletionLogView,
       },
       {
         path: 'users',

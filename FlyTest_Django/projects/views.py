@@ -1,136 +1,229 @@
-from rest_framework import generics, status, filters
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from django.db.models import Count, Q
-from django.contrib.auth.models import User
-from django.utils import timezone
 from datetime import timedelta
 
-from .models import Project, ProjectMember
-from .serializers import (
-    ProjectSerializer, ProjectDetailSerializer,
-    ProjectMemberSerializer, ProjectMemberCreateSerializer
-)
-from .permissions import (
-    IsProjectMember, 
-    IsProjectAdmin, 
-    IsProjectOwner,
-    HasProjectMemberPermission
-)
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.db.models import Count, Q, Sum
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import filters, status
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
 from accounts.serializers import UserDetailSerializer
 from flytest_django.viewsets import BaseModelViewSet
 
+from .models import Project, ProjectDeletionRequest, ProjectMember
+from .permissions import HasProjectMemberPermission, IsProjectAdmin, IsProjectMember
+from .serializers import (
+    ProjectDeletionRequestSerializer,
+    ProjectDetailSerializer,
+    ProjectMemberCreateSerializer,
+    ProjectMemberSerializer,
+    ProjectSerializer,
+)
+
 
 class ProjectViewSet(BaseModelViewSet):
-    """
-    项目视图集，提供项目的CRUD操作
-    """
-    queryset = Project.objects.all()
+    queryset = Project.objects.filter(is_deleted=False)
     serializer_class = ProjectSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'description']
 
     def get_queryset(self):
-        """
-        只返回用户有权限访问的项目
-        """
         user = self.request.user
-
-        # 条件：超级用户；动作：返回全部项目；结果：平台管理员可跨项目管理。
+        queryset = Project.objects.filter(is_deleted=False)
         if user.is_superuser:
-            return Project.objects.all()
-
-        # 非超级用户仅可查看自己参与的项目，避免越权枚举其他项目。
-        return Project.objects.filter(members__user=user).distinct()
+            return queryset
+        return queryset.filter(members__user=user).distinct()
 
     def get_serializer_class(self):
-        """
-        根据操作类型返回不同的序列化器
-        """
-        # 详情接口需携带成员列表和凭据等扩展信息。
         if self.action == 'retrieve':
             return ProjectDetailSerializer
-        # 其余场景使用基础序列化器减少返回负载。
+        if self.action == 'deletion_requests':
+            return ProjectDeletionRequestSerializer
         return ProjectSerializer
 
     def get_permissions(self):
-        """
-        根据操作类型设置不同的权限
-        """
-        # 成员查看只要求登录且属于该项目；成员变更要求项目管理员或拥有者。
         if self.action == 'members':
             return [IsAuthenticated(), IsProjectMember()]
         if self.action in ['add_member', 'remove_member', 'update_member_role']:
             return [IsAuthenticated(), IsProjectAdmin()]
-
-        # 统计接口只读，要求登录且属于项目即可。
         if self.action == 'statistics':
             return [IsAuthenticated(), IsProjectMember()]
+        if self.action in ['deletion_requests', 'approve_deletion_request', 'reject_deletion_request', 'restore_deletion_request']:
+            return [IsAuthenticated()]
 
-        # 其他操作需要基础权限（用户认证 + Django模型权限）
         base_permissions = super().get_permissions()
-        
-        # 在基础权限之上叠加项目角色权限，保证“模型权限 + 业务角色”双层防线。
-        if self.action in ['update', 'partial_update']:
+        if self.action in ['update', 'partial_update', 'destroy']:
             return base_permissions + [IsProjectAdmin()]
-        elif self.action == 'destroy':
-            return base_permissions + [IsProjectOwner()]
-        elif self.action == 'retrieve':
+        if self.action == 'retrieve':
             return base_permissions + [IsProjectMember()]
-        elif self.action == 'create':
-            # 创建项目需要基础权限（包含Django模型的add权限）
-            return base_permissions
-        elif self.action == 'list':
-            # 列表操作需要基础权限（包含Django模型的view权限）
-            return base_permissions
-
-        # 对于其他操作，使用基础权限
         return base_permissions
 
     def perform_create(self, serializer):
-        """
-        创建项目时，自动将当前用户添加为项目拥有者和创建人，
-        并将所有平台管理员（超级用户和staff用户）添加为项目管理者
-        """
         with transaction.atomic():
-            # 条件：创建项目；动作：写入 creator；结果：项目可追溯创建责任人。
             project = serializer.save(creator=self.request.user)
-            
-            # 创建者默认成为 owner，保证其拥有项目最高管理权限。
-            ProjectMember.objects.create(
-                project=project,
-                user=self.request.user,
-                role='owner'
-            )
-            
-            # 获取所有平台管理员（超级用户和staff用户）
-            from django.db import models
-            platform_admins = User.objects.filter(
-                models.Q(is_superuser=True) | models.Q(is_staff=True),
-                is_active=True
-            )
-            
-            # 条件：遍历平台管理员；动作：补齐 admin 成员关系；结果：平台管理员自动具备项目接管能力。
+            ProjectMember.objects.create(project=project, user=self.request.user, role='owner')
+
+            platform_admins = User.objects.filter(Q(is_superuser=True) | Q(is_staff=True), is_active=True)
             for admin in platform_admins:
-                if admin != self.request.user:  # 避免重复添加当前用户
+                if admin != self.request.user:
                     ProjectMember.objects.get_or_create(
                         project=project,
                         user=admin,
-                        defaults={'role': 'admin'}
+                        defaults={'role': 'admin'},
                     )
+
+    def destroy(self, request, *args, **kwargs):
+        project = self.get_object()
+        if project.is_deleted:
+            return Response({'error': '该项目已删除'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = ProjectDeletionRequest.objects.filter(
+            project=project,
+            status=ProjectDeletionRequest.STATUS_PENDING,
+        ).first()
+        if existing:
+            return Response({'error': '该项目已有待审核的删除申请'}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = getattr(request.user, 'profile', None)
+        requester_name = getattr(profile, 'real_name', '') or request.user.username
+        deletion_request = ProjectDeletionRequest.objects.create(
+            project=project,
+            project_name=project.name,
+            project_display_id=project.id,
+            requested_by=request.user,
+            requested_by_name=requester_name,
+            request_note=(request.data or {}).get('note', ''),
+        )
+        serializer = ProjectDeletionRequestSerializer(deletion_request)
+        return Response(
+            {'message': '删除申请已提交，等待管理员审核', 'data': serializer.data},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    def _ensure_system_admin(self, request):
+        return bool(request.user and (request.user.is_superuser or request.user.is_staff))
+
+    def _get_deletion_request(self, request_id):
+        return get_object_or_404(ProjectDeletionRequest, pk=request_id)
+
+    @action(detail=False, methods=['get'], url_path='deletion-requests')
+    def deletion_requests(self, request):
+        if not self._ensure_system_admin(request):
+            return Response({'error': '仅管理员可查看删除记录'}, status=status.HTTP_403_FORBIDDEN)
+
+        queryset = ProjectDeletionRequest.objects.select_related(
+            'project', 'requested_by', 'reviewed_by', 'restored_by'
+        ).all()
+        serializer = ProjectDeletionRequestSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path=r'deletion-requests/(?P<request_id>\d+)/approve')
+    def approve_deletion_request(self, request, request_id=None):
+        if not self._ensure_system_admin(request):
+            return Response({'error': '仅管理员可审核删除申请'}, status=status.HTTP_403_FORBIDDEN)
+
+        deletion_request = self._get_deletion_request(request_id)
+        if deletion_request.status != ProjectDeletionRequest.STATUS_PENDING:
+            return Response({'error': '当前申请不是待审核状态'}, status=status.HTTP_400_BAD_REQUEST)
+        if not deletion_request.project_id:
+            return Response({'error': '项目不存在，无法执行删除'}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        profile = getattr(request.user, 'profile', None)
+        reviewer_name = getattr(profile, 'real_name', '') or request.user.username
+        review_note = (request.data or {}).get('review_note', '')
+
+        with transaction.atomic():
+            project = deletion_request.project
+            project.is_deleted = True
+            project.deleted_at = now
+            project.deleted_by = deletion_request.requested_by
+            project.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+
+            deletion_request.status = ProjectDeletionRequest.STATUS_APPROVED
+            deletion_request.reviewed_by = request.user
+            deletion_request.reviewed_by_name = reviewer_name
+            deletion_request.review_note = review_note
+            deletion_request.reviewed_at = now
+            deletion_request.deleted_at = now
+            deletion_request.save(
+                update_fields=[
+                    'status',
+                    'reviewed_by',
+                    'reviewed_by_name',
+                    'review_note',
+                    'reviewed_at',
+                    'deleted_at',
+                ]
+            )
+
+        serializer = ProjectDeletionRequestSerializer(deletion_request)
+        return Response({'message': '项目删除已审核通过', 'data': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path=r'deletion-requests/(?P<request_id>\d+)/reject')
+    def reject_deletion_request(self, request, request_id=None):
+        if not self._ensure_system_admin(request):
+            return Response({'error': '仅管理员可审核删除申请'}, status=status.HTTP_403_FORBIDDEN)
+
+        deletion_request = self._get_deletion_request(request_id)
+        if deletion_request.status != ProjectDeletionRequest.STATUS_PENDING:
+            return Response({'error': '当前申请不是待审核状态'}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = getattr(request.user, 'profile', None)
+        reviewer_name = getattr(profile, 'real_name', '') or request.user.username
+        deletion_request.status = ProjectDeletionRequest.STATUS_REJECTED
+        deletion_request.reviewed_by = request.user
+        deletion_request.reviewed_by_name = reviewer_name
+        deletion_request.review_note = (request.data or {}).get('review_note', '')
+        deletion_request.reviewed_at = timezone.now()
+        deletion_request.save(
+            update_fields=['status', 'reviewed_by', 'reviewed_by_name', 'review_note', 'reviewed_at']
+        )
+
+        serializer = ProjectDeletionRequestSerializer(deletion_request)
+        return Response({'message': '项目删除申请已驳回', 'data': serializer.data})
+
+    @action(detail=False, methods=['post'], url_path=r'deletion-requests/(?P<request_id>\d+)/restore')
+    def restore_deletion_request(self, request, request_id=None):
+        if not self._ensure_system_admin(request):
+            return Response({'error': '仅管理员可恢复项目'}, status=status.HTTP_403_FORBIDDEN)
+
+        deletion_request = self._get_deletion_request(request_id)
+        if deletion_request.status != ProjectDeletionRequest.STATUS_APPROVED:
+            return Response({'error': '仅已删除的项目支持恢复'}, status=status.HTTP_400_BAD_REQUEST)
+        if not deletion_request.project_id:
+            return Response({'error': '项目不存在，无法恢复'}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        profile = getattr(request.user, 'profile', None)
+        restorer_name = getattr(profile, 'real_name', '') or request.user.username
+
+        with transaction.atomic():
+            project = deletion_request.project
+            project.is_deleted = False
+            project.deleted_at = None
+            project.deleted_by = None
+            project.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+
+            deletion_request.status = ProjectDeletionRequest.STATUS_RESTORED
+            deletion_request.restored_at = now
+            deletion_request.restored_by = request.user
+            deletion_request.restored_by_name = restorer_name
+            deletion_request.save(
+                update_fields=['status', 'restored_at', 'restored_by', 'restored_by_name']
+            )
+
+        serializer = ProjectDeletionRequestSerializer(deletion_request)
+        return Response({'message': '项目已恢复', 'data': serializer.data})
 
     @action(detail=True, methods=['get'])
     def members(self, request, pk=None):
-        """
-        获取项目成员列表
-        """
         project = self.get_object()
         members = project.members.all()
 
-        # 分页开启时返回分页结构，避免大项目成员列表一次性返回。
         page = self.paginate_queryset(members)
         if page is not None:
             serializer = ProjectMemberSerializer(page, many=True)
@@ -141,17 +234,9 @@ class ProjectViewSet(BaseModelViewSet):
 
     @action(detail=True, methods=['post'])
     def add_member(self, request, pk=None):
-        """
-        添加项目成员
-        """
         project = self.get_object()
+        serializer = ProjectMemberCreateSerializer(data=request.data, context={'project': project})
 
-        serializer = ProjectMemberCreateSerializer(
-            data=request.data,
-            context={'project': project}
-        )
-
-        # 条件：参数合法；动作：创建成员并返回详情；结果：前端可直接刷新成员列表。
         if serializer.is_valid():
             member = serializer.save()
             member_serializer = ProjectMemberSerializer(member)
@@ -160,93 +245,63 @@ class ProjectViewSet(BaseModelViewSet):
 
     @action(detail=True, methods=['delete'])
     def remove_member(self, request, pk=None):
-        """
-        移除项目成员
-        """
         project = self.get_object()
         user_id = request.data.get('user_id')
 
-        # 条件：缺失 user_id；动作：直接拒绝；结果：避免执行无目标的删除操作。
         if not user_id:
-            return Response({"error": "必须提供用户ID"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '必须提供用户ID'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 条件：目标是 owner 且操作者非超级用户；动作：拒绝；结果：避免项目失去拥有者。
         member = get_object_or_404(ProjectMember, project=project, user_id=user_id)
         if member.role == 'owner' and not request.user.is_superuser:
-            return Response({"error": "不能移除项目拥有者"}, status=status.HTTP_403_FORBIDDEN)
-
-        # 条件：尝试删除自己且非超级用户；动作：拒绝；结果：避免误操作导致无人管理。
+            return Response({'error': '不能移除项目拥有者'}, status=status.HTTP_403_FORBIDDEN)
         if member.user == request.user and not request.user.is_superuser:
-            return Response({"error": "不能移除自己"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': '不能移除自己'}, status=status.HTTP_403_FORBIDDEN)
 
         member.delete()
-        # 使用HTTP_200_OK而不是HTTP_204_NO_CONTENT，并返回一个简单的消息
-        return Response({"message": "成员已成功移除"}, status=status.HTTP_200_OK)
+        return Response({'message': '成员已成功移除'}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['patch'])
     def update_member_role(self, request, pk=None):
-        """
-        更新项目成员角色
-        """
         project = self.get_object()
         user_id = request.data.get('user_id')
         role = request.data.get('role')
 
-        # 条件：缺少必要参数；动作：拒绝；结果：阻断不完整角色更新请求。
         if not user_id or not role:
-            return Response({"error": "必须提供用户ID和角色"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 条件：角色不在允许值中；动作：拒绝；结果：避免写入无效角色。
+            return Response({'error': '必须提供用户ID和角色'}, status=status.HTTP_400_BAD_REQUEST)
         if role not in [r[0] for r in ProjectMember.ROLE_CHOICES]:
-            return Response({"error": f"无效的角色，可选值为: {[r[0] for r in ProjectMember.ROLE_CHOICES]}"},
-                           status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '无效的角色'}, status=status.HTTP_400_BAD_REQUEST)
 
         member = get_object_or_404(ProjectMember, project=project, user_id=user_id)
-
-        # 条件：目标成员当前是 owner；动作：仅 owner/超级用户可修改；结果：限制关键角色变更入口。
-        if member.role == 'owner' and not (request.user.is_superuser or
-                                          ProjectMember.objects.filter(project=project, user=request.user, role='owner').exists()):
-            return Response({"error": "只有项目拥有者或超级管理员可以修改拥有者角色"}, status=status.HTTP_403_FORBIDDEN)
-
-        # 条件：尝试修改自己角色且非超级用户；动作：拒绝；结果：避免误降权后无法恢复。
+        if member.role == 'owner' and not (
+            request.user.is_superuser
+            or ProjectMember.objects.filter(project=project, user=request.user, role='owner').exists()
+        ):
+            return Response({'error': '只有项目拥有者或超级管理员可以修改拥有者角色'}, status=status.HTTP_403_FORBIDDEN)
         if member.user == request.user and not request.user.is_superuser:
-            return Response({"error": "不能修改自己的角色"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': '不能修改自己的角色'}, status=status.HTTP_403_FORBIDDEN)
 
-        # 使用事务确保数据一致性
         with transaction.atomic():
-            # 条件：目标角色为 owner；动作：先处理旧 owner；结果：确保任一时刻仅有一个 owner。
             if role == 'owner':
-                # 查找当前的项目拥有者
                 current_owners = ProjectMember.objects.filter(project=project, role='owner')
+                for owner in current_owners.exclude(user_id=int(user_id)):
+                    owner.role = 'admin'
+                    owner.save(update_fields=['role'])
 
-                # 如果存在拥有者且不是当前要修改的成员
-                if current_owners.exists() and current_owners.first().user_id != int(user_id):
-                    # 将原拥有者降级为管理员
-                    for owner in current_owners:
-                        owner.role = 'admin'
-                        owner.save()
-
-            # 更新当前成员的角色
             member.role = role
-            member.save()
+            member.save(update_fields=['role'])
 
         serializer = ProjectMemberSerializer(member)
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
-        """
-        获取项目统计数据
-        """
         project = self.get_object()
 
-        # 导入所需模型
-        from testcases.models import TestCase, TestExecution
-        from skills.models import Skill
         from mcp_tools.models import RemoteMCPConfig
-        from ui_automation.models import UiTestCase, UiExecutionRecord
+        from skills.models import Skill
+        from testcases.models import TestCase, TestExecution
+        from ui_automation.models import UiExecutionRecord, UiTestCase
 
-        # 1. 功能用例统计（按审核状态）
         testcase_stats = TestCase.objects.filter(project=project).aggregate(
             total=Count('id'),
             pending_review=Count('id', filter=Q(review_status='pending_review')),
@@ -256,7 +311,6 @@ class ProjectViewSet(BaseModelViewSet):
             unavailable=Count('id', filter=Q(review_status='unavailable')),
         )
 
-        # 2. 测试执行统计（最近的执行汇总）
         executions = TestExecution.objects.filter(suite__project=project)
         execution_stats = executions.aggregate(
             total_executions=Count('id'),
@@ -264,17 +318,6 @@ class ProjectViewSet(BaseModelViewSet):
             total_failed=Count('id', filter=Q(status='failed')),
             total_cancelled=Count('id', filter=Q(status='cancelled')),
         )
-
-        # 计算用例执行结果汇总
-        execution_result_stats = executions.aggregate(
-            passed_count=Count('passed_count'),
-            failed_count=Count('failed_count'),
-            skipped_count=Count('skipped_count'),
-            error_count=Count('error_count'),
-        )
-
-        # 从所有执行记录中汇总实际的用例执行结果
-        from django.db.models import Sum
         execution_result_totals = executions.aggregate(
             total_passed_cases=Sum('passed_count'),
             total_failed_cases=Sum('failed_count'),
@@ -283,50 +326,40 @@ class ProjectViewSet(BaseModelViewSet):
             total_cases=Sum('total_count'),
         )
 
-        # 4. 执行历史趋势（近7天和近30天）
         now = timezone.now()
-        seven_days_ago = now - timedelta(days=7)
         thirty_days_ago = now - timedelta(days=30)
 
-        # 近 7 天按天聚合执行趋势，供前端绘制趋势图。
         daily_stats_7d = []
         for i in range(7):
             day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
             day_end = day_start + timedelta(days=1)
             day_executions = executions.filter(created_at__gte=day_start, created_at__lt=day_end)
-            day_agg = day_executions.aggregate(
-                count=Count('id'),
-                passed=Sum('passed_count'),
-                failed=Sum('failed_count'),
+            day_agg = day_executions.aggregate(count=Count('id'), passed=Sum('passed_count'), failed=Sum('failed_count'))
+            daily_stats_7d.append(
+                {
+                    'date': day_start.strftime('%Y-%m-%d'),
+                    'execution_count': day_agg['count'] or 0,
+                    'passed': day_agg['passed'] or 0,
+                    'failed': day_agg['failed'] or 0,
+                }
             )
-            daily_stats_7d.append({
-                'date': day_start.strftime('%Y-%m-%d'),
-                'execution_count': day_agg['count'] or 0,
-                'passed': day_agg['passed'] or 0,
-                'failed': day_agg['failed'] or 0,
-            })
         daily_stats_7d.reverse()
 
-        # 近30天统计汇总
         stats_30d = executions.filter(created_at__gte=thirty_days_ago).aggregate(
             execution_count=Count('id'),
             passed=Sum('passed_count'),
             failed=Sum('failed_count'),
         )
 
-        # 5. MCP统计（全局共享的MCP配置）
         mcp_stats = {
             'total': RemoteMCPConfig.objects.count(),
             'active': RemoteMCPConfig.objects.filter(is_active=True).count(),
         }
-
-        # 6. Skills统计（全局共享的Skills）
         skill_stats = {
             'total': Skill.objects.count(),
             'active': Skill.objects.filter(is_active=True).count(),
         }
 
-        # 7. UI自动化统计
         ui_testcases = UiTestCase.objects.filter(project=project)
         ui_executions = UiExecutionRecord.objects.filter(test_case__project=project)
         ui_automation_stats = {
@@ -339,12 +372,8 @@ class ProjectViewSet(BaseModelViewSet):
             },
         }
 
-        # 构建响应数据
         response_data = {
-            'project': {
-                'id': project.id,
-                'name': project.name,
-            },
+            'project': {'id': project.id, 'name': project.name},
             'testcases': {
                 'total': testcase_stats['total'],
                 'by_review_status': {
