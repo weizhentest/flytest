@@ -227,15 +227,15 @@
         </a-form-item>
         
         <!-- 凭据列表 -->
-        <a-divider orientation="left">项目凭据</a-divider>
-        <div v-for="(credential, index) in addProjectForm.credentials" :key="index" style="margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
+        <a-divider v-if="false" orientation="left">Project Credentials</a-divider>
+        <div v-if="false" v-for="(credential, index) in addProjectForm.credentials" :key="index" style="margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
           <a-input v-model="credential.system_url" placeholder="项目地址" style="flex: 2;" />
           <a-input v-model="credential.username" placeholder="用户名" style="flex: 1;" />
           <a-input-password v-model="credential.password" placeholder="密码" style="flex: 1;" />
           <a-input v-model="credential.user_role" placeholder="角色" style="flex: 1;" />
           <a-button type="text" status="danger" @click="removeCredential(index)">删除</a-button>
         </div>
-        <a-button type="dashed" long @click="addCredential">
+        <a-button v-if="false" type="dashed" long @click="addCredential">
           <template #icon>
             <icon-plus />
           </template>
@@ -271,15 +271,15 @@
         </a-form-item>
         
         <!-- 凭据列表 -->
-        <a-divider orientation="left">项目凭据</a-divider>
-        <div v-for="(credential, index) in editProjectForm.credentials" :key="index" style="margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
+        <a-divider v-if="false" orientation="left">Project Credentials</a-divider>
+        <div v-if="false" v-for="(credential, index) in editProjectForm.credentials" :key="index" style="margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
           <a-input v-model="credential.system_url" placeholder="项目地址" style="flex: 2;" />
           <a-input v-model="credential.username" placeholder="用户名" style="flex: 1;" />
           <a-input-password v-model="credential.password" placeholder="留空不改" style="flex: 1;" />
           <a-input v-model="credential.user_role" placeholder="角色" style="flex: 1;" />
           <a-button type="text" status="danger" @click="removeEditCredential(index)">删除</a-button>
         </div>
-        <a-button type="dashed" long @click="addEditCredential">
+        <a-button v-if="false" type="dashed" long @click="addEditCredential">
           <template #icon>
             <icon-plus />
           </template>
@@ -737,7 +737,7 @@ const handleUpdateRole = async () => {
 // 添加项目模态框相关
 const addProjectModalVisible = ref(false);
 const addProjectFormRef = ref();
-const addProjectForm = reactive<CreateProjectRequest>({
+const addProjectForm = reactive<CreateProjectRequest & { credentials: any[] }>({
   name: '',
   description: '',
   credentials: []
@@ -780,8 +780,7 @@ const showAddProjectModal = () => {
   addProjectForm.name = '';
   addProjectForm.description = '';
   addProjectForm.credentials = [];
-  // 默认添加一个凭据
-  addCredential();
+  // Credentials UI removed
   // 显示模态框
   addProjectModalVisible.value = true;
 };
@@ -804,8 +803,7 @@ const handleAddProject = async () => {
   // 创建项目数据对象
   const projectData: CreateProjectRequest = {
     name: addProjectForm.name,
-    description: addProjectForm.description,
-    credentials: addProjectForm.credentials || []
+    description: addProjectForm.description
   };
 
   try {
@@ -828,7 +826,7 @@ const handleAddProject = async () => {
 // 编辑项目模态框相关
 const editProjectModalVisible = ref(false);
 const editProjectFormRef = ref();
-const editProjectForm = reactive<UpdateProjectRequest & { id: number }>({
+const editProjectForm = reactive<UpdateProjectRequest & { id: number; credentials: any[] }>({
   id: 0,
   name: '',
   description: '',
@@ -876,14 +874,7 @@ const editProject = (project: Project, event?: Event) => {
   editProjectForm.name = project.name;
   editProjectForm.description = project.description;
   
-  // 复制凭据数据（密码不显示）
-  editProjectForm.credentials = (project.credentials || []).map(cred => ({
-    id: cred.id,
-    system_url: cred.system_url,
-    username: cred.username,
-    password: '',
-    user_role: cred.user_role
-  }));
+  editProjectForm.credentials = [];
 
   editProjectModalVisible.value = true;
 };
@@ -905,8 +896,7 @@ const handleEditProject = async () => {
   // 更新项目数据对象
   const projectData: UpdateProjectRequest = {
     name: editProjectForm.name,
-    description: editProjectForm.description,
-    credentials: editProjectForm.credentials || []
+    description: editProjectForm.description
   };
 
   try {

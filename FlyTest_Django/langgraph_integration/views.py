@@ -984,44 +984,6 @@ def get_effective_system_prompt(user, prompt_id=None):
         return None, "none"
 
 
-async def _format_project_credentials(project):
-    """
-    格式化项目凭据信息为文本
-
-    Args:
-        project: 项目对象
-
-    Returns:
-        str: 格式化后的凭据信息文本
-    """
-    try:
-        from projects.models import ProjectCredential
-
-        # 获取项目的所有凭据
-        credentials = await sync_to_async(list)(
-            ProjectCredential.objects.filter(project=project).all()
-        )
-
-        if not credentials:
-            return "当前项目未配置登录信息。\n"
-
-        # 格式化凭据信息
-        credentials_text = "**当前项目已配置以下登录信息**：\n"
-        for cred in credentials:
-            role = cred.user_role or "未指定角色"
-            url = cred.system_url or "未指定URL"
-            username = cred.username or "未指定用户名"
-            password = cred.password or "未指定密码"
-            credentials_text += f"- **{role}**：系统地址: {url} / 用户名: {username} / 密码: {password}\n"
-
-        credentials_text += "\n"
-        return credentials_text
-
-    except Exception as e:
-        logger.error(f"Format project credentials error: {e}")
-        return ""
-
-
 async def _format_project_skills(project):
     """
     格式化全局 Skills 信息为文本（渐进式加载）
@@ -1085,7 +1047,7 @@ def _build_project_scope_hint(project) -> str:
 
 async def _inject_project_context(prompt_content: str, project) -> str:
     """
-    注入项目上下文（项目作用域、凭据和 Skills）到提示词中
+    注入项目上下文（项目作用域和 Skills）到提示词中
 
     Args:
         prompt_content: 原始提示词内容
@@ -1112,11 +1074,6 @@ async def _inject_project_context(prompt_content: str, project) -> str:
     ):
         prompt_content = f"{project_scope_hint}\n\n{prompt_content}".strip()
 
-    # 注入凭据信息
-    if "{credentials_info}" in prompt_content:
-        credentials_text = await _format_project_credentials(project)
-        prompt_content = prompt_content.replace("{credentials_info}", credentials_text)
-
     # 注入 Skills 信息
     if "{skills_info}" in prompt_content:
         skills_text = await _format_project_skills(project)
@@ -1134,7 +1091,7 @@ async def get_effective_system_prompt_async(user, prompt_id=None, project=None):
     """
     获取有效的系统提示词（异步版本）
     优先级：用户指定的提示词 > 用户默认提示词 > 全局LLM配置的system_prompt
-    支持占位符: {project_scope_hint} 注入项目作用域, {credentials_info} 注入项目凭据,
+    支持占位符: {project_scope_hint} 注入项目作用域,
     {skills_info} 注入项目 Skills 元数据
     如果未使用 {skills_info} 占位符，活跃的 Skills 元数据将自动追加到提示词末尾
     （完整的 SKILL.md 内容通过 read_skill_content 工具按需获取）
@@ -1142,7 +1099,7 @@ async def get_effective_system_prompt_async(user, prompt_id=None, project=None):
     Args:
         user: 当前用户
         prompt_id: 指定的提示词ID（可选）
-        project: 项目对象（可选），用于注入凭据和 Skills 信息
+        project: 项目对象（可选），用于注入 Skills 信息
 
     Returns:
         tuple: (prompt_content, prompt_source)

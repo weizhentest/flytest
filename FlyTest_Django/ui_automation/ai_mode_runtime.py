@@ -23,8 +23,6 @@ from django.utils import timezone
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langgraph_integration.models import LLMConfig, get_user_active_llm_config
-from projects.models import ProjectCredential
-
 from .models import UiAIExecutionRecord, UiElement, UiEnvironmentConfig, UiModule, UiPage
 
 logger = logging.getLogger(__name__)
@@ -1334,15 +1332,8 @@ def _get_default_env_config(project_id: int) -> UiEnvironmentConfig | None:
     if env_config is not None:
         return env_config
 
-    credential = (
-        ProjectCredential.objects.filter(project_id=project_id)
-        .exclude(system_url="")
-        .order_by("id")
-        .first()
-    )
     fallback_base_url = (
-        (credential.system_url if credential and credential.system_url else "")
-        or getattr(settings, "UI_AUTOMATION_DEFAULT_BASE_URL", "")
+        getattr(settings, "UI_AUTOMATION_DEFAULT_BASE_URL", "")
         or "http://localhost:5173"
     )
 
