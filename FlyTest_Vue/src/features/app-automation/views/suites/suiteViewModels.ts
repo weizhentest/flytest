@@ -1,4 +1,4 @@
-import type { AppDevice, AppExecution, AppTestCase, AppTestSuite } from '../../types'
+import type { AppDevice, AppExecution, AppPackage, AppTestCase, AppTestSuite } from '../../types'
 
 export interface SuiteFilters {
   search: string
@@ -14,6 +14,7 @@ export interface SuiteFormModel {
 
 export interface SuiteRunFormModel {
   device_id: number | undefined
+  package_name: string | undefined
 }
 
 export interface SuiteStatusMeta {
@@ -79,6 +80,7 @@ export interface SuiteHistoryDialogProps {
 export interface SuiteRunDialogProps {
   runForm: SuiteRunFormModel
   availableDevices: AppDevice[]
+  packages: AppPackage[]
 }
 
 export interface SuitesTableCardProps {

@@ -9,7 +9,7 @@ import {
   openExecutionReportWindow,
   pushAppAutomationExecutions,
 } from '../appAutomationNavigation'
-import type { AppDevice, AppExecution, AppTestCase, AppTestSuite } from '../../types'
+import type { AppDevice, AppExecution, AppPackage, AppTestCase, AppTestSuite } from '../../types'
 import type {
   SuiteFilters,
   SuiteFormModel,
@@ -36,6 +36,7 @@ export function useAppAutomationSuites() {
   const suites = ref<AppTestSuite[]>([])
   const testCases = ref<AppTestCase[]>([])
   const devices = ref<AppDevice[]>([])
+  const packages = ref<AppPackage[]>([])
   const history = ref<AppExecution[]>([])
   const selectedSuite = ref<AppTestSuite | null>(null)
   const currentExecution = ref<AppExecution | null>(null)
@@ -55,6 +56,7 @@ export function useAppAutomationSuites() {
 
   const runForm = reactive<SuiteRunFormModel>({
     device_id: undefined,
+    package_name: undefined,
   })
 
   const availableDevices = computed(() =>
@@ -215,6 +217,15 @@ export function useAppAutomationSuites() {
   const resetRunState = () => {
     currentSuiteId.value = null
     runForm.device_id = undefined
+    runForm.package_name = undefined
+  }
+
+  const resolveDefaultSuitePackageName = (record: AppTestSuite) => {
+    const packageNames = record.suite_cases
+      .map(item => String(item.test_case.package_name || '').trim())
+      .filter(Boolean)
+    const uniquePackageNames = [...new Set(packageNames)]
+    return uniquePackageNames.length === 1 ? uniquePackageNames[0] : undefined
   }
 
   const loadData = async () => {
@@ -222,6 +233,7 @@ export function useAppAutomationSuites() {
       suites.value = []
       testCases.value = []
       devices.value = []
+      packages.value = []
       history.value = []
       selectedSuite.value = null
       currentExecution.value = null
@@ -231,17 +243,19 @@ export function useAppAutomationSuites() {
 
     loading.value = true
     try {
-      const [suiteList, caseList, deviceList] = await Promise.all([
+      const [suiteList, caseList, deviceList, packageList] = await Promise.all([
         AppAutomationService.getTestSuites(
           projectStore.currentProjectId,
           filters.search.trim() || undefined,
         ),
         AppAutomationService.getTestCases(projectStore.currentProjectId),
         AppAutomationService.getDevices(),
+        AppAutomationService.getPackages(projectStore.currentProjectId),
       ])
       suites.value = suiteList
       testCases.value = caseList
       devices.value = deviceList
+      packages.value = packageList
       if (selectedSuite.value?.id) {
         const nextSuite = suiteList.find(item => item.id === selectedSuite.value?.id) || null
         if (nextSuite) {
@@ -321,8 +335,13 @@ export function useAppAutomationSuites() {
   }
 
   const openRun = (record: AppTestSuite) => {
+    if (!availableDevices.value.length) {
+      Message.warning('当前没有可用设备，请先连接或释放设备后再执行套件')
+      return
+    }
     currentSuiteId.value = record.id
     runForm.device_id = availableDevices.value[0]?.id
+    runForm.package_name = resolveDefaultSuitePackageName(record)
     runVisible.value = true
   }
 
@@ -342,6 +361,7 @@ export function useAppAutomationSuites() {
     try {
       const result = await AppAutomationService.runTestSuite(currentSuiteId.value, {
         device_id: runForm.device_id,
+        package_name: runForm.package_name || undefined,
         triggered_by: authStore.currentUser?.username || 'FlyTest',
       })
       runVisible.value = false
@@ -540,6 +560,7 @@ export function useAppAutomationSuites() {
     executionDetailVisible,
     suites,
     testCases,
+    packages,
     history,
     selectedSuite,
     currentExecution,

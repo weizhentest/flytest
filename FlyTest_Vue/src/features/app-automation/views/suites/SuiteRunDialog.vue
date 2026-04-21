@@ -8,6 +8,17 @@
           </a-option>
         </a-select>
       </a-form-item>
+      <a-form-item field="package_name" label="应用包覆盖">
+        <a-select
+          v-model="runForm.package_name"
+          allow-clear
+          placeholder="可选：覆盖套件内用例默认应用包"
+        >
+          <a-option v-for="item in packages" :key="item.id" :value="item.package_name">
+            {{ item.name }}（{{ item.package_name }}）
+          </a-option>
+        </a-select>
+      </a-form-item>
     </a-form>
   </a-modal>
 </template>

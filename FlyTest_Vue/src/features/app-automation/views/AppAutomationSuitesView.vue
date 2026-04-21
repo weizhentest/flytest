@@ -42,6 +42,7 @@
         v-model:visible="runVisible"
         :run-form="runForm"
         :available-devices="availableDevices"
+        :packages="packages"
         @run="runSuite"
       />
 
@@ -111,6 +112,7 @@ const {
   executionDetailVisible,
   suites,
   testCases,
+  packages,
   history,
   selectedSuite,
   currentExecution,
