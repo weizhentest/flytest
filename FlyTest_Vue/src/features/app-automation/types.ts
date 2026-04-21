@@ -30,6 +30,8 @@ export interface AppDevice {
   last_seen_at?: string | null
   updated_at: string
   is_locked: boolean
+  can_unlock?: boolean
+  unlock_block_reason?: string
   can_delete?: boolean
   delete_block_reason?: string
 }

@@ -62,6 +62,7 @@
         :mode="executeMode"
         :execute-form="executeForm"
         :available-devices="availableDevices"
+        :packages="packages"
         @execute="executeCase"
       />
     </template>

@@ -13,6 +13,7 @@ export interface TestCaseFormModel {
 
 export interface TestCaseExecuteFormModel {
   device_id: number | undefined
+  package_id: number | undefined
 }
 
 export interface TestCaseStats {
@@ -63,4 +64,5 @@ export interface TestCaseExecuteDialogProps {
   mode: 'single' | 'batch'
   executeForm: TestCaseExecuteFormModel
   availableDevices: AppDevice[]
+  packages: AppPackage[]
 }

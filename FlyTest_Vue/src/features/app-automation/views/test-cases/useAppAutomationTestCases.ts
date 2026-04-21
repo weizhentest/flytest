@@ -49,6 +49,7 @@ export function useAppAutomationTestCases() {
 
   const executeForm = reactive<TestCaseExecuteFormModel>({
     device_id: undefined,
+    package_id: undefined,
   })
 
   const availableDevices = computed(() =>
@@ -255,6 +256,7 @@ export function useAppAutomationTestCases() {
     executeMode.value = 'single'
     currentExecutionCaseId.value = record.id
     executeForm.device_id = availableDevices.value[0]?.id
+    executeForm.package_id = record.package_id || undefined
     executeVisible.value = true
   }
 
@@ -285,6 +287,10 @@ export function useAppAutomationTestCases() {
     executeMode.value = 'single'
     currentExecutionCaseId.value = selectedCaseIds.value[0] || null
     executeForm.device_id = availableDevices.value[0]?.id
+    executeForm.package_id =
+      selectedCases.value[0]?.package_id ??
+      testCases.value.find(item => item.id === currentExecutionCaseId.value)?.package_id ??
+      undefined
     executeVisible.value = true
   }
 
@@ -295,6 +301,7 @@ export function useAppAutomationTestCases() {
   const resetExecuteState = () => {
     executeMode.value = 'single'
     executeForm.device_id = undefined
+    executeForm.package_id = undefined
     currentExecutionCaseId.value = null
   }
 
@@ -324,6 +331,7 @@ export function useAppAutomationTestCases() {
           try {
             const execution = await AppAutomationService.executeTestCase(item.id, {
               device_id: executeForm.device_id as number,
+              package_id: executeForm.package_id ?? null,
               trigger_mode: 'manual',
               triggered_by: authStore.currentUser?.username || 'FlyTest',
             })
@@ -399,6 +407,7 @@ export function useAppAutomationTestCases() {
 
       const execution = await AppAutomationService.executeTestCase(currentExecutionCaseId.value, {
         device_id: executeForm.device_id,
+        package_id: executeForm.package_id ?? null,
         trigger_mode: 'manual',
         triggered_by: authStore.currentUser?.username || 'FlyTest',
       })

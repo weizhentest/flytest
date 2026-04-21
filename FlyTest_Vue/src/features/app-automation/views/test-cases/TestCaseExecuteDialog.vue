@@ -12,6 +12,13 @@
           </a-option>
         </a-select>
       </a-form-item>
+      <a-form-item field="package_id" label="搴旂敤鍖�">
+        <a-select v-model="executeForm.package_id" allow-clear placeholder="浣跨敤鐢ㄤ緥缁戝畾搴旂敤鍖�">
+          <a-option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">
+            {{ pkg.name }}
+          </a-option>
+        </a-select>
+      </a-form-item>
     </a-form>
   </a-modal>
 </template>

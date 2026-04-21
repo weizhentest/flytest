@@ -48,10 +48,44 @@ def get_execution_report_dir(conn, execution_id: int) -> Path:
     return ensure_reports_root(conn) / f"execution-{execution_id}"
 
 
+def _resolve_stored_execution_report_dir(execution_id: int, report_path: str) -> Path | None:
+    cleaned_path = str(report_path or "").strip()
+    if not cleaned_path:
+        return None
+    candidate = Path(cleaned_path).resolve()
+    if candidate.name != f"execution-{execution_id}":
+        return None
+    if "app-automation-reports" not in candidate.parts:
+        return None
+    return candidate
+
+
+def list_execution_report_dirs(conn, execution_id: int, report_path: str = "") -> list[Path]:
+    dirs: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (
+        get_execution_report_dir(conn, execution_id),
+        _resolve_stored_execution_report_dir(execution_id, report_path),
+    ):
+        if candidate is None:
+            continue
+        normalized = str(candidate.resolve())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        dirs.append(candidate)
+    return dirs
+
+
 def delete_execution_report_artifacts(conn, execution_id: int) -> None:
-    report_dir = get_execution_report_dir(conn, execution_id)
-    if report_dir.exists():
-        shutil.rmtree(report_dir, ignore_errors=True)
+    execution = fetch_one(conn, "SELECT report_path FROM executions WHERE id = ?", (execution_id,))
+    for report_dir in list_execution_report_dirs(
+        conn,
+        execution_id,
+        report_path=(execution or {}).get("report_path") or "",
+    ):
+        if report_dir.exists():
+            shutil.rmtree(report_dir, ignore_errors=True)
 
 
 def _format_value(value: Any) -> str:
@@ -390,10 +424,14 @@ def resolve_report_file(conn, execution_id: int, file_path: str = "index.html") 
         raise FileNotFoundError("执行记录不存在")
 
     report_path = (execution.get("report_path") or "").strip()
-    if not report_path:
+    report_dir = _resolve_stored_execution_report_dir(execution_id, report_path)
+    current_report_dir = get_execution_report_dir(conn, execution_id)
+    if report_dir is None:
         report_path = write_execution_report(conn, execution_id)
-
-    report_dir = Path(report_path).resolve()
+        report_dir = Path(report_path).resolve()
+    elif report_dir != current_report_dir and not report_dir.exists():
+        report_path = write_execution_report(conn, execution_id)
+        report_dir = Path(report_path).resolve()
     candidate = (report_dir / (file_path or "index.html")).resolve()
 
     try:

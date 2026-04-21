@@ -376,6 +376,72 @@ def resolve_element_asset_file(asset_path: str) -> Path:
     return candidate
 
 
+def element_asset_is_referenced_by_other_elements(
+    conn,
+    asset_path: str,
+    *,
+    exclude_element_id: int | None = None,
+) -> bool:
+    normalized_path = normalize_asset_path(asset_path)
+    if not normalized_path:
+        return False
+    rows = fetch_all(conn, "SELECT * FROM elements")
+    for row in rows:
+        if exclude_element_id is not None and int(row["id"]) == exclude_element_id:
+            continue
+        if build_element_image_path(serialize_element(row)) == normalized_path:
+            return True
+    return False
+
+
+def element_asset_is_referenced_by_any_test_case(conn, asset_path: str) -> bool:
+    normalized_path = normalize_asset_path(asset_path)
+    if not normalized_path:
+        return False
+    rows = fetch_all(conn, "SELECT ui_flow FROM test_cases")
+    for row in rows:
+        ui_flow = json_loads(row.get("ui_flow"), {})
+        if _flow_references_element_value(ui_flow, {normalized_path}):
+            return True
+    return False
+
+
+def cleanup_unused_element_asset(
+    conn,
+    asset_path: str,
+    *,
+    exclude_element_id: int | None = None,
+) -> None:
+    normalized_path = normalize_asset_path(asset_path)
+    if not normalized_path:
+        return
+    if element_asset_is_referenced_by_other_elements(
+        conn,
+        normalized_path,
+        exclude_element_id=exclude_element_id,
+    ):
+        return
+    if element_asset_is_referenced_by_any_test_case(conn, normalized_path):
+        return
+
+    try:
+        asset_file = resolve_element_asset_file(normalized_path)
+    except HTTPException:
+        return
+
+    if asset_file.exists() and asset_file.is_file():
+        asset_file.unlink()
+
+    asset_root = get_element_asset_root().resolve()
+    current_dir = asset_file.parent
+    while current_dir != asset_root.parent and current_dir.exists():
+        try:
+            current_dir.rmdir()
+        except OSError:
+            break
+        current_dir = current_dir.parent
+
+
 def _collect_element_asset_references(payload: ElementPayload) -> list[str]:
     references: list[str] = []
 
@@ -524,6 +590,47 @@ def annotate_device_delete_state(conn, devices: list[dict[str, Any]]) -> list[di
         reason = reason_map.get(int(item["id"]))
         item["can_delete"] = reason is None
         item["delete_block_reason"] = reason or ""
+    return devices
+
+
+def annotate_device_runtime_actions(conn, devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    device_ids = [int(item["id"]) for item in devices if item.get("id") is not None]
+    active_execution_device_ids: set[int] = set()
+    if device_ids:
+        placeholders = ", ".join("?" for _ in device_ids)
+        active_execution_rows = fetch_all(
+            conn,
+            f"""
+            SELECT DISTINCT device_id
+            FROM executions
+            WHERE device_id IN ({placeholders}) AND status IN ('pending', 'running')
+            """,
+            tuple(device_ids),
+        )
+        active_execution_device_ids = {
+            int(row["device_id"])
+            for row in active_execution_rows
+            if row.get("device_id") is not None
+        }
+    for item in devices:
+        device_id = int(item["id"])
+        status = str(item.get("status") or "").strip()
+        unlock_reason = ""
+        can_unlock = status == "locked"
+        if status == "stopping":
+            unlock_reason = "设备正在停止执行，暂时不能手动释放"
+            can_unlock = False
+        elif status == "offline":
+            unlock_reason = "离线设备没有可释放的运行时锁"
+            can_unlock = False
+        elif status != "locked":
+            unlock_reason = "设备当前未锁定"
+            can_unlock = False
+        elif device_id in active_execution_device_ids:
+            unlock_reason = "设备正被活动执行占用，不能手动释放"
+            can_unlock = False
+        item["can_unlock"] = can_unlock
+        item["unlock_block_reason"] = unlock_reason
     return devices
 
 
@@ -1332,9 +1439,12 @@ def list_devices(search: str | None = Query(default=None), status: str | None = 
         params.append(status)
     query += " ORDER BY updated_at DESC"
     with connection() as conn:
-        devices = annotate_device_delete_state(
+        devices = annotate_device_runtime_actions(
             conn,
-            [serialize_device(item) for item in fetch_all(conn, query, params)],
+            annotate_device_delete_state(
+                conn,
+                [serialize_device(item) for item in fetch_all(conn, query, params)],
+            ),
         )
     return success(devices)
 
@@ -1405,6 +1515,24 @@ def unlock_device(device_id: int) -> dict[str, Any]:
             raise HTTPException(status_code=409, detail="device is stopping an execution and cannot be unlocked")
         if device["status"] == "offline":
             raise HTTPException(status_code=409, detail="offline device does not hold an unlockable runtime lock")
+        if device["status"] != "locked":
+            raise HTTPException(status_code=409, detail="device is not currently locked")
+        active_execution = fetch_one(
+            conn,
+            """
+            SELECT id, status
+            FROM executions
+            WHERE device_id = ? AND status IN ('pending', 'running')
+            ORDER BY CASE WHEN status = 'running' THEN 0 ELSE 1 END, created_at ASC, id ASC
+            LIMIT 1
+            """,
+            (device_id,),
+        )
+        if active_execution is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="device is currently reserved by an active execution and cannot be manually unlocked",
+            )
         finish_device_lock(conn, device_id)
         return success(get_device_or_404(conn, device_id), "设备已释放")
 
@@ -1816,6 +1944,8 @@ def update_element(element_id: int, payload: ElementPayload) -> dict[str, Any]:
             if "elements.project_id, elements.name" in str(exc):
                 raise HTTPException(status_code=409, detail="element name already exists in this project") from exc
             raise
+        if existing_image_path and next_image_path != existing_image_path:
+            cleanup_unused_element_asset(conn, existing_image_path, exclude_element_id=element_id)
         return success(get_element_or_404(conn, element_id), "元素已更新")
 
 
@@ -1897,16 +2027,19 @@ async def upload_element_asset(
 def delete_element(element_id: int) -> dict[str, Any]:
     with connection() as conn:
         element = get_element_or_404(conn, element_id)
+        image_path = build_element_image_path(element)
         if element_is_referenced_by_test_cases(
             conn,
             element_id=element_id,
             project_id=int(element["project_id"]),
             element_name=str(element.get("name") or ""),
             selector_value=str(element.get("selector_value") or ""),
-            image_path=build_element_image_path(element),
+            image_path=image_path,
         ):
             raise HTTPException(status_code=409, detail="element is referenced by test cases")
         conn.execute("DELETE FROM elements WHERE id = ?", (element_id,))
+        if image_path:
+            cleanup_unused_element_asset(conn, image_path, exclude_element_id=element_id)
         return success(None, "元素已删除")
 
 
@@ -2072,6 +2205,10 @@ def execute_test_case(test_case_id: int, payload: ExecuteTestCasePayload) -> dic
     execution_id: int | None = None
     with connection() as conn:
         test_case = get_test_case_or_404(conn, test_case_id)
+        package_override = None
+        if payload.package_id is not None:
+            package_override = get_package_or_404(conn, payload.package_id)
+            ensure_package_belongs_to_project(package_override, int(test_case["project_id"]))
         reserve_device_for_execution(
             conn,
             payload.device_id,
@@ -2090,7 +2227,7 @@ def execute_test_case(test_case_id: int, payload: ExecuteTestCasePayload) -> dic
             (
                 test_case["project_id"],
                 test_case_id,
-                test_case.get("package_id"),
+                package_override["id"] if package_override else test_case.get("package_id"),
                 payload.device_id,
                 payload.trigger_mode,
                 payload.triggered_by,

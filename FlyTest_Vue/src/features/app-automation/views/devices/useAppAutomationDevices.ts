@@ -111,7 +111,7 @@ export function useAppAutomationDevices() {
   const canLock = (record: AppDevice) =>
     ['available', 'online'].includes(record.status)
 
-  const canUnlock = (record: AppDevice) => record.status === 'locked'
+  const canUnlock = (record: AppDevice) => record.can_unlock ?? record.status === 'locked'
 
   const canReconnect = (record: AppDevice) =>
     record.status === 'offline' &&

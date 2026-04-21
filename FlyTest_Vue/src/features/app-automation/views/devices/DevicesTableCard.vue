@@ -30,7 +30,7 @@
         <a-table-column title="最近更新时间" :width="180">
           <template #cell="{ record }">{{ formatDateTime(record.updated_at) }}</template>
         </a-table-column>
-        <a-table-column title="操作" :width="380" fixed="right">
+        <a-table-column title="操作" :width="420" fixed="right">
           <template #cell="{ record }">
             <a-space wrap>
               <a-button type="text" @click="emit('open-detail', record)">详情</a-button>
@@ -53,6 +53,14 @@
                 v-else-if="canUnlock(record)"
                 type="text"
                 @click="emit('unlock', record.id)"
+              >
+                释放
+              </a-button>
+              <a-button
+                v-else-if="record.status === 'locked'"
+                type="text"
+                disabled
+                :title="record.unlock_block_reason || '当前无法释放该设备'"
               >
                 释放
               </a-button>

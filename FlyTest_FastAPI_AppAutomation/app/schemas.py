@@ -58,6 +58,7 @@ class TestCasePayload(BaseModel):
 
 class ExecuteTestCasePayload(BaseModel):
     device_id: int
+    package_id: int | None = None
     trigger_mode: str = Field(default="manual", max_length=32)
     triggered_by: str = Field(default="FlyTest", max_length=64)
 

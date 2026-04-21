@@ -330,7 +330,10 @@ export const AppAutomationService = {
     })
   },
 
-  executeTestCase(id: number, payload: { device_id: number; trigger_mode: string; triggered_by: string }) {
+  executeTestCase(
+    id: number,
+    payload: { device_id: number; package_id?: number | null; trigger_mode: string; triggered_by: string },
+  ) {
     return unwrap<AppExecution>({
       url: `${APP_BASE}/test-cases/${id}/execute/`,
       method: 'POST',
