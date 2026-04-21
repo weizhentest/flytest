@@ -1173,7 +1173,12 @@ def _run_suite_task_in_background(
 
 
 def simulate_case_execution(execution_id: int) -> None:
-    from .main import _execution_is_marked_stopped, _finalize_stopped_execution, finish_device_lock
+    from .main import (
+        _execution_is_marked_stopped,
+        _finalize_stopped_execution,
+        claim_pending_execution,
+        finish_device_lock,
+    )
 
     try:
         with connection() as conn:
@@ -1196,14 +1201,20 @@ def simulate_case_execution(execution_id: int) -> None:
             total_steps = max(len(steps), 1)
             started_at = utc_now()
             logs = [{"timestamp": started_at, "level": "info", "message": f"开始执行 {test_case['name']}"}]
+            if not claim_pending_execution(
+                conn,
+                execution_id,
+                started_at=started_at,
+                logs=logs,
+                total_steps=total_steps,
+            ):
+                current = fetch_one(conn, "SELECT status FROM executions WHERE id = ?", (execution_id,))
+                if _execution_is_marked_stopped(current):
+                    _finalize_stopped_execution(conn, execution_id, current)
+                return
             conn.execute(
-                """
-                UPDATE executions
-                SET status = 'running', progress = 5, started_at = ?, logs = ?, total_steps = ?, passed_steps = 0,
-                    failed_steps = 0, updated_at = ?
-                WHERE id = ?
-                """,
-                (started_at, json_dumps(logs), total_steps, started_at, execution_id),
+                "UPDATE executions SET progress = 5, updated_at = ? WHERE id = ?",
+                (started_at, execution_id),
             )
             conn.execute(
                 "UPDATE devices SET status = 'locked', locked_by = ?, locked_at = ?, updated_at = ? WHERE id = ?",

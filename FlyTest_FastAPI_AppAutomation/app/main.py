@@ -54,7 +54,13 @@ from .database import (
 )
 from .execution_runtime import AppFlowExecutor, StepExecutionError, StopRequested
 from .extended_routes import router as extended_router
-from .reporting import ensure_reports_root, get_report_content_type, resolve_report_file, write_execution_report
+from .reporting import (
+    delete_execution_report_artifacts,
+    ensure_reports_root,
+    get_report_content_type,
+    resolve_report_file,
+    write_execution_report,
+)
 from .scheduler import app_scheduler
 from .scene_validation import validate_scene_steps_payload
 from .schemas import (
@@ -788,6 +794,9 @@ def upsert_device(conn, payload: dict[str, Any], preserve_lock: bool = True) -> 
 
 def finish_device_lock(conn, device_id: int) -> None:
     now = utc_now()
+    device = fetch_one(conn, "SELECT status FROM devices WHERE id = ?", (device_id,))
+    if device is None:
+        return
     next_execution = fetch_one(
         conn,
         """
@@ -812,6 +821,17 @@ def finish_device_lock(conn, device_id: int) -> None:
                 now,
                 device_id,
             ),
+        )
+        return
+
+    if str(device.get("status") or "").strip() == "offline":
+        conn.execute(
+            """
+            UPDATE devices
+            SET status = 'offline', locked_by = '', locked_at = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (now, device_id),
         )
         return
 
@@ -1325,7 +1345,34 @@ def refresh_devices() -> dict[str, Any]:
         settings = get_settings(conn)
         try:
             discovered = discover_devices(settings["adb_path"])
+            discovered_device_ids = {
+                str(item.get("device_id") or "").strip()
+                for item in discovered
+                if str(item.get("device_id") or "").strip()
+            }
             devices = [upsert_device(conn, item) for item in discovered]
+            if discovered_device_ids:
+                placeholders = ", ".join("?" for _ in discovered_device_ids)
+                params: list[Any] = [utc_now(), *discovered_device_ids]
+                conn.execute(
+                    f"""
+                    UPDATE devices
+                    SET status = 'offline', locked_by = '', locked_at = NULL, updated_at = ?
+                    WHERE status NOT IN ('locked', 'stopping')
+                      AND device_id NOT IN ({placeholders})
+                    """,
+                    tuple(params),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE devices
+                    SET status = 'offline', locked_by = '', locked_at = NULL, updated_at = ?
+                    WHERE status NOT IN ('locked', 'stopping')
+                    """,
+                    (utc_now(),),
+                )
+            devices = [serialize_device(item) for item in fetch_all(conn, "SELECT * FROM devices ORDER BY updated_at DESC")]
             return success(devices, "设备同步完成")
         except AdbError as exc:
             cached = [serialize_device(item) for item in fetch_all(conn, "SELECT * FROM devices ORDER BY updated_at DESC")]
@@ -1340,7 +1387,7 @@ def connect_device(payload: DeviceConnectPayload) -> dict[str, Any]:
             device = connect_remote_device(settings["adb_path"], payload.ip_address, payload.port)
         except AdbError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return success(upsert_device(conn, device, preserve_lock=False), "远程设备连接成功")
+        return success(upsert_device(conn, device, preserve_lock=True), "远程设备连接成功")
 
 
 @app.post("/devices/{device_id}/lock/")
@@ -1356,6 +1403,8 @@ def unlock_device(device_id: int) -> dict[str, Any]:
         device = get_device_or_404(conn, device_id)
         if device["status"] == "stopping":
             raise HTTPException(status_code=409, detail="device is stopping an execution and cannot be unlocked")
+        if device["status"] == "offline":
+            raise HTTPException(status_code=409, detail="offline device does not hold an unlockable runtime lock")
         finish_device_lock(conn, device_id)
         return success(get_device_or_404(conn, device_id), "设备已释放")
 
@@ -2179,6 +2228,7 @@ def delete_execution(execution_id: int) -> dict[str, Any]:
                     status_code=409,
                     detail="stopped execution is still releasing its device; please wait before deleting",
                 )
+        delete_execution_report_artifacts(conn, execution_id)
         conn.execute("DELETE FROM executions WHERE id = ?", (execution_id,))
         if suite_id:
             from .extended_routes import refresh_suite_stats

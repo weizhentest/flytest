@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
+import shutil
 from typing import Any
 
 from .database import BASE_DIR, DATA_DIR, fetch_one, json_loads, utc_now
@@ -43,6 +44,16 @@ def ensure_reports_root(conn) -> Path:
     return reports_root
 
 
+def get_execution_report_dir(conn, execution_id: int) -> Path:
+    return ensure_reports_root(conn) / f"execution-{execution_id}"
+
+
+def delete_execution_report_artifacts(conn, execution_id: int) -> None:
+    report_dir = get_execution_report_dir(conn, execution_id)
+    if report_dir.exists():
+        shutil.rmtree(report_dir, ignore_errors=True)
+
+
 def _format_value(value: Any) -> str:
     if value in (None, ""):
         return "-"
@@ -50,10 +61,24 @@ def _format_value(value: Any) -> str:
     return escape(text.replace("T", " ").replace("Z", " UTC"))
 
 
-def _status_label(execution: dict[str, Any]) -> str:
-    result = str(execution.get("result") or "").strip()
-    status = str(execution.get("status") or "").strip()
+def _status_key(execution: dict[str, Any]) -> str:
+    result = str(execution.get("result") or "").strip().lower()
+    status = str(execution.get("status") or "").strip().lower()
     return result or status or "unknown"
+
+
+def _status_label(execution: dict[str, Any]) -> str:
+    status_key = _status_key(execution)
+    return {
+        "passed": "通过",
+        "failed": "失败",
+        "stopped": "已停止",
+        "completed": "已完成",
+        "running": "执行中",
+        "pending": "等待中",
+        "success": "成功",
+        "error": "异常",
+    }.get(status_key, status_key or "未知")
 
 
 def _artifact_href(artifact: str, report_dir: Path) -> str:
@@ -73,7 +98,7 @@ def _artifact_href(artifact: str, report_dir: Path) -> str:
 
 def _render_logs(logs: list[dict[str, Any]], report_dir: Path) -> str:
     if not logs:
-        return "<tr><td colspan='3' class='empty'>No logs yet.</td></tr>"
+        return "<tr><td colspan='3' class='empty'>暂无执行日志</td></tr>"
 
     rows: list[str] = []
     for item in logs:
@@ -273,47 +298,47 @@ def _render_html(execution: dict[str, Any], report_dir: Path) -> str:
     <section class="hero">
       <div class="eyebrow">FlyTest APP Automation</div>
       <h1>{escape(str(execution.get("case_name") or f"Execution #{execution['id']}"))}</h1>
-      <p class="subtitle">Execution #{execution["id"]} · Device {_format_value(execution.get("device_name") or execution.get("device_serial"))}</p>
+      <p class="subtitle">执行 #{execution["id"]} · 设备 {_format_value(execution.get("device_name") or execution.get("device_serial"))}</p>
       <div class="cards">
         <div class="card">
-          <div class="label">Status</div>
-          <div class="value"><span class="status {escape(_status_label(execution).lower())}">{escape(_status_label(execution))}</span></div>
+          <div class="label">状态</div>
+          <div class="value"><span class="status {escape(_status_key(execution))}">{escape(_status_label(execution))}</span></div>
         </div>
         <div class="card">
-          <div class="label">Pass Rate</div>
+          <div class="label">通过率</div>
           <div class="value">{pass_rate}%</div>
         </div>
         <div class="card">
-          <div class="label">Steps</div>
+          <div class="label">步骤</div>
           <div class="value">{passed_steps}/{total_steps}</div>
         </div>
         <div class="card">
-          <div class="label">Duration</div>
+          <div class="label">耗时</div>
           <div class="value">{_format_value(round(float(execution.get("duration") or 0), 2))}s</div>
         </div>
       </div>
     </section>
     <section class="panels">
       <div class="panel">
-        <h2>Execution Overview</h2>
+        <h2>执行概览</h2>
         <div class="meta-grid">
-          <div class="meta-item"><div class="label">Suite</div><div>{escape(str(suite_name))}</div></div>
-          <div class="meta-item"><div class="label">Triggered By</div><div>{_format_value(execution.get("triggered_by"))}</div></div>
-          <div class="meta-item"><div class="label">Started At</div><div>{_format_value(execution.get("started_at"))}</div></div>
-          <div class="meta-item"><div class="label">Finished At</div><div>{_format_value(execution.get("finished_at"))}</div></div>
-          <div class="meta-item"><div class="label">Passed Steps</div><div>{passed_steps}</div></div>
-          <div class="meta-item"><div class="label">Failed Steps</div><div>{failed_steps}</div></div>
+          <div class="meta-item"><div class="label">套件</div><div>{escape(str(suite_name))}</div></div>
+          <div class="meta-item"><div class="label">触发人</div><div>{_format_value(execution.get("triggered_by"))}</div></div>
+          <div class="meta-item"><div class="label">开始时间</div><div>{_format_value(execution.get("started_at"))}</div></div>
+          <div class="meta-item"><div class="label">结束时间</div><div>{_format_value(execution.get("finished_at"))}</div></div>
+          <div class="meta-item"><div class="label">通过步骤</div><div>{passed_steps}</div></div>
+          <div class="meta-item"><div class="label">失败步骤</div><div>{failed_steps}</div></div>
         </div>
-        <div class="summary">{escape(str(execution.get("report_summary") or execution.get("error_message") or "No summary generated yet."))}</div>
+        <div class="summary">{escape(str(execution.get("report_summary") or execution.get("error_message") or "暂无执行摘要"))}</div>
       </div>
       <div class="panel">
-        <h2>Execution Logs</h2>
+        <h2>执行日志</h2>
         <table>
           <thead>
             <tr>
-              <th style="width: 180px;">Timestamp</th>
-              <th style="width: 100px;">Level</th>
-              <th>Message</th>
+              <th style="width: 180px;">时间</th>
+              <th style="width: 100px;">级别</th>
+              <th>内容</th>
             </tr>
           </thead>
           <tbody>{_render_logs(logs if isinstance(logs, list) else [], report_dir)}</tbody>
@@ -344,7 +369,7 @@ def write_execution_report(conn, execution_id: int) -> str:
 
     execution["logs"] = json_loads(execution.get("logs"), [])
 
-    report_dir = ensure_reports_root(conn) / f"execution-{execution_id}"
+    report_dir = get_execution_report_dir(conn, execution_id)
     report_dir.mkdir(parents=True, exist_ok=True)
 
     index_path = report_dir / "index.html"
