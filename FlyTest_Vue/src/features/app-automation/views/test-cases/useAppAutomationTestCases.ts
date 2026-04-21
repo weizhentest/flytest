@@ -6,6 +6,7 @@ import { useProjectStore } from '@/store/projectStore'
 import { AppAutomationService } from '../../services/appAutomationService'
 import {
   openExecutionReportWindow,
+  pushAppAutomationTab,
   pushAppAutomationExecutions,
   pushAppAutomationSceneBuilder,
 } from '../appAutomationNavigation'
@@ -272,6 +273,12 @@ export function useAppAutomationTestCases() {
       return
     }
 
+    if (selectedCaseIds.value.length > 1) {
+      Message.warning('多条用例请先加入测试套件后再执行，避免同一设备上的锁竞争')
+      void pushAppAutomationTab(router, 'suites')
+      return
+    }
+
     executeMode.value = 'batch'
     executeForm.device_id = availableDevices.value[0]?.id
     executeVisible.value = true
@@ -297,6 +304,13 @@ export function useAppAutomationTestCases() {
       if (executeMode.value === 'batch') {
         if (!selectedCases.value.length) {
           Message.warning('请至少选择一个测试用例')
+          return
+        }
+
+        if (selectedCases.value.length > 1) {
+          executeVisible.value = false
+          Message.warning('当前不支持在同一设备上直接批量启动多条用例，请改用测试套件执行')
+          void pushAppAutomationTab(router, 'suites')
           return
         }
 

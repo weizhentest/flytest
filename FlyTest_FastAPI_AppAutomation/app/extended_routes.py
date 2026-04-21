@@ -2427,4 +2427,37 @@ def retry_notification(log_id: int) -> dict[str, Any]:
         if row is None:
             raise HTTPException(status_code=404, detail="通知日志不存在")
         ensure_row_project_access(row)
-    raise HTTPException(status_code=501, detail="notification retry is not implemented yet")
+        notification = serialize_notification(dict(row))
+        if str(notification.get("status") or "").strip().lower() == "success":
+            return success(notification, "通知已成功发送，无需重试")
+
+        now = utc_now()
+        retry_message = "notification delivery retry is not supported in the local automation backend"
+        response_info = notification.get("response_info") if isinstance(notification.get("response_info"), dict) else {}
+        response_info = {
+            **response_info,
+            "retry_status": "not_supported",
+            "retry_requested_at": now,
+            "detail": retry_message,
+        }
+        next_retry_count = int(notification.get("retry_count") or 0) + 1
+        next_error_message = str(notification.get("error_message") or "").strip() or retry_message
+
+        conn.execute(
+            """
+            UPDATE notification_logs
+            SET retry_count = ?, is_retried = 1, error_message = ?, response_info = ?
+            WHERE id = ?
+            """,
+            (
+                next_retry_count,
+                next_error_message,
+                json_dumps(response_info),
+                log_id,
+            ),
+        )
+        updated = fetch_one(conn, "SELECT * FROM notification_logs WHERE id = ?", (log_id,))
+    return success(
+        serialize_notification(dict(updated or {})),
+        "已记录重试请求，但当前本地自动化后端未实现真实通知重发",
+    )

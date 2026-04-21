@@ -18,6 +18,7 @@ export function useAppAutomationNotifications() {
   const projectStore = useProjectStore()
 
   const loading = ref(false)
+  const retrying = ref(false)
   const detailVisible = ref(false)
   const currentLog = ref<AppNotificationLog | null>(null)
   const logs = ref<AppNotificationLog[]>([])
@@ -254,6 +255,30 @@ export function useAppAutomationNotifications() {
     detailVisible.value = true
   }
 
+  const syncLogRecord = (updated: AppNotificationLog) => {
+    logs.value = logs.value.map(item => (item.id === updated.id ? updated : item))
+    if (currentLog.value?.id === updated.id) {
+      currentLog.value = updated
+    }
+  }
+
+  const retryNotification = async (record: AppNotificationLog) => {
+    retrying.value = true
+    try {
+      const updated = await AppAutomationService.retryNotificationLog(record.id)
+      syncLogRecord(updated)
+      Message.success(
+        updated.response_info?.retry_status === 'not_supported'
+          ? '已记录重试请求，当前本地后端尚未实现真实重发'
+          : '通知已重新触发',
+      )
+    } catch (error: any) {
+      Message.error(error.message || '重试通知失败')
+    } finally {
+      retrying.value = false
+    }
+  }
+
   watch(
     () => route.query.tab,
     tab => {
@@ -320,6 +345,7 @@ export function useAppAutomationNotifications() {
 
   return {
     loading,
+    retrying,
     detailVisible,
     currentLog,
     taskContext,
@@ -344,5 +370,6 @@ export function useAppAutomationNotifications() {
     clearTaskContext,
     openExecution,
     viewDetail,
+    retryNotification,
   }
 }

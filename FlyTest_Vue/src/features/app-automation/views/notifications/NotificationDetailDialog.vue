@@ -35,8 +35,22 @@
           <span>重试次数：{{ currentLog.retry_count || 0 }}</span>
         </div>
         <a-space wrap>
-          <a-button v-if="currentLog.task_id" @click="emit('open-task-detail', currentLog.task_id)">查看任务</a-button>
-          <a-button v-if="getPrimaryExecutionId(currentLog)" type="primary" @click="emit('open-execution', currentLog)">
+          <a-button
+            v-if="currentLog.status !== 'success'"
+            status="warning"
+            :loading="retrying"
+            @click="emit('retry', currentLog)"
+          >
+            重试通知
+          </a-button>
+          <a-button v-if="currentLog.task_id" @click="emit('open-task-detail', currentLog.task_id)">
+            查看任务
+          </a-button>
+          <a-button
+            v-if="getPrimaryExecutionId(currentLog)"
+            type="primary"
+            @click="emit('open-execution', currentLog)"
+          >
             查看执行
           </a-button>
         </a-space>
@@ -144,28 +158,13 @@ const emit = defineEmits<NotificationDetailDialogEmits>()
 
 .parsed-row {
   display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.1);
-}
-
-.parsed-row:last-child {
-  border-bottom: none;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed rgba(var(--theme-accent-rgb), 0.16);
 }
 
 .parsed-label {
   color: var(--theme-text-secondary);
-  font-weight: 600;
-}
-
-.parsed-value {
-  word-break: break-word;
-}
-
-@media (max-width: 900px) {
-  .parsed-row {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

@@ -23,4 +23,5 @@ export interface NotificationsTableCardEmits {
 export interface NotificationDetailDialogEmits {
   'open-task-detail': [taskId: number]
   'open-execution': [record: AppNotificationLog]
+  retry: [record: AppNotificationLog]
 }

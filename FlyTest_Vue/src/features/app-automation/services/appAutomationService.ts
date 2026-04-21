@@ -612,6 +612,13 @@ export const AppAutomationService = {
     })
   },
 
+  retryNotificationLog(id: number) {
+    return unwrap<AppNotificationLog>({
+      url: `${APP_BASE}/notification-logs/${id}/retry/`,
+      method: 'POST',
+    })
+  },
+
   getSettings() {
     return unwrap<AppAutomationSettings>({
       url: `${APP_BASE}/settings/current/`,

@@ -57,6 +57,7 @@ export interface NotificationsTableCardProps {
 
 export interface NotificationDetailDialogProps {
   currentLog: AppNotificationLog | null
+  retrying: boolean
   parsedContent: NotificationParsedContentItem[]
   formatDateTime: (value?: string | null) => string
   getTaskTypeLabel: (value: string) => string
