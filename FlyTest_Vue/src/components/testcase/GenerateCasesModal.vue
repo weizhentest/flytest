@@ -5,7 +5,7 @@
     @cancel="handleCancel"
     @ok="handleOk"
     :width="800"
-    :confirm-loading="isLoading"
+    :confirm-loading="generating"
   >
     <a-form :model="formState" :label-col-props="{ span: 5 }" :wrapper-col-props="{ span: 19 }">
       <!-- 当前项目和生成模式在一行 -->
@@ -254,6 +254,10 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+  generating: {
+    type: Boolean,
+    default: false,
+  },
   testCaseModuleTree: {
     type: Array as PropType<TreeNodeData[]>,
     default: () => [],
@@ -263,7 +267,6 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'submit']);
 
 const projectStore = useProjectStore();
-const isLoading = ref(false);
 const isDocLoading = ref(false);
 const isReqModuleLoading = ref(false);
 const isPromptsLoading = ref(false);
@@ -358,6 +361,35 @@ const isCurrentPageIndeterminate = computed(() => {
   return count > 0 && count < testCaseData.value.length;
 });
 
+const resetModalState = () => {
+  formState.generateMode = 'full';
+  formState.requirementDocumentId = null;
+  formState.requirementModuleId = null;
+  formState.promptId = null;
+  formState.useKnowledgeBase = false;
+  formState.knowledgeBaseId = null;
+  formState.testCaseModuleId = null;
+  formState.testTypes = ['functional'];
+  requirementDocuments.value = [];
+  requirementModules.value = [];
+  prompts.value = [];
+  knowledgeBases.value = [];
+  selectedTestCaseIds.value = [];
+  searchKeyword.value = '';
+  selectedModule.value = undefined;
+  selectedLevel.value = '';
+  paginationConfig.current = 1;
+  testCaseData.value = [];
+  moduleList.value = [];
+};
+
+const initializeModalData = () => {
+  resetModalState();
+  fetchRequirementDocuments();
+  fetchPrompts();
+  fetchKnowledgeBases();
+};
+
 const handleCancel = () => {
   emit('update:visible', false);
 };
@@ -408,15 +440,18 @@ const handleOk = () => {
     return;
   }
 
+  const selectedReqDocument = requirementDocuments.value.find(d => d.id === formState.requirementDocumentId);
   const selectedReqModule = requirementModules.value.find(m => m.id === formState.requirementModuleId);
   const selectedTestCases = testCaseData.value.filter(tc => selectedTestCaseIds.value.includes(tc.id));
 
   emit('submit', {
     ...formState,
+    selectedDocument: selectedReqDocument,
     selectedModule: selectedReqModule,
     selectedTestCaseIds: selectedTestCaseIds.value,
     selectedTestCases: selectedTestCases,
   });
+  emit('update:visible', false);
 };
 
 // 模式切换处理
@@ -634,35 +669,24 @@ const onPageSizeChange = (pageSize: number) => {
   fetchTestCases();
 };
 
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    // 每次打开弹窗时重置表单
-    formState.generateMode = 'full';
-    formState.requirementDocumentId = null;
-    formState.requirementModuleId = null;
-    formState.promptId = null;
-    formState.useKnowledgeBase = false;
-    formState.knowledgeBaseId = null;
-    formState.testCaseModuleId = null;
-    formState.testTypes = ['functional'];
-    requirementDocuments.value = [];
-    requirementModules.value = [];
-    prompts.value = [];
-    knowledgeBases.value = [];
-    // 重置用例选择状态
-    selectedTestCaseIds.value = [];
-    searchKeyword.value = '';
-    selectedModule.value = undefined;
-    selectedLevel.value = '';
-    paginationConfig.current = 1;
-    testCaseData.value = [];
-    moduleList.value = [];
-    // 加载数据
-    fetchRequirementDocuments();
-    fetchPrompts();
-    fetchKnowledgeBases();
+watch(
+  () => props.visible,
+  (newVal) => {
+    if (newVal) {
+      initializeModalData();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => projectStore.currentProjectId,
+  (newProjectId, oldProjectId) => {
+    if (props.visible && newProjectId && newProjectId !== oldProjectId) {
+      initializeModalData();
+    }
   }
-});
+);
 
 </script>
 

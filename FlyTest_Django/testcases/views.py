@@ -5,16 +5,26 @@ from django_filters.rest_framework import (
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
-from django.db import transaction
+from django.db import transaction, close_old_connections
 from django.http import HttpResponse
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from rest_framework.parsers import MultiPartParser, FormParser
 import io
+import json
+import logging
+import re
+import threading
+import time
+from copy import deepcopy
+from uuid import uuid4
 
 from .models import (
     TestCase,
+    TestCaseStep,
     TestCaseModule,
     Project,
     TestCaseScreenshot,
@@ -32,6 +42,75 @@ from .filters import TestCaseFilter  # 导入自定义过滤器
 
 # 确保导入项目自定义的权限类
 from flytest_django.permissions import HasModelPermission, permission_required
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph_integration.models import get_user_active_llm_config
+from langgraph_integration.views import create_llm_instance, _extract_llm_response_text
+from prompts.models import UserPrompt
+from requirements.models import RequirementDocument, RequirementModule
+
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+_CASE_GENERATION_JOBS: dict[str, dict] = {}
+_CASE_GENERATION_JOBS_LOCK = threading.Lock()
+
+
+def _serialize_job_datetime(value):
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _get_case_generation_job(job_id: str):
+    with _CASE_GENERATION_JOBS_LOCK:
+        job = _CASE_GENERATION_JOBS.get(job_id)
+        return deepcopy(job) if job else None
+
+
+def _save_case_generation_job(job_id: str, **updates):
+    with _CASE_GENERATION_JOBS_LOCK:
+        job = _CASE_GENERATION_JOBS.get(job_id)
+        if job is None:
+            job = {"id": job_id}
+            _CASE_GENERATION_JOBS[job_id] = job
+        job.update(updates)
+        return deepcopy(job)
+
+
+def _run_case_generation_progress_heartbeat(
+    stop_event: threading.Event,
+    progress_callback,
+    *,
+    start_percent: int = 38,
+    end_percent: int = 68,
+    interval_seconds: float = 2.0,
+):
+    """
+    在大模型阻塞生成期间平滑推进进度，避免长时间停在固定百分比。
+    """
+    current_percent = start_percent
+    while not stop_event.wait(interval_seconds):
+        progress_callback(current_percent, "generate", "AI 正在生成测试用例")
+        if current_percent < end_percent:
+            current_percent += 3
+
+
+def _build_case_generation_job_response(job: dict):
+    return {
+        "job_id": job["id"],
+        "status": job.get("status", "pending"),
+        "progress_percent": int(job.get("progress_percent", 0) or 0),
+        "progress_stage": job.get("progress_stage") or "",
+        "progress_message": job.get("progress_message") or "",
+        "error_message": job.get("error_message") or "",
+        "generated_count": int(job.get("generated_count", 0) or 0),
+        "summary": job.get("summary") or "",
+        "gaps": job.get("gaps") or [],
+        "result_payload": job.get("result_payload") or None,
+        "created_at": _serialize_job_datetime(job.get("created_at")),
+        "started_at": _serialize_job_datetime(job.get("started_at")),
+        "completed_at": _serialize_job_datetime(job.get("completed_at")),
+    }
 
 
 def _normalize_media_url(url: str) -> str:
@@ -60,6 +139,373 @@ def _normalize_media_url(url: str) -> str:
         url = url[1:]
 
     return f"{media_url}/{url}"
+
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(?P<body>[\s\S]*?)```", re.IGNORECASE)
+
+
+def _extract_json_payload(text: str):
+    """从模型输出中尽量提取 JSON。"""
+    if not text:
+        raise ValueError("模型未返回内容")
+
+    stripped = text.strip()
+    fenced_match = _JSON_BLOCK_RE.search(stripped)
+    if fenced_match:
+        stripped = fenced_match.group("body").strip()
+
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    for opening, closing in (("{", "}"), ("[", "]")):
+        start = stripped.find(opening)
+        end = stripped.rfind(closing)
+        if start != -1 and end != -1 and end > start:
+            candidate = stripped[start : end + 1]
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+    raise ValueError("无法解析模型返回的 JSON 结果")
+
+
+def _normalize_level(level: str | None) -> str:
+    candidate = str(level or "").upper().strip()
+    return candidate if candidate in {"P0", "P1", "P2", "P3"} else "P2"
+
+
+def _normalize_test_type(test_type: str | None, allowed_types: list[str]) -> str:
+    candidate = str(test_type or "").strip()
+    if candidate in allowed_types:
+        return candidate
+    return allowed_types[0] if allowed_types else "functional"
+
+
+def _normalize_generated_cases(payload, *, allowed_test_types: list[str], title_only: bool):
+    """校验并规整模型返回的测试用例。"""
+    if isinstance(payload, list):
+        raw_cases = payload
+        gaps = []
+        summary = ""
+    elif isinstance(payload, dict):
+        raw_cases = payload.get("testcases") or payload.get("cases") or []
+        gaps = payload.get("gaps") or payload.get("missing_info") or []
+        summary = str(payload.get("summary") or "").strip()
+    else:
+        raise ValueError("模型返回格式不正确")
+
+    if not isinstance(raw_cases, list):
+        raise ValueError("模型返回的 testcases 字段不是数组")
+
+    normalized_cases = []
+    for item in raw_cases:
+        if not isinstance(item, dict):
+            continue
+
+        name = str(item.get("name") or item.get("title") or "").strip()
+        if not name:
+            continue
+
+        precondition = str(item.get("precondition") or item.get("preconditions") or "").strip()
+        level = _normalize_level(item.get("level"))
+        test_type = _normalize_test_type(item.get("test_type"), allowed_test_types)
+
+        raw_steps = item.get("steps") or []
+        normalized_steps = []
+        if isinstance(raw_steps, list):
+            for step in raw_steps:
+                if not isinstance(step, dict):
+                    continue
+                description = str(step.get("description") or step.get("step") or "").strip()
+                expected_result = str(
+                    step.get("expected_result") or step.get("expected") or step.get("result") or ""
+                ).strip()
+                if not description and not expected_result:
+                    continue
+                normalized_steps.append(
+                    {
+                        "description": description or "执行当前步骤",
+                        "expected_result": expected_result or "系统表现符合需求预期",
+                    }
+                )
+
+        if not title_only and not normalized_steps:
+            continue
+
+        normalized_cases.append(
+            {
+                "name": name,
+                "precondition": precondition,
+                "level": level,
+                "test_type": test_type,
+                "steps": normalized_steps,
+            }
+        )
+
+    if not normalized_cases:
+        raise ValueError("模型未生成可保存的测试用例")
+
+    normalized_gaps = [str(gap).strip() for gap in (gaps or []) if str(gap).strip()]
+    return {
+        "summary": summary,
+        "gaps": normalized_gaps,
+        "testcases": normalized_cases,
+    }
+
+
+def _generate_testcases_from_requirement(
+    *,
+    user,
+    project,
+    requirement_document,
+    requirement_module,
+    test_case_module,
+    prompt_content: str,
+    allowed_test_types: list[str],
+    title_only: bool,
+    progress_callback=None,
+):
+    if progress_callback:
+        progress_callback(10, "prepare", "正在整理需求内容")
+
+    active_config = get_user_active_llm_config(user)
+    if active_config is None:
+        raise ValueError("当前没有可用的模型配置，请先在系统中启用一个 LLM 配置")
+
+    system_prompt = """
+你是 Flytest 的测试用例生成器。你的任务是基于给定需求模块，直接生成可保存的中文测试用例。
+硬性规则：
+1. 只能基于当前给定的需求文档标题、模块标题、模块内容生成。
+2. 不要向用户追问，不要要求补充文档，不要输出英文对话或寒暄。
+3. 只输出 JSON，不要输出 Markdown，不要输出解释性文字。
+4. JSON 结构必须是：
+{
+  "summary": "一句话总结",
+  "gaps": ["如有缺口列出，没有则返回空数组"],
+  "testcases": [
+    {
+      "name": "测试用例标题",
+      "precondition": "前置条件，没有可留空",
+      "level": "P0|P1|P2|P3",
+      "test_type": "smoke|functional|boundary|exception|permission|security|compatibility",
+      "steps": [
+        {
+          "description": "步骤描述",
+          "expected_result": "预期结果"
+        }
+      ]
+    }
+  ]
+}
+5. 如果是标题生成模式，steps 返回空数组即可。
+6. 必须覆盖有效等价类和无效等价类；主流程要完整。
+7. 输出内容必须是简体中文。
+    """.strip()
+
+    user_prompt = f"""
+【任务类型】{'标题生成' if title_only else '完整生成'}
+【项目ID】{project.id}
+【保存测试用例模块ID】{test_case_module.id}
+【需求文档ID】{requirement_document.id}
+【需求文档标题】{requirement_document.title}
+【需求模块ID】{requirement_module.id}
+【需求模块标题】{requirement_module.title}
+【需求模块内容】{requirement_module.content}
+
+【测试类型要求】{", ".join(allowed_test_types)}
+
+【补充约束】
+- 不要再次索要需求文档。
+- 如果信息有缺口，只能写入 gaps，同时继续给出可生成的用例。
+- {'仅生成标题，不要生成步骤。' if title_only else '请生成可直接执行的步骤和预期结果。'}
+    """.strip()
+
+    if prompt_content:
+        user_prompt += f"\n\n【补充提示词】\n{prompt_content}"
+
+    if progress_callback:
+        progress_callback(35, "generate", "AI 正在生成测试用例")
+
+    heartbeat_stop_event = None
+    heartbeat_thread = None
+    if progress_callback:
+        heartbeat_stop_event = threading.Event()
+        heartbeat_thread = threading.Thread(
+            target=_run_case_generation_progress_heartbeat,
+            args=(heartbeat_stop_event, progress_callback),
+            daemon=True,
+        )
+        heartbeat_thread.start()
+
+    llm = create_llm_instance(active_config, temperature=0.2)
+    try:
+        response = llm.invoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
+        )
+    finally:
+        if heartbeat_stop_event is not None:
+            heartbeat_stop_event.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=0.2)
+    response_text = _extract_llm_response_text(response)
+
+    if progress_callback:
+        progress_callback(72, "parse", "正在解析 AI 返回结果")
+
+    payload = _extract_json_payload(response_text)
+    normalized = _normalize_generated_cases(
+        payload,
+        allowed_test_types=allowed_test_types,
+        title_only=title_only,
+    )
+
+    traceability_lines = [
+        f"来源需求文档ID: {requirement_document.id}",
+        f"来源需求文档标题: {requirement_document.title}",
+        f"来源需求模块ID: {requirement_module.id}",
+        f"来源需求模块标题: {requirement_module.title}",
+    ]
+    if normalized["gaps"]:
+        traceability_lines.append("需求缺口: " + "；".join(normalized["gaps"]))
+    if normalized["summary"]:
+        traceability_lines.append("AI生成摘要: " + normalized["summary"])
+    traceability_note = "\n".join(traceability_lines)
+
+    if progress_callback:
+        progress_callback(88, "save", "正在保存测试用例")
+
+    created_cases = []
+    total_cases = len(normalized["testcases"])
+    with transaction.atomic():
+        for case_index, case_data in enumerate(normalized["testcases"], start=1):
+            test_case = TestCase.objects.create(
+                project=project,
+                module=test_case_module,
+                name=case_data["name"],
+                precondition=case_data["precondition"],
+                level=case_data["level"],
+                test_type=case_data["test_type"],
+                notes=traceability_note,
+                creator=user,
+            )
+            for index, step in enumerate(case_data["steps"], start=1):
+                TestCaseStep.objects.create(
+                    test_case=test_case,
+                    step_number=index,
+                    description=step["description"],
+                    expected_result=step["expected_result"],
+                    creator=user,
+                )
+            created_cases.append(test_case)
+            if progress_callback and total_cases > 0:
+                save_percent = 88 + int((case_index / total_cases) * 10)
+                progress_callback(
+                    min(save_percent, 98),
+                    "save",
+                    f"姝ｅ湪淇濆瓨娴嬭瘯鐢ㄤ緥 ({case_index}/{total_cases})",
+                )
+
+    serializer = TestCaseSerializer(created_cases, many=True)
+    return {
+        "message": f"已生成并保存 {len(created_cases)} 条测试用例",
+        "generated_count": len(created_cases),
+        "gaps": normalized["gaps"],
+        "summary": normalized["summary"],
+        "data": serializer.data,
+    }
+
+
+def _run_requirement_case_generation_job(job_id: str):
+    close_old_connections()
+    job = _get_case_generation_job(job_id)
+    if not job:
+        return
+
+    try:
+        _save_case_generation_job(
+            job_id,
+            status="running",
+            progress_percent=5,
+            progress_stage="prepare",
+            progress_message="任务已开始，正在准备生成",
+            started_at=timezone.now(),
+            completed_at=None,
+            error_message="",
+        )
+
+        user = User.objects.get(pk=job["user_id"])
+        project = Project.objects.get(pk=job["project_id"])
+        requirement_document = RequirementDocument.objects.get(
+            pk=job["requirement_document_id"],
+            project=project,
+        )
+        requirement_module = RequirementModule.objects.get(
+            pk=job["requirement_module_id"],
+            document=requirement_document,
+        )
+        test_case_module = TestCaseModule.objects.get(
+            pk=job["test_case_module_id"],
+            project=project,
+        )
+
+        result = _generate_testcases_from_requirement(
+            user=user,
+            project=project,
+            requirement_document=requirement_document,
+            requirement_module=requirement_module,
+            test_case_module=test_case_module,
+            prompt_content=job.get("prompt_content") or "",
+            allowed_test_types=job.get("allowed_test_types") or ["functional"],
+            title_only=bool(job.get("title_only")),
+            progress_callback=lambda percent, stage, message: _save_case_generation_job(
+                job_id,
+                status="running",
+                progress_percent=percent,
+                progress_stage=stage,
+                progress_message=message,
+            ),
+        )
+
+        _save_case_generation_job(
+            job_id,
+            status="success",
+            progress_percent=100,
+            progress_stage="completed",
+            progress_message="测试用例生成完成",
+            generated_count=result["generated_count"],
+            summary=result["summary"],
+            gaps=result["gaps"],
+            result_payload=result,
+            completed_at=timezone.now(),
+        )
+    except Exception as exc:
+        logger.exception("AI 生成测试用例后台任务失败")
+        _save_case_generation_job(
+            job_id,
+            status="failed",
+            progress_percent=100,
+            progress_stage="failed",
+            progress_message="测试用例生成失败",
+            error_message=str(exc),
+            completed_at=timezone.now(),
+        )
+    finally:
+        close_old_connections()
+
+
+def _start_requirement_case_generation_job(job_id: str):
+    worker = threading.Thread(
+        target=_run_requirement_case_generation_job,
+        args=(job_id,),
+        daemon=True,
+    )
+    worker.start()
 
 
 class TestCaseViewSet(viewsets.ModelViewSet):
@@ -115,6 +561,133 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         project = get_object_or_404(Project, pk=project_pk)
         # 权限类 IsProjectMemberForTestCase 已经确保用户是项目成员
         serializer.save(creator=self.request.user, project=project)
+
+    @action(detail=False, methods=["post"], url_path="generate-from-requirement")
+    def generate_from_requirement(self, request, project_pk=None):
+        """根据需求模块启动异步测试用例生成任务。"""
+        project = get_object_or_404(Project, pk=project_pk)
+
+        requirement_document_id = request.data.get("requirement_document_id")
+        requirement_module_id = request.data.get("requirement_module_id")
+        test_case_module_id = request.data.get("test_case_module_id")
+        prompt_id = request.data.get("prompt_id")
+        generate_mode = str(request.data.get("generate_mode") or "full").strip()
+        selected_test_types = request.data.get("test_types") or ["functional"]
+
+        if generate_mode not in {"full", "title_only"}:
+            return Response(
+                {"error": "当前专用生成接口仅支持完整生成和标题生成模式"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not requirement_document_id or not requirement_module_id or not test_case_module_id:
+            return Response(
+                {"error": "需求文档、需求模块和保存模块均不能为空"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(selected_test_types, list) or not selected_test_types:
+            selected_test_types = ["functional"]
+
+        allowed_test_types = [
+            item
+            for item in selected_test_types
+            if item in {"smoke", "functional", "boundary", "exception", "permission", "security", "compatibility"}
+        ]
+        if not allowed_test_types:
+            allowed_test_types = ["functional"]
+
+        requirement_document = get_object_or_404(
+            RequirementDocument, pk=requirement_document_id, project=project
+        )
+        requirement_module = get_object_or_404(
+            RequirementModule,
+            pk=requirement_module_id,
+            document=requirement_document,
+        )
+        test_case_module = get_object_or_404(
+            TestCaseModule, pk=test_case_module_id, project=project
+        )
+
+        prompt_content = ""
+        if prompt_id:
+            prompt = UserPrompt.objects.filter(
+                id=prompt_id, user=request.user, is_active=True
+            ).first()
+            if prompt is None:
+                return Response(
+                    {"error": "所选提示词不存在或已停用"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            prompt_content = (prompt.content or "").strip()
+
+        active_config = get_user_active_llm_config(request.user)
+        if active_config is None:
+            return Response(
+                {"error": "当前没有可用的模型配置，请先在系统中启用一个 LLM 配置"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        title_only = generate_mode == "title_only"
+        job_id = uuid4().hex
+        _save_case_generation_job(
+            job_id,
+            id=job_id,
+            status="pending",
+            progress_percent=0,
+            progress_stage="queued",
+            progress_message="任务已创建，等待开始",
+            error_message="",
+            generated_count=0,
+            summary="",
+            gaps=[],
+            result_payload=None,
+            user_id=request.user.id,
+            project_id=project.id,
+            requirement_document_id=str(requirement_document.id),
+            requirement_module_id=str(requirement_module.id),
+            test_case_module_id=test_case_module.id,
+            prompt_content=prompt_content,
+            allowed_test_types=allowed_test_types,
+            title_only=title_only,
+            created_at=timezone.now(),
+            started_at=None,
+            completed_at=None,
+        )
+        _start_requirement_case_generation_job(job_id)
+
+        return Response(
+            {
+                "success": True,
+                "message": "测试用例生成任务已提交，后台正在生成",
+                "job_id": job_id,
+                "status": "pending",
+                "progress_percent": 0,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"generation-jobs/(?P<job_id>[^/.]+)",
+    )
+    def generation_job_status(self, request, project_pk=None, job_id=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        job = _get_case_generation_job(job_id or "")
+        if not job or job.get("project_id") != project.id or job.get("user_id") != request.user.id:
+            return Response(
+                {"error": "生成任务不存在"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {
+                "success": True,
+                "data": _build_case_generation_job_response(job),
+            },
+            status=status.HTTP_200_OK,
+        )
 
     # create 和 update 方法将使用序列化器中定义的嵌套写入逻辑。
     # DRF 的 ModelViewSet 会自动调用 serializer.save()，

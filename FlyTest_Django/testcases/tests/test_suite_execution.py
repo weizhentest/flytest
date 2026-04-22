@@ -61,3 +61,34 @@ class TestSuiteExecutionTests(TestCase):
         serializer = TestSuiteSerializer(data=data, context=context)
         self.assertFalse(serializer.is_valid())
         self.assertIn('non_field_errors', serializer.errors)
+
+    def test_testcase_ids_start_from_one(self):
+        self.assertEqual(self.testcase.id, 1)
+
+    def test_deleted_testcase_id_is_reused(self):
+        second_case = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name='Test Case 2',
+            creator=self.user
+        )
+        third_case = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name='Test Case 3',
+            creator=self.user
+        )
+
+        self.assertEqual(second_case.id, 2)
+        self.assertEqual(third_case.id, 3)
+
+        second_case.delete()
+
+        replacement_case = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name='Replacement Test Case',
+            creator=self.user
+        )
+
+        self.assertEqual(replacement_case.id, 2)

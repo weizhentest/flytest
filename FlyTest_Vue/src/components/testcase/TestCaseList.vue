@@ -614,6 +614,19 @@ watch(selectedModuleId, (newVal) => {
 // 暴露给父组件的方法
 defineExpose({
   refreshTestCases: fetchTestCases,
+  resetToFirstPageAndRefresh: () => {
+    paginationConfig.current = 1;
+    return fetchTestCases();
+  },
+  showLatestGeneratedCases: () => {
+    paginationConfig.current = 1;
+    localSearchKeyword.value = '';
+    selectedLevel.value = '';
+    selectedTestType.value = '';
+    selectedReviewStatuses.value = [...DEFAULT_REVIEW_STATUSES];
+    localSelectedModuleId.value = null;
+    return fetchTestCases();
+  },
   // 获取当前筛选后的用例ID列表（用于编辑页面导航）
   getTestCaseIds: () => testCaseData.value.map(tc => tc.id),
 });

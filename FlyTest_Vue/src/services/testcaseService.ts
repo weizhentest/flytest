@@ -140,6 +140,58 @@ export interface OperationResponse {
   statusCode?: number;
 }
 
+export interface GenerateTestCasesFromRequirementRequest {
+  requirement_document_id: string;
+  requirement_module_id: string;
+  test_case_module_id: number;
+  prompt_id: number;
+  generate_mode: 'full' | 'title_only';
+  test_types: string[];
+}
+
+export interface GenerateTestCasesFromRequirementResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  statusCode?: number;
+  jobId?: string;
+  status?: string;
+  progressPercent?: number;
+  generatedCount?: number;
+  gaps?: string[];
+  summary?: string;
+  data?: TestCase[];
+}
+
+export interface TestCaseGenerationJobStatus {
+  job_id: string;
+  status: 'pending' | 'running' | 'success' | 'failed';
+  progress_percent: number;
+  progress_stage: string;
+  progress_message: string;
+  error_message: string;
+  generated_count: number;
+  summary: string;
+  gaps: string[];
+  result_payload?: {
+    message?: string;
+    generated_count?: number;
+    gaps?: string[];
+    summary?: string;
+    data?: TestCase[];
+  } | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface TestCaseGenerationJobStatusResponse {
+  success: boolean;
+  data?: TestCaseGenerationJobStatus;
+  error?: string;
+  statusCode?: number;
+}
+
 // 截图上传请求参数
 export interface UploadScreenshotsRequest {
   screenshots?: File[]; // 多个图片文件，最多10张
@@ -314,6 +366,133 @@ export const createTestCase = async (projectId: number, testCaseData: CreateTest
     return {
       success: false,
       error: errorMessage,
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const generateTestCasesFromRequirement = async (
+  projectId: number,
+  payload: GenerateTestCasesFromRequirementRequest
+): Promise<GenerateTestCasesFromRequirementResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/testcases/generate-from-requirement/`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    const rawPayload = response.data?.data ?? response.data ?? {};
+    const resultPayload = rawPayload?.result_payload?.data ?? rawPayload?.result_payload ?? rawPayload?.data ?? rawPayload;
+
+    return {
+      success: true,
+      message: response.data?.message || '测试用例生成成功',
+      statusCode: response.status,
+      jobId: rawPayload?.job_id || rawPayload?.jobId,
+      status: rawPayload?.status,
+      progressPercent: rawPayload?.progress_percent ?? rawPayload?.progressPercent ?? 0,
+      generatedCount: rawPayload?.generated_count ?? rawPayload?.generatedCount ?? 0,
+      gaps: resultPayload?.gaps || rawPayload?.gaps || [],
+      summary: resultPayload?.summary || rawPayload?.summary || '',
+      data: resultPayload?.data || rawPayload?.data || [],
+    };
+  } catch (error: any) {
+    console.error('AI 生成测试用例失败:', error);
+    return {
+      success: false,
+      error:
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        'AI 生成测试用例时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const getTestCaseGenerationJobStatus = async (
+  projectId: number,
+  jobId: string
+): Promise<TestCaseGenerationJobStatusResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/projects/${projectId}/testcases/generation-jobs/${jobId}/`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    const rawPayload = response.data?.data ?? response.data ?? {};
+    const payload = rawPayload?.data ?? rawPayload;
+    const resultPayload = payload?.result_payload?.data ?? payload?.result_payload ?? null;
+
+    return {
+      success: true,
+      data: {
+        job_id: payload?.job_id || payload?.jobId || jobId,
+        status: payload?.status || 'pending',
+        progress_percent: payload?.progress_percent ?? payload?.progressPercent ?? 0,
+        progress_stage: payload?.progress_stage || payload?.progressStage || '',
+        progress_message: payload?.progress_message || payload?.progressMessage || '',
+        error_message: payload?.error_message || payload?.errorMessage || '',
+        generated_count: payload?.generated_count ?? payload?.generatedCount ?? 0,
+        summary: payload?.summary || '',
+        gaps: payload?.gaps || [],
+        result_payload: resultPayload
+          ? {
+              message: resultPayload?.message,
+              generated_count: resultPayload?.generated_count ?? resultPayload?.generatedCount,
+              gaps: resultPayload?.gaps || [],
+              summary: resultPayload?.summary || '',
+              data: resultPayload?.data || [],
+            }
+          : null,
+        created_at: payload?.created_at ?? payload?.createdAt ?? null,
+        started_at: payload?.started_at ?? payload?.startedAt ?? null,
+        completed_at: payload?.completed_at ?? payload?.completedAt ?? null,
+      },
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    console.error('获取测试用例生成任务状态失败:', error);
+    return {
+      success: false,
+      error:
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        '获取测试用例生成任务状态失败',
       statusCode: error.response?.status,
     };
   }

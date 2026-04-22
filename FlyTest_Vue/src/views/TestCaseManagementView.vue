@@ -63,6 +63,7 @@
     <GenerateCasesModal
       v-if="isGenerateCasesModalVisible"
       v-model:visible="isGenerateCasesModalVisible"
+      :generating="isGeneratingCases"
       :test-case-module-tree="moduleTreeForForm"
       @submit="handleGenerateCasesSubmit"
     />
@@ -87,7 +88,8 @@
 import { defineAsyncComponent, h, ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useProjectStore } from '@/store/projectStore';
-import type { TestCase } from '@/services/testcaseService';
+import { useAiActivityStore } from '@/store/aiActivityStore';
+import { generateTestCasesFromRequirement, type TestCase } from '@/services/testcaseService';
 import type { TestCaseModule } from '@/services/testcaseModuleService';
 import type { TreeNodeData } from '@arco-design/web-vue';
 import { getTestCaseModules } from '@/services/testcaseModuleService';
@@ -151,6 +153,7 @@ const getTestTypePrompt = (testTypes: string[]): string => {
 
 const router = useRouter();
 const projectStore = useProjectStore();
+const aiActivityStore = useAiActivityStore();
 const currentProjectId = computed(() => projectStore.currentProjectId || null);
 
 const viewMode = ref<'list' | 'add' | 'edit' | 'view'>('list');
@@ -158,12 +161,14 @@ const selectedModuleId = ref<number | null>(null);
 const currentEditingTestCaseId = ref<number | null>(null);
 const currentViewingTestCaseId = ref<number | null>(null);
 const isGenerateCasesModalVisible = ref(false);
+const isGeneratingCases = ref(false);
 const isExecuteModalVisible = ref(false);
 const isOptimizationModalVisible = ref(false);
 const pendingExecuteTestCase = ref<TestCase | null>(null);
 const pendingOptimizationTestCase = ref<TestCase | null>(null);
 const testCaseIdsForNavigation = ref<number[]>([]); // 用于编辑页面导航的用例ID列表
 
+const lastHandledGenerationState = ref('');
 const modulePanelRef = ref<InstanceType<typeof ModuleManagementPanel> | null>(null);
 const testCaseListRef = ref<InstanceType<typeof TestCaseList> | null>(null);
 
@@ -389,6 +394,7 @@ const handleGenerateCasesSubmit = async (formData: {
   useKnowledgeBase: boolean,
   knowledgeBaseId?: string | null,
   testCaseModuleId: number,
+  selectedDocument?: { id: string, title: string } | null,
   selectedModule: { title: string, content: string },
   selectedTestCaseIds: number[],
   selectedTestCases: TestCase[],
@@ -396,6 +402,87 @@ const handleGenerateCasesSubmit = async (formData: {
 }) => {
   if (!currentProjectId.value) {
     Message.error('没有有效的项目ID');
+    return;
+  }
+
+  if (['full', 'title_only'].includes(formData.generateMode)) {
+    isGeneratingCases.value = true;
+    isGenerateCasesModalVisible.value = false;
+    const progressNotification = Notification.info({
+      title: '正在生成测试用例',
+      content: '任务已提交到后台，提示将在 10 秒后自动关闭。生成进度请看页面顶部 AI 在线旁边。',
+      duration: 10000,
+      closable: true,
+      id: `generate-cases-submit-${Date.now()}`,
+    });
+
+    try {
+      const result = await generateTestCasesFromRequirement(currentProjectId.value, {
+        requirement_document_id: formData.requirementDocumentId,
+        requirement_module_id: formData.requirementModuleId,
+        test_case_module_id: formData.testCaseModuleId,
+        prompt_id: formData.promptId,
+        generate_mode: formData.generateMode as 'full' | 'title_only',
+        test_types: formData.testTypes,
+      });
+
+      if (!result.success) {
+        Message.error(result.error || '生成测试用例失败');
+        return;
+      }
+
+      if (!result.jobId) {
+        Message.error('生成任务创建失败，请稍后重试');
+        return;
+      }
+
+      aiActivityStore.startGenerationJob(currentProjectId.value, result.jobId, 'AI 正在生成测试用例');
+    } finally {
+      isGeneratingCases.value = false;
+    }
+    return;
+
+    isGenerateCasesModalVisible.value = false;
+    Notification.info({
+      title: '正在生成测试用例',
+      content: '系统正在根据需求生成测试用例，请稍候，完成后会自动刷新列表。',
+      duration: 0,
+      closable: false,
+      id: `generate-cases-${Date.now()}`,
+    });
+
+    try {
+      const result = await generateTestCasesFromRequirement(currentProjectId.value, {
+        requirement_document_id: formData.requirementDocumentId,
+        requirement_module_id: formData.requirementModuleId,
+        test_case_module_id: formData.testCaseModuleId,
+        prompt_id: formData.promptId,
+        generate_mode: formData.generateMode as 'full' | 'title_only',
+        test_types: formData.testTypes,
+      });
+
+      if (!result.success) {
+        Message.error(result.error || '生成测试用例失败');
+        return;
+      }
+
+      isGenerateCasesModalVisible.value = false;
+      selectedModuleId.value = null;
+      await testCaseListRef.value?.showLatestGeneratedCases?.();
+      modulePanelRef.value?.refreshModules();
+
+      const gapText = result.gaps && result.gaps.length > 0
+        ? `需求缺口：${result.gaps.join('；')}`
+        : '';
+      Notification.success({
+        title: '测试用例生成完成',
+        content: result.message || `已生成 ${result.generatedCount || 0} 条测试用例。${gapText}`,
+        duration: 6000,
+      });
+    } finally {
+      progressNotification?.close?.();
+      isGeneratingCases.value = false;
+    }
     return;
   }
 
@@ -408,6 +495,21 @@ const handleGenerateCasesSubmit = async (formData: {
 
   // 获取测试类型提示词
   const testTypePrompt = getTestTypePrompt(formData.testTypes);
+  const requirementContextBlock = `
+【已选需求上下文】
+- 需求文档ID: ${formData.requirementDocumentId}
+- 需求文档标题: ${formData.selectedDocument?.title || '未命名需求文档'}
+- 需求模块ID: ${formData.requirementModuleId}
+- 需求模块标题: ${formData.selectedModule?.title || '未命名需求模块'}
+
+[需求模块内容]
+${formData.selectedModule?.content || '无'}
+
+【执行要求】
+- 上述需求文档和模块内容就是本次生成的唯一需求输入，禁止再次向用户索要需求文档、功能描述、项目背景或模块说明。
+- 直接基于已提供内容开始分析和生成。
+- 如果发现需求信息存在缺失，只能基于当前内容指出缺口并继续给出可生成的结果，不要先反问用户再继续。
+  `.trim();
 
   switch (formData.generateMode) {
     case 'full':
@@ -417,14 +519,7 @@ const handleGenerateCasesSubmit = async (formData: {
 
 ${testTypePrompt}
 
----
-[需求模块标题]
-${formData.selectedModule.title}
-
----
-[需求模块内容]
-${formData.selectedModule.content}
----
+${requirementContextBlock}
 
 请注意：生成的测试用例最终需要被保存在 **项目ID "${currentProjectId.value}"** 下的 **测试用例模块ID "${formData.testCaseModuleId}"** 中。
 (此需求模块来源于需求文档ID: ${formData.requirementDocumentId})
@@ -441,14 +536,7 @@ ${formData.selectedModule.content}
 
 ${testTypePrompt}
 
----
-[需求模块标题]
-${formData.selectedModule.title}
-
----
-[需求模块内容]
-${formData.selectedModule.content}
----
+${requirementContextBlock}
 
 请注意：
 - 只需要生成用例标题，不需要生成详细的测试步骤和预期结果
@@ -497,9 +585,7 @@ ${testTypePrompt}
 [待生成步骤的用例列表]
 ${formData.selectedTestCases.map(tc => `- 用例ID: ${tc.id}, 名称: ${tc.name}, 优先级: ${tc.level}, 模块ID: ${tc.module_id ?? '未分配'}, 模块: ${tc.module_detail || '未分配'}`).join('\n')}
 
-[需求模块参考]
-标题: ${formData.selectedModule?.title || '无'}
-内容: ${formData.selectedModule?.content || '无'}
+${requirementContextBlock}
 
 项目ID: ${currentProjectId.value}
       `.trim();
@@ -677,6 +763,45 @@ watch(currentProjectId, (newVal) => {
     moduleTreeForForm.value = [];
   }
 });
+
+watch(
+  () => ({
+    jobId: aiActivityStore.generationJob?.job_id || '',
+    status: aiActivityStore.generationJob?.status || '',
+    projectId: aiActivityStore.generationJobProjectId,
+  }),
+  async ({ jobId, status }) => {
+    const stateKey = `${jobId}:${status}`;
+    if (!jobId || !status || stateKey === lastHandledGenerationState.value) {
+      return;
+    }
+
+    if (status === 'success') {
+      lastHandledGenerationState.value = stateKey;
+      viewMode.value = 'list';
+      selectedModuleId.value = null;
+      await testCaseListRef.value?.showLatestGeneratedCases?.();
+      modulePanelRef.value?.refreshModules();
+
+      const result = aiActivityStore.generationJob?.result_payload;
+      const gapText = result?.gaps && result.gaps.length > 0
+        ? ` 需求缺口：${result.gaps.join('；')}`
+        : '';
+      Notification.success({
+        title: '测试用例生成完成',
+        content: result?.message || `已生成 ${result?.generated_count || 0} 条测试用例。${gapText}`,
+        duration: 6000,
+      });
+      return;
+    }
+
+    if (status === 'failed') {
+      lastHandledGenerationState.value = stateKey;
+      Message.error(aiActivityStore.generationJob?.error_message || '测试用例生成失败');
+    }
+  },
+  { deep: true }
+);
 
 onMounted(() => {
   if (currentProjectId.value) {

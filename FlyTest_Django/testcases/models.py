@@ -1,9 +1,23 @@
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from projects.models import Project # 确保从正确的应用导入Project模型
 import os
+
+
+def _get_lowest_available_testcase_id():
+    """
+    获取当前最小可复用的测试用例 ID。
+    规则：从 1 开始，删除后释放，再次创建时优先复用空缺。
+    """
+    expected_id = 1
+    existing_ids = TestCase.objects.order_by("id").values_list("id", flat=True)
+    for current_id in existing_ids.iterator():
+        if current_id != expected_id:
+            return expected_id
+        expected_id += 1
+    return expected_id
 
 
 def testcase_screenshot_path(instance, filename):
@@ -104,6 +118,26 @@ class TestCase(models.Model):
 
     def __str__(self):
         return f"{self.project.name} - {self.name}"
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            return super().save(*args, **kwargs)
+
+        last_error = None
+        for _ in range(5):
+            try:
+                with transaction.atomic():
+                    self.pk = _get_lowest_available_testcase_id()
+                    return super().save(*args, **kwargs)
+            except IntegrityError as exc:
+                # 并发创建时如果抢到了同一个可用 ID，则重试分配。
+                last_error = exc
+                self.pk = None
+
+        if last_error is not None:
+            raise last_error
+
+        return super().save(*args, **kwargs)
 
 class TestCaseStep(models.Model):
     """

@@ -32,6 +32,15 @@
           <span class="workspace-dot"></span>
           <span>{{ aiStatusLabel }}</span>
         </div>
+        <div
+          v-if="aiActivityStore.generationJobVisible"
+          class="workspace-badge workspace-badge--case-generation"
+          :class="`workspace-badge--case-generation-${generationBadgeState}`"
+          :title="aiActivityStore.generationTooltip"
+        >
+          <span class="workspace-dot"></span>
+          <span>{{ aiActivityStore.generationStatusText }}</span>
+        </div>
         <ImportJobStatusBadge v-if="hasApiAutomationPermission" />
       </div>
       <div class="user-info">
@@ -495,6 +504,7 @@ import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useThemeStore } from '@/store/themeStore';
+import { useAiActivityStore } from '@/store/aiActivityStore';
 import { brandLogoUrl } from '@/utils/assetUrl';
 import ImportJobStatusBadge from '@/features/api-automation/components/ImportJobStatusBadge.vue';
 import { fetchModels, getActiveLlmConfig, testLlmConnection } from '@/features/langgraph/services/llmConfigService';
@@ -558,6 +568,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const projectStore = useProjectStore();
 const themeStore = useThemeStore();
+const aiActivityStore = useAiActivityStore();
 const AI_STATUS_REFRESH_INTERVAL_MS = 30000;
 type AiStatusState = 'checking' | 'online' | 'warning' | 'offline' | 'unconfigured';
 const aiStatus = ref<{
@@ -618,6 +629,17 @@ const aiStatusTooltip = computed(() => {
     parts.push(aiStatus.value.message);
   }
   return parts.join(' 路 ');
+});
+
+const generationBadgeState = computed(() => {
+  const status = aiActivityStore.generationJob?.status;
+  if (status === 'success') {
+    return 'success';
+  }
+  if (status === 'failed') {
+    return 'failed';
+  }
+  return 'running';
 });
 
 async function checkVersion() {
@@ -2045,6 +2067,43 @@ onUnmounted(() => {
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.14);
 }
 
+.workspace-badge--case-generation {
+  max-width: 360px;
+}
+
+.workspace-badge--case-generation-running {
+  color: #1d4ed8;
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(239, 246, 255, 0.94);
+}
+
+.workspace-badge--case-generation-running .workspace-dot {
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.workspace-badge--case-generation-success {
+  color: #15803d;
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(240, 253, 244, 0.94);
+}
+
+.workspace-badge--case-generation-success .workspace-dot {
+  background: linear-gradient(135deg, #22c55e, #10b981);
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+}
+
+.workspace-badge--case-generation-failed {
+  color: #b91c1c;
+  border-color: rgba(248, 113, 113, 0.24);
+  background: rgba(254, 242, 242, 0.94);
+}
+
+.workspace-badge--case-generation-failed .workspace-dot {
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.14);
+}
+
 .header {
   position: relative;
   overflow: hidden;
@@ -2221,8 +2280,13 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1100px) {
+  .left-section {
+    flex-wrap: wrap;
+  }
+
   .workspace-badge {
-    display: none;
+    display: inline-flex;
+    max-width: 100%;
   }
 }
 </style>
