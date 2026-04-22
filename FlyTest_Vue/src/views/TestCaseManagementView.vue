@@ -18,7 +18,7 @@
           :current-project-id="currentProjectId"
           :selected-module-id="selectedModuleId"
           :module-tree="moduleTreeForForm"
-          @add-test-case="showAddTestCaseForm"
+          @add-test-case="showAddCaseModeModal"
           @generate-test-cases="showGenerateCasesModal"
           @edit-test-case="showEditTestCaseForm"
           @view-test-case="showViewTestCaseDetail"
@@ -67,6 +67,20 @@
       :test-case-module-tree="moduleTreeForForm"
       @submit="handleGenerateCasesSubmit"
     />
+
+    <AddCaseModeModal
+      v-model:visible="isAddCaseModeModalVisible"
+      @manual="handleManualAddSelected"
+      @ai="handleAiAddSelected"
+    />
+
+    <AppendGenerateCasesModal
+      v-if="isAppendGenerateModalVisible"
+      v-model:visible="isAppendGenerateModalVisible"
+      :generating="isGeneratingCases"
+      :module-name="selectedModuleName"
+      @submit="handleAppendGenerateSubmit"
+    />
     
     <ExecuteTestCaseModal
       v-if="isExecuteModalVisible"
@@ -97,6 +111,8 @@ import { Message, Notification } from '@arco-design/web-vue';
 
 import ModuleManagementPanel from '@/components/testcase/ModuleManagementPanel.vue';
 import TestCaseList from '@/components/testcase/TestCaseList.vue';
+import AddCaseModeModal from '@/components/testcase/AddCaseModeModal.vue';
+import AppendGenerateCasesModal from '@/components/testcase/AppendGenerateCasesModal.vue';
 const TestCaseForm = defineAsyncComponent(() => import('@/components/testcase/TestCaseForm.vue'));
 const TestCaseDetail = defineAsyncComponent(() => import('@/components/testcase/TestCaseDetail.vue'));
 const GenerateCasesModal = defineAsyncComponent(() => import('@/components/testcase/GenerateCasesModal.vue'));
@@ -161,6 +177,8 @@ const selectedModuleId = ref<number | null>(null);
 const currentEditingTestCaseId = ref<number | null>(null);
 const currentViewingTestCaseId = ref<number | null>(null);
 const isGenerateCasesModalVisible = ref(false);
+const isAddCaseModeModalVisible = ref(false);
+const isAppendGenerateModalVisible = ref(false);
 const isGeneratingCases = ref(false);
 const isExecuteModalVisible = ref(false);
 const isOptimizationModalVisible = ref(false);
@@ -168,12 +186,15 @@ const pendingExecuteTestCase = ref<TestCase | null>(null);
 const pendingOptimizationTestCase = ref<TestCase | null>(null);
 const testCaseIdsForNavigation = ref<number[]>([]); // 用于编辑页面导航的用例ID列表
 
-const lastHandledGenerationState = ref('');
 const modulePanelRef = ref<InstanceType<typeof ModuleManagementPanel> | null>(null);
 const testCaseListRef = ref<InstanceType<typeof TestCaseList> | null>(null);
 
 // 存储所有模块数据，用于传递给详情页和表单
 const allModules = ref<TestCaseModule[]>([]);
+const selectedModuleName = computed(() => {
+  const target = allModules.value.find((module) => module.id === selectedModuleId.value);
+  return target?.name || '';
+});
 const moduleTreeForForm = ref<TreeNodeData[]>([]); // 用于表单的模块树
 
 const startAutomationTask = (
@@ -285,6 +306,25 @@ const handleModuleUpdated = () => {
   // 如需强制刷新用例列表，可在此调用列表刷新方法。
 };
 
+const showAddCaseModeModal = () => {
+  isAddCaseModeModalVisible.value = true;
+};
+
+const handleManualAddSelected = () => {
+  isAddCaseModeModalVisible.value = false;
+  currentEditingTestCaseId.value = null;
+  viewMode.value = 'add';
+};
+
+const handleAiAddSelected = () => {
+  if (!selectedModuleId.value) {
+    Message.warning('请先在左侧选择一个用例模块，再使用 AI 追加生成');
+    return;
+  }
+  isAddCaseModeModalVisible.value = false;
+  isAppendGenerateModalVisible.value = true;
+};
+
 const showAddTestCaseForm = () => {
   currentEditingTestCaseId.value = null;
   viewMode.value = 'add';
@@ -386,6 +426,201 @@ const showGenerateCasesModal = () => {
   isGenerateCasesModalVisible.value = true;
 };
 
+const startRequirementCaseGenerationJob = async (
+  payload: Parameters<typeof generateTestCasesFromRequirement>[1],
+  options?: {
+    submittingModal?: 'generate' | 'append';
+    startLabel?: string;
+    startNotification?: {
+      title: string;
+      content: string;
+      duration?: number;
+    };
+    activityMeta?: {
+      mode: 'standard' | 'append';
+      targetModuleId: number | null;
+    };
+  }
+) => {
+  const restoreSubmitModal = () => {
+    if (options?.submittingModal === 'generate') {
+      isGenerateCasesModalVisible.value = true;
+    }
+    if (options?.submittingModal === 'append') {
+      isAppendGenerateModalVisible.value = true;
+    }
+  };
+
+  if (!currentProjectId.value) {
+    Message.error('没有有效的项目ID');
+    return null;
+  }
+
+  if (options?.submittingModal === 'generate') {
+    isGenerateCasesModalVisible.value = false;
+  }
+  if (options?.submittingModal === 'append') {
+    isAppendGenerateModalVisible.value = false;
+  }
+
+  isGeneratingCases.value = true;
+  try {
+    try {
+      const result = await generateTestCasesFromRequirement(currentProjectId.value, payload);
+      if (!result.success) {
+        restoreSubmitModal();
+        Message.error(result.error || '生成测试用例失败');
+        return null;
+      }
+
+      if (!result.jobId) {
+        restoreSubmitModal();
+        Message.error('生成任务创建失败，请稍后重试');
+        return null;
+      }
+
+      if (options?.startNotification) {
+        Notification.info({
+          title: options.startNotification.title,
+          content: options.startNotification.content,
+          duration: options.startNotification.duration ?? 5000,
+        });
+      }
+
+      aiActivityStore.startGenerationJob(
+        currentProjectId.value,
+        result.jobId,
+        options?.startLabel || 'AI正在生成用例',
+        options?.activityMeta
+      );
+
+      return result.jobId;
+    } catch (error) {
+      restoreSubmitModal();
+      Message.error(error instanceof Error ? error.message : '生成测试用例失败，请稍后重试');
+      return null;
+    }
+  } finally {
+    isGeneratingCases.value = false;
+  }
+};
+
+const handleAppendGenerateSubmit = async (payload: { extraPrompt: string }) => {
+  if (!currentProjectId.value) {
+    Message.error('缺少有效的项目ID');
+    return;
+  }
+
+  if (!selectedModuleId.value) {
+    Message.warning('请先选择一个用例模块');
+    return;
+  }
+
+  await startRequirementCaseGenerationJob(
+    {
+      test_case_module_id: selectedModuleId.value,
+      generate_mode: 'full',
+      test_types: ['functional'],
+      extra_prompt: payload.extraPrompt,
+      append_to_existing: true,
+      auto_infer_requirement: true,
+    },
+    {
+      submittingModal: 'append',
+      startLabel: 'AI正在生成用例',
+      startNotification: {
+        title: '正在追加生成测试用例',
+        content: '任务已提交到后台，系统会自动带入当前模块需求和已有用例继续生成。',
+      },
+      activityMeta: {
+        mode: 'append',
+        targetModuleId: selectedModuleId.value,
+      },
+    }
+  );
+};
+
+const resolveGeneratedCount = (payload?: {
+  generated_count?: number;
+  generatedCount?: number;
+  data?: unknown[];
+  review_history?: Array<{ generated_count?: number }>;
+} | null, fallbackCount?: number) => {
+  if (typeof payload?.generated_count === 'number') {
+    return payload.generated_count;
+  }
+  if (typeof payload?.generatedCount === 'number') {
+    return payload.generatedCount;
+  }
+  if (Array.isArray(payload?.data)) {
+    return payload.data.length;
+  }
+  if (Array.isArray(payload?.review_history) && payload.review_history.length > 0) {
+    return payload.review_history.reduce((total, item) => total + (item?.generated_count || 0), 0);
+  }
+  if (typeof fallbackCount === 'number') {
+    return fallbackCount;
+  }
+  return 0;
+};
+
+const resolveGeneratedCaseIds = (payload?: { data?: Array<{ id?: number }> } | null) => {
+  if (!Array.isArray(payload?.data)) {
+    return [];
+  }
+  return payload.data
+    .map((item) => item?.id)
+    .filter((id): id is number => typeof id === 'number' && id > 0);
+};
+
+const buildGenerationSuccessSummary = (
+  payload: {
+    message?: string;
+    coverage_complete?: boolean;
+    review_rounds?: number;
+    missing_coverage_points?: string[];
+    gaps?: string[];
+    skipped_duplicate_names?: string[];
+    skipped_duplicate_count?: number;
+  } | null | undefined,
+  generatedCount: number
+) => {
+  const summaryParts = [
+    generatedCount > 0 ? `???? ${generatedCount} ???` : '?????????',
+  ];
+
+  if (typeof payload?.coverage_complete === 'boolean') {
+    summaryParts.push(payload.coverage_complete ? 'AI???????' : 'AI???????');
+  }
+
+  if (typeof payload?.review_rounds === 'number' && payload.review_rounds > 0) {
+    summaryParts.push(`?? ${payload.review_rounds} ?`);
+  }
+
+  const missingItems = payload?.missing_coverage_points?.length
+    ? payload.missing_coverage_points
+    : (payload?.gaps || []);
+
+  if (missingItems && missingItems.length > 0) {
+    const preview = missingItems.slice(0, 2).join('?');
+    summaryParts.push(`???${preview}${missingItems.length > 2 ? ' ?' : ''}`);
+  }
+
+  const skippedDuplicateCount =
+    typeof payload?.skipped_duplicate_count === 'number'
+      ? payload.skipped_duplicate_count
+      : (payload?.skipped_duplicate_names?.length || 0);
+  if (skippedDuplicateCount > 0) {
+    summaryParts.push(`???? ${skippedDuplicateCount} ?`);
+  }
+
+  if (generatedCount === 0 && payload?.message) {
+    summaryParts.unshift(payload.message);
+  }
+
+  return summaryParts.join('?');
+};
+
 const handleGenerateCasesSubmit = async (formData: {
   generateMode: 'full' | 'title_only' | 'kb_complete' | 'kb_generate',
   requirementDocumentId: string,
@@ -406,83 +641,29 @@ const handleGenerateCasesSubmit = async (formData: {
   }
 
   if (['full', 'title_only'].includes(formData.generateMode)) {
-    isGeneratingCases.value = true;
-    isGenerateCasesModalVisible.value = false;
-    const progressNotification = Notification.info({
-      title: '正在生成测试用例',
-      content: '任务已提交到后台，提示将在 10 秒后自动关闭。生成进度请看页面顶部 AI 在线旁边。',
-      duration: 10000,
-      closable: true,
-      id: `generate-cases-submit-${Date.now()}`,
-    });
-
-    try {
-      const result = await generateTestCasesFromRequirement(currentProjectId.value, {
+    await startRequirementCaseGenerationJob(
+      {
         requirement_document_id: formData.requirementDocumentId,
         requirement_module_id: formData.requirementModuleId,
         test_case_module_id: formData.testCaseModuleId,
         prompt_id: formData.promptId,
         generate_mode: formData.generateMode as 'full' | 'title_only',
         test_types: formData.testTypes,
-      });
-
-      if (!result.success) {
-        Message.error(result.error || '生成测试用例失败');
-        return;
+      },
+      {
+        submittingModal: 'generate',
+        startLabel: 'AI正在生成用例',
+        startNotification: {
+          title: '正在生成测试用例',
+          content: '任务已提交到后台，提示将在 10 秒后自动关闭。生成进度请看页面顶部 AI 在线旁边。',
+          duration: 10000,
+        },
+        activityMeta: {
+          mode: 'standard',
+          targetModuleId: null,
+        },
       }
-
-      if (!result.jobId) {
-        Message.error('生成任务创建失败，请稍后重试');
-        return;
-      }
-
-      aiActivityStore.startGenerationJob(currentProjectId.value, result.jobId, 'AI 正在生成测试用例');
-    } finally {
-      isGeneratingCases.value = false;
-    }
-    return;
-
-    isGenerateCasesModalVisible.value = false;
-    Notification.info({
-      title: '正在生成测试用例',
-      content: '系统正在根据需求生成测试用例，请稍候，完成后会自动刷新列表。',
-      duration: 0,
-      closable: false,
-      id: `generate-cases-${Date.now()}`,
-    });
-
-    try {
-      const result = await generateTestCasesFromRequirement(currentProjectId.value, {
-        requirement_document_id: formData.requirementDocumentId,
-        requirement_module_id: formData.requirementModuleId,
-        test_case_module_id: formData.testCaseModuleId,
-        prompt_id: formData.promptId,
-        generate_mode: formData.generateMode as 'full' | 'title_only',
-        test_types: formData.testTypes,
-      });
-
-      if (!result.success) {
-        Message.error(result.error || '生成测试用例失败');
-        return;
-      }
-
-      isGenerateCasesModalVisible.value = false;
-      selectedModuleId.value = null;
-      await testCaseListRef.value?.showLatestGeneratedCases?.();
-      modulePanelRef.value?.refreshModules();
-
-      const gapText = result.gaps && result.gaps.length > 0
-        ? `需求缺口：${result.gaps.join('；')}`
-        : '';
-      Notification.success({
-        title: '测试用例生成完成',
-        content: result.message || `已生成 ${result.generatedCount || 0} 条测试用例。${gapText}`,
-        duration: 6000,
-      });
-    } finally {
-      progressNotification?.close?.();
-      isGeneratingCases.value = false;
-    }
+    );
     return;
   }
 
@@ -770,37 +951,64 @@ watch(
     status: aiActivityStore.generationJob?.status || '',
     projectId: aiActivityStore.generationJobProjectId,
   }),
-  async ({ jobId, status }) => {
+  async ({ jobId, status, projectId }) => {
     const stateKey = `${jobId}:${status}`;
-    if (!jobId || !status || stateKey === lastHandledGenerationState.value) {
+    if (!jobId || !status || stateKey === aiActivityStore.generationJobHandledStateKey) {
+      return;
+    }
+
+    if (!currentProjectId.value || !projectId || projectId !== currentProjectId.value) {
       return;
     }
 
     if (status === 'success') {
-      lastHandledGenerationState.value = stateKey;
+      aiActivityStore.markGenerationJobHandled(stateKey);
       viewMode.value = 'list';
-      selectedModuleId.value = null;
-      await testCaseListRef.value?.showLatestGeneratedCases?.();
+      const result = aiActivityStore.generationJob?.result_payload;
+      const generatedCaseIds = resolveGeneratedCaseIds(result);
+      if (aiActivityStore.generationJobMeta.mode === 'append' && aiActivityStore.generationJobMeta.targetModuleId) {
+        selectedModuleId.value = aiActivityStore.generationJobMeta.targetModuleId;
+        await testCaseListRef.value?.resetToFirstPageAndRefresh?.(generatedCaseIds);
+      } else {
+        selectedModuleId.value = null;
+        await testCaseListRef.value?.showLatestGeneratedCases?.(generatedCaseIds);
+      }
       modulePanelRef.value?.refreshModules();
 
-      const result = aiActivityStore.generationJob?.result_payload;
-      const gapText = result?.gaps && result.gaps.length > 0
-        ? ` 需求缺口：${result.gaps.join('；')}`
-        : '';
-      Notification.success({
-        title: '测试用例生成完成',
-        content: result?.message || `已生成 ${result?.generated_count || 0} 条测试用例。${gapText}`,
-        duration: 6000,
-      });
+      const generatedCount = resolveGeneratedCount(result, aiActivityStore.generationJob?.generated_count);
+      const baseMessage = result?.message || `??? ${generatedCount} ??????`;
+      if (result && !result.message) {
+        result.message = baseMessage;
+      }
+      const summaryContent = buildGenerationSuccessSummary(result, generatedCount);
+      if (generatedCount === 0) {
+        Notification.warning({
+          title: '?????????',
+          content: summaryContent,
+          duration: 7000,
+        });
+      } else if (result?.coverage_complete === false) {
+        Notification.warning({
+          title: '???????????????',
+          content: summaryContent,
+          duration: 7000,
+        });
+      } else {
+        Notification.success({
+          title: '????????',
+          content: summaryContent,
+          duration: 6000,
+        });
+      }
       return;
     }
 
     if (status === 'failed') {
-      lastHandledGenerationState.value = stateKey;
+      aiActivityStore.markGenerationJobHandled(stateKey);
       Message.error(aiActivityStore.generationJob?.error_message || '测试用例生成失败');
     }
   },
-  { deep: true }
+  { deep: true, immediate: true }
 );
 
 onMounted(() => {

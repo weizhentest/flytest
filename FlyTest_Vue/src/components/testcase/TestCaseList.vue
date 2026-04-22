@@ -1,5 +1,5 @@
 <template>
-  <div class="testcase-content">
+  <div ref="testcaseContentRef" class="testcase-content">
     <div class="page-header">
       <div class="search-box">
         <a-input-search
@@ -92,6 +92,7 @@
       :pagination="paginationConfig"
       :loading="loading"
       :scroll="tableScroll"
+      :row-class="getRowClassName"
       :bordered="{ cell: true }"
       class="test-case-table"
       @page-change="onPageChange"
@@ -121,6 +122,7 @@
       <template #name="{ record }">
         <a-tooltip :content="record.name">
           <span class="testcase-name-link" @click.stop="handleViewTestCase(record)">
+            <span v-if="isHighlightedGeneratedCase(record.id)" class="generated-case-badge">新生成</span>
             {{ record.name }}
           </span>
         </a-tooltip>
@@ -179,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed, watch, toRefs } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, watch, toRefs, nextTick } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { IconFolder, IconDownload, IconUpload, IconDown } from '@arco-design/web-vue/es/icon';
 import ImportModal from '@/features/testcase-templates/components/ImportModal.vue';
@@ -216,11 +218,13 @@ const { currentProjectId, selectedModuleId } = toRefs(props);
 
 // 本地模块选择（与外部 selectedModuleId 同步）
 const localSelectedModuleId = ref<number | null>(props.selectedModuleId || null);
+const testcaseContentRef = ref<HTMLElement | null>(null);
 
 const loading = ref(false);
 const localSearchKeyword = ref('');
 const selectedLevel = ref<string>('');
 const selectedTestType = ref<string>('');
+const highlightedGeneratedCaseIds = ref<number[]>([]);
 // 默认选中除"不可用"之外的所有状态
 const DEFAULT_REVIEW_STATUSES: ReviewStatus[] = ['pending_review', 'approved', 'needs_optimization', 'optimization_pending_review'];
 const selectedReviewStatuses = ref<ReviewStatus[]>([...DEFAULT_REVIEW_STATUSES]);
@@ -277,6 +281,45 @@ const isCurrentPageIndeterminate = computed(() => {
   ).length;
   return currentPageSelectedCount > 0 && currentPageSelectedCount < currentPageData.length;
 });
+
+let highlightedCaseTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearHighlightedGeneratedCases = () => {
+  if (highlightedCaseTimer) {
+    clearTimeout(highlightedCaseTimer);
+    highlightedCaseTimer = null;
+  }
+  highlightedGeneratedCaseIds.value = [];
+};
+
+const highlightGeneratedCases = (ids?: number[]) => {
+  clearHighlightedGeneratedCases();
+  const normalizedIds = Array.from(
+    new Set((ids || []).filter((id): id is number => typeof id === 'number' && id > 0))
+  );
+  if (normalizedIds.length === 0) {
+    return;
+  }
+  highlightedGeneratedCaseIds.value = normalizedIds;
+  void nextTick(() => {
+    const firstHighlightedRow = testcaseContentRef.value?.querySelector('.generated-case-row');
+    if (firstHighlightedRow instanceof HTMLElement) {
+      firstHighlightedRow.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  });
+  highlightedCaseTimer = setTimeout(() => {
+    highlightedGeneratedCaseIds.value = [];
+    highlightedCaseTimer = null;
+  }, 12000);
+};
+
+const isHighlightedGeneratedCase = (id: number) => highlightedGeneratedCaseIds.value.includes(id);
+
+const getRowClassName = ({ record }: { record: TestCase }) =>
+  isHighlightedGeneratedCase(record.id) ? 'generated-case-row' : '';
 
 // 处理单个复选框变化
 const handleCheckboxChange = (id: number, checked: boolean) => {
@@ -392,24 +435,28 @@ const fetchTestCases = async () => {
 };
 
 const onSearch = (value: string) => {
+  clearHighlightedGeneratedCases();
   localSearchKeyword.value = value;
   paginationConfig.current = 1;
   fetchTestCases();
 };
 
 const onLevelChange = (value: string) => {
+  clearHighlightedGeneratedCases();
   selectedLevel.value = value;
   paginationConfig.current = 1;
   fetchTestCases();
 };
 
 const onReviewStatusChange = (value: ReviewStatus[]) => {
+  clearHighlightedGeneratedCases();
   selectedReviewStatuses.value = value;
   paginationConfig.current = 1;
   fetchTestCases();
 };
 
 const onTestTypeChange = (value: string) => {
+  clearHighlightedGeneratedCases();
   selectedTestType.value = value;
   paginationConfig.current = 1;
   fetchTestCases();
@@ -447,11 +494,13 @@ const handleReviewStatusChange = async (record: TestCase, newStatus: string) => 
 };
 
 const onPageChange = (page: number) => {
+  clearHighlightedGeneratedCases();
   paginationConfig.current = page;
   fetchTestCases();
 };
 
 const onPageSizeChange = (pageSize: number) => {
+  clearHighlightedGeneratedCases();
   paginationConfig.pageSize = pageSize;
   paginationConfig.current = 1;
   fetchTestCases();
@@ -591,9 +640,11 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
+  clearHighlightedGeneratedCases();
 });
 
 watch(currentProjectId, () => {
+  clearHighlightedGeneratedCases();
   paginationConfig.current = 1;
   localSearchKeyword.value = '';
   selectedLevel.value = ''; // 项目切换时清空优先级筛选
@@ -605,6 +656,7 @@ watch(currentProjectId, () => {
 // 监听外部模块选择变化（来自左侧模块管理面板）
 watch(selectedModuleId, (newVal) => {
   if (newVal !== localSelectedModuleId.value) {
+    clearHighlightedGeneratedCases();
     localSelectedModuleId.value = newVal || null;
     paginationConfig.current = 1;
     fetchTestCases();
@@ -613,19 +665,24 @@ watch(selectedModuleId, (newVal) => {
 
 // 暴露给父组件的方法
 defineExpose({
-  refreshTestCases: fetchTestCases,
-  resetToFirstPageAndRefresh: () => {
-    paginationConfig.current = 1;
-    return fetchTestCases();
+  refreshTestCases: async (generatedIds?: number[]) => {
+    await fetchTestCases();
+    highlightGeneratedCases(generatedIds);
   },
-  showLatestGeneratedCases: () => {
+  resetToFirstPageAndRefresh: async (generatedIds?: number[]) => {
+    paginationConfig.current = 1;
+    await fetchTestCases();
+    highlightGeneratedCases(generatedIds);
+  },
+  showLatestGeneratedCases: async (generatedIds?: number[]) => {
     paginationConfig.current = 1;
     localSearchKeyword.value = '';
     selectedLevel.value = '';
     selectedTestType.value = '';
     selectedReviewStatuses.value = [...DEFAULT_REVIEW_STATUSES];
     localSelectedModuleId.value = null;
-    return fetchTestCases();
+    await fetchTestCases();
+    highlightGeneratedCases(generatedIds);
   },
   // 获取当前筛选后的用例ID列表（用于编辑页面导航）
   getTestCaseIds: () => testCaseData.value.map(tc => tc.id),
@@ -820,7 +877,9 @@ defineExpose({
 }
 
 .testcase-name-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 160px;
   color: #1890ff;
   cursor: pointer;
@@ -834,6 +893,25 @@ defineExpose({
 .testcase-name-link:hover {
   color: #40a9ff;
   text-decoration: underline;
+}
+
+.generated-case-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  min-height: 20px;
+  border-radius: 999px;
+  border: 1px solid #b7e4c7;
+  background: #e8f7e9;
+  color: #1f8f46;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+:deep(.test-case-table .generated-case-row td) {
+  background: #f3fbf4;
 }
 
 /* 移除重复的样式定义 */

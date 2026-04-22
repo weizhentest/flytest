@@ -141,12 +141,15 @@ export interface OperationResponse {
 }
 
 export interface GenerateTestCasesFromRequirementRequest {
-  requirement_document_id: string;
-  requirement_module_id: string;
+  requirement_document_id?: string;
+  requirement_module_id?: string;
   test_case_module_id: number;
-  prompt_id: number;
+  prompt_id?: number;
   generate_mode: 'full' | 'title_only';
   test_types: string[];
+  extra_prompt?: string;
+  append_to_existing?: boolean;
+  auto_infer_requirement?: boolean;
 }
 
 export interface GenerateTestCasesFromRequirementResponse {
@@ -163,6 +166,32 @@ export interface GenerateTestCasesFromRequirementResponse {
   data?: TestCase[];
 }
 
+export interface TestCaseGenerationResultPayload {
+  message?: string;
+  generated_count?: number;
+  gaps?: string[];
+  summary?: string;
+  data?: TestCase[];
+  review_completed?: boolean;
+  coverage_complete?: boolean;
+  coverage_score?: number | null;
+  review_rounds?: number;
+  review_history?: Array<{
+    round: number;
+    generated_count: number;
+    summary?: string;
+    coverage_score?: number | null;
+    coverage_complete?: boolean;
+    missing_coverages?: string[];
+    duplicate_case_names?: string[];
+  }>;
+  missing_coverage_points?: string[];
+  duplicate_case_names?: string[];
+  skipped_duplicate_names?: string[];
+  skipped_duplicate_count?: number;
+  next_generation_guidance?: string;
+}
+
 export interface TestCaseGenerationJobStatus {
   job_id: string;
   status: 'pending' | 'running' | 'success' | 'failed';
@@ -173,13 +202,7 @@ export interface TestCaseGenerationJobStatus {
   generated_count: number;
   summary: string;
   gaps: string[];
-  result_payload?: {
-    message?: string;
-    generated_count?: number;
-    gaps?: string[];
-    summary?: string;
-    data?: TestCase[];
-  } | null;
+  result_payload?: TestCaseGenerationResultPayload | null;
   created_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
@@ -191,6 +214,37 @@ export interface TestCaseGenerationJobStatusResponse {
   error?: string;
   statusCode?: number;
 }
+
+const normalizeGenerationResultPayload = (payload: any): TestCaseGenerationResultPayload | null => {
+  if (!payload) {
+    return null;
+  }
+
+  const normalizedData = Array.isArray(payload?.data) ? payload.data : [];
+  const normalizedGeneratedCount =
+    payload?.generated_count ??
+    payload?.generatedCount ??
+    normalizedData.length ??
+    0;
+
+  return {
+    message: payload?.message,
+    generated_count: normalizedGeneratedCount,
+    gaps: payload?.gaps || [],
+    summary: payload?.summary || '',
+    data: normalizedData,
+    review_completed: payload?.review_completed,
+    coverage_complete: payload?.coverage_complete,
+    coverage_score: payload?.coverage_score ?? null,
+    review_rounds: payload?.review_rounds,
+    review_history: payload?.review_history || [],
+    missing_coverage_points: payload?.missing_coverage_points || [],
+    duplicate_case_names: payload?.duplicate_case_names || [],
+    skipped_duplicate_names: payload?.skipped_duplicate_names || [],
+    skipped_duplicate_count: payload?.skipped_duplicate_count ?? 0,
+    next_generation_guidance: payload?.next_generation_guidance || '',
+  };
+};
 
 // 截图上传请求参数
 export interface UploadScreenshotsRequest {
@@ -399,11 +453,13 @@ export const generateTestCasesFromRequirement = async (
     );
 
     const rawPayload = response.data?.data ?? response.data ?? {};
-    const resultPayload = rawPayload?.result_payload?.data ?? rawPayload?.result_payload ?? rawPayload?.data ?? rawPayload;
+    const resultPayload = normalizeGenerationResultPayload(
+      rawPayload?.result_payload?.data ?? rawPayload?.result_payload ?? rawPayload?.data ?? rawPayload
+    );
 
     return {
       success: true,
-      message: response.data?.message || '测试用例生成成功',
+      message: response.data?.message || '测试用例生成任务已提交',
       statusCode: response.status,
       jobId: rawPayload?.job_id || rawPayload?.jobId,
       status: rawPayload?.status,
@@ -455,7 +511,9 @@ export const getTestCaseGenerationJobStatus = async (
 
     const rawPayload = response.data?.data ?? response.data ?? {};
     const payload = rawPayload?.data ?? rawPayload;
-    const resultPayload = payload?.result_payload?.data ?? payload?.result_payload ?? null;
+    const resultPayload = normalizeGenerationResultPayload(
+      payload?.result_payload?.data ?? payload?.result_payload ?? null
+    );
 
     return {
       success: true,
@@ -469,15 +527,7 @@ export const getTestCaseGenerationJobStatus = async (
         generated_count: payload?.generated_count ?? payload?.generatedCount ?? 0,
         summary: payload?.summary || '',
         gaps: payload?.gaps || [],
-        result_payload: resultPayload
-          ? {
-              message: resultPayload?.message,
-              generated_count: resultPayload?.generated_count ?? resultPayload?.generatedCount,
-              gaps: resultPayload?.gaps || [],
-              summary: resultPayload?.summary || '',
-              data: resultPayload?.data || [],
-            }
-          : null,
+        result_payload: resultPayload,
         created_at: payload?.created_at ?? payload?.createdAt ?? null,
         started_at: payload?.started_at ?? payload?.startedAt ?? null,
         completed_at: payload?.completed_at ?? payload?.completedAt ?? null,

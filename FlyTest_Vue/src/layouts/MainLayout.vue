@@ -39,7 +39,15 @@
           :title="aiActivityStore.generationTooltip"
         >
           <span class="workspace-dot"></span>
-          <span>{{ aiActivityStore.generationStatusText }}</span>
+          <span class="generation-badge-copy">
+            <span>{{ aiActivityStore.generationStatusText }}</span>
+            <span
+              v-if="aiActivityStore.generationStageText && generationBadgeState === 'running'"
+              class="generation-badge-stage"
+            >
+              {{ aiActivityStore.generationStageText }}
+            </span>
+          </span>
         </div>
         <ImportJobStatusBadge v-if="hasApiAutomationPermission" />
       </div>
@@ -2069,6 +2077,26 @@ onUnmounted(() => {
 
 .workspace-badge--case-generation {
   max-width: 360px;
+}
+
+.generation-badge-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.generation-badge-stage {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .workspace-badge--case-generation-running {
