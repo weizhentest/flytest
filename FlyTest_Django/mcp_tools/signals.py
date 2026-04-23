@@ -1,16 +1,19 @@
 """
-Django信号处理器
-在应用关闭时自动清理MCP会话
+Cleanup MCP sessions when Django exits.
 """
+
+import atexit
 import asyncio
 import logging
-import atexit
+
 
 logger = logging.getLogger(__name__)
 
 
 def cleanup_mcp_sessions_on_exit():
-    """在应用退出时清理MCP会话"""
+    """Best-effort MCP cleanup during process shutdown."""
+    previous_raise_exceptions = logging.raiseExceptions
+    logging.raiseExceptions = False
     try:
         from mcp_tools.persistent_client import mcp_session_manager
 
@@ -18,9 +21,11 @@ def cleanup_mcp_sessions_on_exit():
             asyncio.run(mcp_session_manager.cleanup_all())
             logger.info("MCP sessions cleaned up on application exit")
         except RuntimeError as exc:
-            logger.debug(f"MCP cleanup skipped during exit: {exc}")
-    except Exception as exc:
-        logger.error(f"Error cleaning up MCP sessions on exit: {exc}", exc_info=True)
+            logger.debug("MCP cleanup skipped during exit: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error cleaning up MCP sessions on exit: %s", exc, exc_info=True)
+    finally:
+        logging.raiseExceptions = previous_raise_exceptions
 
 
 atexit.register(cleanup_mcp_sessions_on_exit)
