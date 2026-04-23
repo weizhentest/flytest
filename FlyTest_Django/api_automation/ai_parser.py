@@ -1153,7 +1153,7 @@ def _consolidate_requests_with_ai(
 
 def _sanitize_document_for_ai(document_content: str) -> str:
     sanitized = re.sub(
-        r"(?i)(authorization\s*[:锛歖\s*)([A-Za-z0-9+/=_-]{40,})",
+        r"(?i)(authorization\s*[:：]\s*)([A-Za-z0-9+/=_-]{40,})",
         r"\1<LONG_TOKEN>",
         document_content,
     )

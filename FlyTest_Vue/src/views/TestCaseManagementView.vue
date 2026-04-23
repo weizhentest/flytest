@@ -586,15 +586,15 @@ const buildGenerationSuccessSummary = (
   generatedCount: number
 ) => {
   const summaryParts = [
-    generatedCount > 0 ? `???? ${generatedCount} ???` : '?????????',
+    generatedCount > 0 ? `已生成 ${generatedCount} 条用例` : '本次未生成新用例',
   ];
 
   if (typeof payload?.coverage_complete === 'boolean') {
-    summaryParts.push(payload.coverage_complete ? 'AI???????' : 'AI???????');
+    summaryParts.push(payload.coverage_complete ? 'AI 评审已覆盖全部要点' : 'AI 评审发现仍有遗漏点');
   }
 
   if (typeof payload?.review_rounds === 'number' && payload.review_rounds > 0) {
-    summaryParts.push(`?? ${payload.review_rounds} ?`);
+    summaryParts.push(`共进行 ${payload.review_rounds} 轮评审`);
   }
 
   const missingItems = payload?.missing_coverage_points?.length
@@ -602,8 +602,8 @@ const buildGenerationSuccessSummary = (
     : (payload?.gaps || []);
 
   if (missingItems && missingItems.length > 0) {
-    const preview = missingItems.slice(0, 2).join('?');
-    summaryParts.push(`???${preview}${missingItems.length > 2 ? ' ?' : ''}`);
+    const preview = missingItems.slice(0, 2).join('、');
+    summaryParts.push(`待补充覆盖点：${preview}${missingItems.length > 2 ? ' 等' : ''}`);
   }
 
   const skippedDuplicateCount =
@@ -611,14 +611,14 @@ const buildGenerationSuccessSummary = (
       ? payload.skipped_duplicate_count
       : (payload?.skipped_duplicate_names?.length || 0);
   if (skippedDuplicateCount > 0) {
-    summaryParts.push(`???? ${skippedDuplicateCount} ?`);
+    summaryParts.push(`跳过重复用例 ${skippedDuplicateCount} 条`);
   }
 
   if (generatedCount === 0 && payload?.message) {
     summaryParts.unshift(payload.message);
   }
 
-  return summaryParts.join('?');
+  return summaryParts.join('；');
 };
 
 const handleGenerateCasesSubmit = async (formData: {
@@ -974,26 +974,26 @@ watch(
       modulePanelRef.value?.refreshModules();
 
       const generatedCount = resolveGeneratedCount(result, aiActivityStore.generationJob?.generated_count);
-      const baseMessage = result?.message || `??? ${generatedCount} ??????`;
+      const baseMessage = result?.message || `本次共生成 ${generatedCount} 条测试用例`;
       if (result && !result.message) {
         result.message = baseMessage;
       }
       const summaryContent = buildGenerationSuccessSummary(result, generatedCount);
       if (generatedCount === 0) {
         Notification.warning({
-          title: '?????????',
+          title: '生成完成，未新增用例',
           content: summaryContent,
           duration: 7000,
         });
       } else if (result?.coverage_complete === false) {
         Notification.warning({
-          title: '???????????????',
+          title: '生成完成，但仍有覆盖缺口',
           content: summaryContent,
           duration: 7000,
         });
       } else {
         Notification.success({
-          title: '????????',
+          title: '测试用例生成完成',
           content: summaryContent,
           duration: 6000,
         });

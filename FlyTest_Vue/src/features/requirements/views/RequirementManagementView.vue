@@ -721,7 +721,7 @@ const showUploadModal = () => {
     return;
   }
   uploadForm.project = String(currentProjectId.value);
-  console.log('鎵撳紑涓婁紶妯℃€佹锛岄」鐩甀D:', uploadForm.project);
+  console.log('打开上传弹窗，项目 ID:', uploadForm.project);
   uploadModalVisible.value = true;
 };
 

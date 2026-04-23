@@ -128,7 +128,7 @@ const safeStringify = (value: unknown): string => {
   try {
     return JSON.stringify(value);
   } catch {
-    return '[鏃犳硶搴忓垪鍖栫殑鏁版嵁]';
+    return '[无法序列化的数据]';
   }
 };
 
@@ -223,7 +223,7 @@ const buildToolResultDisplayPayload = (rawToolOutput: unknown): ToolResultDispla
     const content = textParts.filter((part) => part && part.trim()).join('\n');
     if (content || imageDataUrl) {
       return {
-        content: content || '[宸ュ叿杩斿洖浜嗗浘鐗嘳',
+        content: content || '[工具返回了图片]',
         imageDataUrl
       };
     }
@@ -245,7 +245,7 @@ const buildToolResultDisplayPayload = (rawToolOutput: unknown): ToolResultDispla
 
     if (text || imageDataUrl) {
       return {
-        content: text || '[宸ュ叿杩斿洖浜嗗浘鐗嘳',
+        content: text || '[工具返回了图片]',
         imageDataUrl
       };
     }
@@ -584,7 +584,7 @@ export async function sendChatMessageStream(
             !activeStreams.value[streamSessionId].isComplete &&
             !activeStreams.value[streamSessionId].isWaitingForApproval) {
             console.warn('[ChatService] Stream ended without complete event, possible network interruption');
-            activeStreams.value[streamSessionId].error = '杩炴帴鎰忓涓柇锛岃閲嶈瘯';
+            activeStreams.value[streamSessionId].error = '连接意外中断，请重试';
             activeStreams.value[streamSessionId].isComplete = true;
         }
         break;
@@ -707,7 +707,7 @@ export async function sendChatMessageStream(
                 activeStreams.value[streamSessionId].content = '';
               }
               activeStreams.value[streamSessionId].messages.push({
-                content: toolPayload.content || '[宸ュ叿杩斿洖浜嗗浘鐗嘳',
+                content: toolPayload.content || '[工具返回了图片]',
                 type: 'tool',
                 time: time,
                 toolName: typeof parsed.tool_name === 'string' ? parsed.tool_name : undefined,
@@ -1245,7 +1245,7 @@ export async function resumeAgentLoop(
                 activeStreams.value[sessionId].content = '';
               }
               activeStreams.value[sessionId].messages.push({
-                content: toolPayload.content || '[宸ュ叿杩斿洖浜嗗浘鐗嘳',
+                content: toolPayload.content || '[工具返回了图片]',
                 type: 'tool',
                 time: time,
                 toolName: typeof parsed.tool_name === 'string' ? parsed.tool_name : undefined,

@@ -1772,9 +1772,9 @@ onUnmounted(() => {
 }
 </style>
 
-<!-- 鍏ㄥ眬鏍峰紡 - 鐢ㄤ簬鑿滃崟寮瑰嚭灞傚鐢?-->
+<!-- 全局样式，用于菜单弹出层兜底 -->
 <style>
-/* 澶囩敤鏍峰紡锛氱‘淇濆脊鍑鸿彍鍗曚笉鍙楅珮搴﹂檺鍒?*/
+/* 兜底样式，确保弹出菜单不受高度限制 */
 .arco-menu-pop .arco-menu-inner {
   max-height: unset !important;
 }

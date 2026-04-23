@@ -384,7 +384,7 @@
                 </div>
               </a-alert>
               <div v-else-if="importAiCompatibilityLoading" class="import-option-status__loading">
-                姝ｅ湪妫€娴嬪綋鍓?AI 閰嶇疆涓庢枃妗ｅ鍏ョ殑鍏煎鎬?..
+                正在检测当前 AI 配置与文档导入的兼容性...
               </div>
             </div>
             <a-switch v-model="enableAiParse" :disabled="importAiParseBlocked || documentImportMode === 'text'" />

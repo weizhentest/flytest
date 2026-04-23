@@ -119,7 +119,7 @@ class ApiAutomationAIParserTests(SimpleTestCase):
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {
-            "content": [{"type": "text", "text": "浣犲ソ"}],
+            "content": [{"type": "text", "text": "你好"}],
             "usage": {"input_tokens": 8, "output_tokens": 12},
             "stop_reason": "end_turn",
         }
@@ -1454,7 +1454,7 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
         suggestions = _build_environment_suggestions(
             parsed_requests=parsed_requests,
             created_requests=created_requests,
-            environment_drafts=[{"name": "娴嬭瘯鐜", "base_url": "https://cms-test.example.com/api"}],
+            environment_drafts=[{"name": "测试环境", "base_url": "https://cms-test.example.com/api"}],
             saved_environments=[],
             primary_environment_draft={"base_url": "https://cms-test.example.com/api"},
             primary_environment=None,
@@ -4787,7 +4787,7 @@ def _patched_test_ai_parse_job_is_not_recovered_too_early(self):
             source_name="demo.md",
             source_file=SimpleUploadedFile(
                 "demo.md",
-                "## Login\n鎺ュ彛鍦板潃: /api/login\n璇锋眰鏂瑰紡: POST\n鍙傛暟: username,password".encode("utf-8"),
+                "## Login\n接口地址: /api/login\n请求方式: POST\n参数: username,password".encode("utf-8"),
                 content_type="text/markdown",
             ),
             status="running",
