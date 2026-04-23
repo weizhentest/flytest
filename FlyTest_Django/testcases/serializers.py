@@ -48,6 +48,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
     steps = TestCaseStepSerializer(many=True)
     screenshots = serializers.SerializerMethodField()
     creator_detail = UserDetailSerializer(source="creator", read_only=True)
+    assignee_detail = serializers.SerializerMethodField()
     module_id = serializers.PrimaryKeyRelatedField(
         queryset=TestCaseModule.objects.all(),
         source="module",  # 关联到模型中的 'module' 字段
@@ -75,6 +76,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
             "steps",
             "screenshot",
             "screenshots",
+            "assignee_detail",
             "creator",
             "creator_detail",
             "created_at",
@@ -211,6 +213,16 @@ class TestCaseSerializer(serializers.ModelSerializer):
         # 移除 context=self.context，确保 screenshot_url 生成相对路径
         return TestCaseScreenshotSerializer(screenshots, many=True).data
 
+    def get_assignee_detail(self, obj):
+        assignment = getattr(obj, "assignment", None)
+        assignee = getattr(assignment, "assignee", None)
+        if assignee is None:
+            return None
+        return {
+            "id": assignee.id,
+            "username": assignee.username,
+        }
+
 
 class TestCaseListSerializer(serializers.ModelSerializer):
     """
@@ -219,6 +231,7 @@ class TestCaseListSerializer(serializers.ModelSerializer):
     """
 
     creator_detail = serializers.SerializerMethodField()
+    assignee_detail = serializers.SerializerMethodField()
     module_id = serializers.PrimaryKeyRelatedField(source="module", read_only=True)
     module_detail = serializers.StringRelatedField(source="module", read_only=True)
 
@@ -234,6 +247,7 @@ class TestCaseListSerializer(serializers.ModelSerializer):
             "level",
             "creator",
             "creator_detail",
+            "assignee_detail",
             "created_at",
             "updated_at",
             "review_status",
@@ -248,6 +262,16 @@ class TestCaseListSerializer(serializers.ModelSerializer):
         return {
             "id": creator.id,
             "username": creator.username,
+        }
+
+    def get_assignee_detail(self, obj):
+        assignment = getattr(obj, "assignment", None)
+        assignee = getattr(assignment, "assignee", None)
+        if assignee is None:
+            return None
+        return {
+            "id": assignee.id,
+            "username": assignee.username,
         }
 
 

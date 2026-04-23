@@ -1,10 +1,6 @@
 <template>
   <div class="module-panel-wrapper">
-    <a-card
-      class="module-panel"
-      :bordered="false"
-      title="模块管理"
-    >
+    <a-card class="module-panel" :bordered="false" title="模块管理">
       <div class="module-panel-content">
         <div class="module-panel-header">
           <a-input-search
@@ -15,7 +11,13 @@
             @input="onModuleSearch"
           />
           <div class="module-actions">
-            <a-dropdown @select="handleModuleAction" trigger="hover" position="bottom" :popup-max-width="false" class="module-dropdown">
+            <a-dropdown
+              trigger="hover"
+              position="bottom"
+              :popup-max-width="false"
+              class="module-dropdown"
+              @select="handleModuleAction"
+            >
               <a-button type="primary" size="small" class="module-action-button">
                 操作
               </a-button>
@@ -28,6 +30,7 @@
             </a-dropdown>
           </div>
         </div>
+
         <div class="tree-container">
           <div v-if="moduleLoading" class="module-loading-container">
             <a-spin />
@@ -38,20 +41,20 @@
             :field-names="{ key: 'id', title: 'name' }"
             show-line
             block-node
-            @select="onModuleSelect"
             v-model:selected-keys="selectedModuleKeys"
             v-model:expanded-keys="expandedKeys"
+            @select="onModuleSelect"
             @expand="onTreeExpand"
           >
             <template #title="nodeData">
               <span>{{ nodeData.name }}</span>
-              <span class="module-count"> ({{ nodeData.testcase_count || nodeData.test_case_count || 0 }})</span>
+              <span class="module-count">({{ nodeData.testcase_count || nodeData.test_case_count || 0 }})</span>
             </template>
           </a-tree>
           <a-empty v-else description="暂无模块数据" />
         </div>
       </div>
-      <!-- 模块管理模态框 -->
+
       <ModuleEditModal
         :visible="moduleModalVisible"
         :is-editing="isEditingModule"
@@ -66,16 +69,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch, toRefs } from 'vue';
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import type { TreeNodeData } from '@arco-design/web-vue';
 import {
-  getTestCaseModules,
   deleteTestCaseModule,
-  type TestCaseModule,
+  getTestCaseModules,
   type CreateTestCaseModuleRequest,
+  type TestCaseModule,
 } from '@/services/testcaseModuleService';
-import ModuleEditModal from './ModuleEditModal.vue'; // 引入模块编辑模态框
+import ModuleEditModal from './ModuleEditModal.vue';
 
 const props = defineProps<{
   currentProjectId: number | null;
@@ -83,38 +86,35 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'moduleSelected', moduleId: number | null): void;
-  (e: 'moduleUpdated'): void; // 当模块（增删改）更新后触发
+  (e: 'moduleUpdated'): void;
 }>();
 
 const { currentProjectId } = toRefs(props);
 
-// 加载状态
-const moduleLoading = ref(false); // 模块列表加载状态
-
-// 搜索关键词
-const moduleSearchKeyword = ref(''); // 模块搜索关键词
-
-// 模块管理相关
+const moduleLoading = ref(false);
+const moduleSearchKeyword = ref('');
 const testCaseModules = ref<TestCaseModule[]>([]);
 const selectedModuleKey = ref<number | null>(null);
-const selectedModuleKeys = ref<(number|string)[]>([]); // For a-tree v-model:selected-keys
-const expandedKeys = ref<(string | number)[]>([]); // 树节点展开状态 - 默认收起
+const selectedModuleKeys = ref<(number | string)[]>([]);
+const expandedKeys = ref<(number | string)[]>([]);
 
-// 模块编辑模态框相关
 const moduleModalVisible = ref(false);
+const isEditingModule = ref(false);
 const moduleForm = reactive<CreateTestCaseModuleRequest & { id?: number }>({
   name: '',
   parent: undefined,
 });
-const isEditingModule = ref(false);
 
-
-// 获取模块列表
 const fetchTestCaseModules = async () => {
-  if (!currentProjectId.value) return;
+  if (!currentProjectId.value) {
+    testCaseModules.value = [];
+    return;
+  }
   moduleLoading.value = true;
   try {
-    const response = await getTestCaseModules(currentProjectId.value, { search: moduleSearchKeyword.value }); // 假设API支持search参数
+    const response = await getTestCaseModules(currentProjectId.value, {
+      search: moduleSearchKeyword.value,
+    });
     if (response.success && response.data) {
       testCaseModules.value = response.data;
     } else {
@@ -130,51 +130,34 @@ const fetchTestCaseModules = async () => {
   }
 };
 
-// 构建模块树 (扁平列表转树形)
 const buildModuleTree = (modules: TestCaseModule[], parentId: number | null = null): TreeNodeData[] => {
   return modules
-    .filter(module => module.parent === parentId || module.parent_id === parentId)
-    .map(module => {
-      const children = buildModuleTree(modules, module.id)
-      const directCount = Number((module as any).testcase_count || module.test_case_count || 0)
+    .filter((module) => module.parent === parentId || module.parent_id === parentId)
+    .map((module) => {
+      const children = buildModuleTree(modules, module.id);
+      const directCount = Number((module as any).testcase_count || module.test_case_count || 0);
       const childrenCount = children.reduce(
         (total, child) => total + Number((child as any).test_case_count || 0),
         0
-      )
+      );
 
       return {
         ...module,
-        id: module.id, // ?? id ?? key
-        key: module.id, // for a-tree
-        title: module.name, // for a-tree
+        id: module.id,
+        key: module.id,
+        title: module.name,
         children,
-        test_case_count: directCount + childrenCount,
-      }
-    })
-}
+        testcase_count: directCount + childrenCount,
+      };
+    });
+};
 
+const moduleTreeData = computed(() => buildModuleTree(testCaseModules.value));
 
-// 模块树数据
-const moduleTreeData = computed(() => {
-  return buildModuleTree(testCaseModules.value);
-});
-
-// 用于 TreeSelect 的模块树数据 (排除当前编辑的模块及其子模块，防止循环引用)
-const moduleTreeForSelect = computed(() => {
-  if (isEditingModule.value && moduleForm.id) {
-    const filterOutIds = getAllChildModuleIds(testCaseModules.value, moduleForm.id);
-    filterOutIds.add(moduleForm.id); // Also filter out the module itself
-    const filteredModules = testCaseModules.value.filter(m => !filterOutIds.has(m.id));
-    return buildModuleTree(filteredModules);
-  }
-  return moduleTreeData.value;
-});
-
-// 获取一个模块及其所有子模块的ID
 const getAllChildModuleIds = (modules: TestCaseModule[], parentId: number): Set<number> => {
   const childrenIds = new Set<number>();
   const findChildren = (currentParentId: number) => {
-    modules.forEach(module => {
+    modules.forEach((module) => {
       if (module.parent === currentParentId || module.parent_id === currentParentId) {
         childrenIds.add(module.id);
         findChildren(module.id);
@@ -185,17 +168,25 @@ const getAllChildModuleIds = (modules: TestCaseModule[], parentId: number): Set<
   return childrenIds;
 };
 
+const moduleTreeForSelect = computed(() => {
+  if (isEditingModule.value && moduleForm.id) {
+    const filteredIds = getAllChildModuleIds(testCaseModules.value, moduleForm.id);
+    filteredIds.add(moduleForm.id);
+    const filteredModules = testCaseModules.value.filter((module) => !filteredIds.has(module.id));
+    return buildModuleTree(filteredModules);
+  }
+  return moduleTreeData.value;
+});
 
-// 过滤后的模块树数据 (用于搜索)
 const filteredModuleTreeData = computed(() => {
-  if (!moduleSearchKeyword.value.trim()) {
+  const keyword = moduleSearchKeyword.value.trim().toLowerCase();
+  if (!keyword) {
     return moduleTreeData.value;
   }
-  const keyword = moduleSearchKeyword.value.toLowerCase();
 
-  function filterTree(nodes: TreeNodeData[]): TreeNodeData[] {
+  const filterTree = (nodes: TreeNodeData[]): TreeNodeData[] => {
     return nodes.reduce((acc, node) => {
-      const nodeName = (node.name || '').toLowerCase();
+      const nodeName = String((node as any).name || '').toLowerCase();
       const children = node.children ? filterTree(node.children as TreeNodeData[]) : [];
 
       if (nodeName.includes(keyword) || children.length > 0) {
@@ -203,20 +194,18 @@ const filteredModuleTreeData = computed(() => {
       }
       return acc;
     }, [] as TreeNodeData[]);
-  }
+  };
+
   return filterTree(moduleTreeData.value);
 });
 
-
-// 模块搜索
 const onModuleSearch = () => {
-  // 前端过滤，如果需要API搜索，则调用 fetchTestCaseModules
+  // 使用前端过滤，无需额外请求。
 };
 
-// 模块树节点选择
 const onModuleSelect = (
-  _newSelectedKeys: (string | number)[],
-  data: { selected?: boolean; selectedNodes: TreeNodeData[]; node?: TreeNodeData; e?: Event }
+  _selectedKeys: (string | number)[],
+  data: { selected?: boolean; node?: TreeNodeData }
 ) => {
   if (data.selected && data.node) {
     selectedModuleKey.value = data.node.key as number;
@@ -227,105 +216,113 @@ const onModuleSelect = (
   }
 };
 
-// 树节点展开/收起处理
 const onTreeExpand = (newExpandedKeys: (string | number)[]) => {
   expandedKeys.value = newExpandedKeys;
 };
 
-// 模块操作处理
-const handleModuleAction = async (action: string | number | Record<string, any> | undefined) => {
+const handleModuleAction = (action: string | number | Record<string, any> | undefined) => {
   const actionValue = action as string;
-  switch (actionValue) {
-    case 'addRoot':
-      isEditingModule.value = false;
-      moduleForm.id = undefined;
-      moduleForm.name = '';
-      moduleForm.parent = undefined;
-      moduleModalVisible.value = true;
-      break;
-    case 'addChild':
-      if (selectedModuleKey.value) {
-        isEditingModule.value = false;
-        moduleForm.id = undefined;
-        moduleForm.name = '';
-        moduleForm.parent = selectedModuleKey.value;
-        moduleModalVisible.value = true;
-      } else {
-        Message.warning('请先选择一个父模块');
-      }
-      break;
-    case 'edit':
-      if (selectedModuleKey.value) {
-        const moduleToEdit = testCaseModules.value.find(m => m.id === selectedModuleKey.value);
-        if (moduleToEdit) {
-          isEditingModule.value = true;
-          moduleForm.id = moduleToEdit.id;
-          moduleForm.name = moduleToEdit.name;
-          moduleForm.parent = moduleToEdit.parent || undefined;
-          moduleModalVisible.value = true;
-        }
-      } else {
-        Message.warning('请先选择要编辑的模块');
-      }
-      break;
-    case 'delete':
-      if (selectedModuleKey.value) {
-        const moduleToDelete = testCaseModules.value.find(m => m.id === selectedModuleKey.value);
-        if (moduleToDelete) {
-          const children = testCaseModules.value.filter(m => m.parent === selectedModuleKey.value || m.parent_id === selectedModuleKey.value);
-          if (children.length > 0) {
-            Message.error('该模块下有子模块，请先删除子模块');
-            return;
-          }
-          // 检查模块下是否有用例
-          if (moduleToDelete.test_case_count && moduleToDelete.test_case_count > 0) {
-            Message.error(`模块 "${moduleToDelete.name}" 下包含 ${moduleToDelete.test_case_count} 个测试用例，请先处理用例。`);
-            return;
-          }
 
-          Modal.warning({
-            title: '确认删除',
-            content: `确定要删除模块 "${moduleToDelete.name}" 吗？此操作不可恢复。`,
-            okText: '确认',
-            cancelText: '取消',
-            onOk: async () => {
-              if (!currentProjectId.value || !selectedModuleKey.value) return;
-              try {
-                const response = await deleteTestCaseModule(currentProjectId.value, selectedModuleKey.value);
-                if (response.success) {
-                  Message.success('模块删除成功');
-                  fetchTestCaseModules(); // 刷新模块列表
-                  selectedModuleKey.value = null; // 清除选中
-                  selectedModuleKeys.value = [];
-                  emit('moduleUpdated');
-                } else {
-                  Message.error(response.error || '删除模块失败');
-                }
-              } catch (error) {
-                Message.error('删除模块时发生错误');
-              }
-            },
-          });
+  if (actionValue === 'addRoot') {
+    isEditingModule.value = false;
+    moduleForm.id = undefined;
+    moduleForm.name = '';
+    moduleForm.parent = undefined;
+    moduleModalVisible.value = true;
+    return;
+  }
+
+  if (actionValue === 'addChild') {
+    if (!selectedModuleKey.value) {
+      Message.warning('请先选择一个父模块');
+      return;
+    }
+    isEditingModule.value = false;
+    moduleForm.id = undefined;
+    moduleForm.name = '';
+    moduleForm.parent = selectedModuleKey.value;
+    moduleModalVisible.value = true;
+    return;
+  }
+
+  if (actionValue === 'edit') {
+    if (!selectedModuleKey.value) {
+      Message.warning('请先选择要编辑的模块');
+      return;
+    }
+    const moduleToEdit = testCaseModules.value.find((module) => module.id === selectedModuleKey.value);
+    if (!moduleToEdit) {
+      return;
+    }
+    isEditingModule.value = true;
+    moduleForm.id = moduleToEdit.id;
+    moduleForm.name = moduleToEdit.name;
+    moduleForm.parent = moduleToEdit.parent || undefined;
+    moduleModalVisible.value = true;
+    return;
+  }
+
+  if (actionValue === 'delete') {
+    if (!selectedModuleKey.value) {
+      Message.warning('请先选择要删除的模块');
+      return;
+    }
+    const moduleToDelete = testCaseModules.value.find((module) => module.id === selectedModuleKey.value);
+    if (!moduleToDelete) {
+      return;
+    }
+
+    const children = testCaseModules.value.filter(
+      (module) => module.parent === selectedModuleKey.value || module.parent_id === selectedModuleKey.value
+    );
+    if (children.length > 0) {
+      Message.error('该模块下有子模块，请先删除子模块');
+      return;
+    }
+    if (moduleToDelete.test_case_count && moduleToDelete.test_case_count > 0) {
+      Message.error(`模块“${moduleToDelete.name}”下包含 ${moduleToDelete.test_case_count} 个测试用例，请先处理用例。`);
+      return;
+    }
+
+    Modal.warning({
+      title: '确认删除',
+      content: `确定要删除模块“${moduleToDelete.name}”吗？此操作不可恢复。`,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        if (!currentProjectId.value || !selectedModuleKey.value) {
+          return;
         }
-      } else {
-        Message.warning('请先选择要删除的模块');
-      }
-      break;
+        try {
+          const response = await deleteTestCaseModule(currentProjectId.value, selectedModuleKey.value);
+          if (response.success) {
+            Message.success('模块删除成功');
+            await fetchTestCaseModules();
+            selectedModuleKey.value = null;
+            selectedModuleKeys.value = [];
+            emit('moduleUpdated');
+          } else {
+            Message.error(response.error || '删除模块失败');
+          }
+        } catch (error) {
+          Message.error('删除模块时发生错误');
+        }
+      },
+    });
   }
 };
 
-// 关闭模块模态框
 const closeModuleModal = () => {
   moduleModalVisible.value = false;
 };
 
-// 提交模块表单 (添加/编辑)
 const handleModuleSubmit = async (success: boolean) => {
-  if (success) {
-    fetchTestCaseModules(); // 刷新模块列表
-    closeModuleModal();
-    emit('moduleUpdated');
+  if (!success) {
+    return;
   }
+  await fetchTestCaseModules();
+  closeModuleModal();
+  emit('moduleUpdated');
 };
 
 onMounted(() => {
@@ -335,24 +332,19 @@ onMounted(() => {
 });
 
 watch(currentProjectId, (newProjectId) => {
+  selectedModuleKey.value = null;
+  selectedModuleKeys.value = [];
+  moduleSearchKeyword.value = '';
   if (newProjectId) {
-    testCaseModules.value = [];
-    selectedModuleKey.value = null;
-    selectedModuleKeys.value = [];
-    moduleSearchKeyword.value = '';
     fetchTestCaseModules();
   } else {
     testCaseModules.value = [];
-    selectedModuleKey.value = null;
-    selectedModuleKeys.value = [];
   }
 });
 
-// 暴露给父组件的方法
 defineExpose({
   refreshModules: fetchTestCaseModules,
 });
-
 </script>
 
 <style scoped>
@@ -382,7 +374,7 @@ defineExpose({
   background-color: #fff;
   border-radius: 8px;
   box-shadow: -4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
-  overflow: hidden; /* 防止内容溢出容器 */
+  overflow: hidden;
 }
 
 :deep(.module-panel .arco-card-header) {
@@ -394,7 +386,7 @@ defineExpose({
 :deep(.module-panel .arco-card-body) {
   padding: 0;
   flex-grow: 1;
-  min-height: 0; /* Crucial for flex-grow in a nested flex container */
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -410,18 +402,14 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .tree-container::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera*/
+  display: none;
 }
 
-/* 确保树组件占据卡片内容区域的全部可用高度 */
-
-
-/* 确保空状态也能正确显示 */
 :deep(.tree-container .arco-empty) {
   margin: auto;
 }
@@ -448,25 +436,23 @@ defineExpose({
 
 .module-actions {
   display: flex;
-  justify-content: center; /* 居中对齐 */
+  justify-content: center;
   margin-top: 8px;
   margin-bottom: 16px;
-  /* flex-shrink 已移动到父级 .module-panel-header */
 }
 
-/* 下拉菜单相关样式 */
 .module-dropdown {
   width: 100%;
 }
 
 .module-action-button {
   width: 80px;
-  background-color: #ffffff; /* 修改操作按钮背景色 */
+  background-color: #ffffff;
   border-color: #ffffff;
 }
 
 .module-action-button:hover {
-  background-color: #ffffff; /* 悬停时的颜色 */
+  background-color: #ffffff;
   border-color: #ffffff;
 }
 

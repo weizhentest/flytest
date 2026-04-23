@@ -33,6 +33,7 @@ from .models import (
     TestSuite,
     TestExecution,
     TestCaseResult,
+    TestCaseAssignment,
 )
 from .serializers import (
     TestCaseSerializer,
@@ -50,6 +51,7 @@ from langgraph_integration.models import get_user_active_llm_config
 from langgraph_integration.views import create_llm_instance, _extract_llm_response_text
 from prompts.models import UserPrompt
 from requirements.models import RequirementDocument, RequirementModule
+from projects.models import ProjectMember
 
 
 logger = logging.getLogger(__name__)
@@ -1512,10 +1514,10 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             queryset = (
                 TestCase.objects.filter(project=project)
                 .order_by("-created_at", "-id")
-                .select_related("creator", "module")
+                .select_related("creator", "module", "assignment__assignee")
             )
             if self.action != "list":
-                queryset = queryset.prefetch_related("steps")
+                queryset = queryset.prefetch_related("steps", "assignment__suite")
             return queryset
         # 理论上不会发生，因为这里是嵌套路由
         return TestCase.objects.none()
@@ -1527,6 +1529,19 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         project_pk = self.kwargs.get("project_pk")
         project = get_object_or_404(Project, pk=project_pk)
         serializer.save(creator=self.request.user, project=project)
+
+    def _ensure_project_admin(self, project):
+        if project.creator_id == self.request.user.id:
+            return
+        if ProjectMember.objects.filter(
+            project=project,
+            user=self.request.user,
+            role__in=["owner", "admin"],
+        ).exists():
+            return
+        from rest_framework.exceptions import PermissionDenied
+
+        raise PermissionDenied("只有项目管理员可以分配测试用例")
 
     @action(detail=False, methods=["post"], url_path="generate-from-requirement")
     def generate_from_requirement(self, request, project_pk=None):
@@ -1974,6 +1989,64 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 {"error": f"删除过程中发生错误: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    @action(detail=False, methods=["post"], url_path="batch-assign")
+    def batch_assign(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        self._ensure_project_admin(project)
+
+        ids_data = request.data.get("ids", [])
+        suite_id = request.data.get("suite_id")
+        assignee_id = request.data.get("assignee_id")
+
+        if not ids_data:
+            return Response({"error": "请提供要分配的测试用例 ID 列表"}, status=status.HTTP_400_BAD_REQUEST)
+        if not suite_id:
+            return Response({"error": "请选择测试套件"}, status=status.HTTP_400_BAD_REQUEST)
+        if not assignee_id:
+            return Response({"error": "请选择执行人"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+            suite_id = int(suite_id)
+            assignee_id = int(assignee_id)
+        except (TypeError, ValueError):
+            return Response({"error": "分配参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        suite = get_object_or_404(TestSuite, pk=suite_id, project=project)
+        member = ProjectMember.objects.filter(project=project, user_id=assignee_id).select_related("user").first()
+        if member is None:
+            return Response({"error": "执行人必须是当前项目成员"}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = self.get_queryset().filter(id__in=testcase_ids)
+        found_ids = list(queryset.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            for testcase in queryset:
+                TestCaseAssignment.objects.update_or_create(
+                    testcase=testcase,
+                    defaults={
+                        "suite": suite,
+                        "assignee": member.user,
+                        "assigned_by": request.user,
+                    },
+                )
+            suite.testcases.add(*list(queryset))
+
+        return Response(
+            {
+                "success": True,
+                "message": f"已成功分配 {len(found_ids)} 个测试用例",
+                "assigned_count": len(found_ids),
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="upload-screenshots")
     @permission_required("testcases.add_testcasescreenshot")
@@ -2559,4 +2632,3 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             {"message": "测试执行记录已删除", "deleted_execution": execution_info},
             status=status.HTTP_200_OK,
         )
-

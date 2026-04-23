@@ -481,3 +481,52 @@ class TestCaseResult(models.Model):
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return self.execution_time
+
+
+class TestCaseAssignment(models.Model):
+    """测试用例分配信息。"""
+
+    testcase = models.OneToOneField(
+        TestCase,
+        on_delete=models.CASCADE,
+        related_name="assignment",
+        verbose_name=_("测试用例"),
+    )
+    suite = models.ForeignKey(
+        TestSuite,
+        on_delete=models.CASCADE,
+        related_name="assigned_testcases",
+        verbose_name=_("测试套件"),
+    )
+    assignee = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="testcase_assignments",
+        verbose_name=_("执行人"),
+    )
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_testcase_assignments",
+        verbose_name=_("分配人"),
+    )
+    created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("更新时间"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("测试用例分配")
+        verbose_name_plural = _("测试用例分配")
+        ordering = ["-updated_at"]
+
+    def clean(self):
+        if self.testcase.project_id != self.suite.project_id:
+            raise ValidationError(_("测试套件必须与测试用例属于同一项目"))
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.testcase.name} -> {self.assignee.username}"
