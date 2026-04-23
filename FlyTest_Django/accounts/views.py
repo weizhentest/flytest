@@ -6,9 +6,10 @@ from django.db.models import Q
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
+import logging
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import Throttled
+from rest_framework.exceptions import APIException, Throttled
 from rest_framework.filters import SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
@@ -49,6 +50,8 @@ from .models import (
     get_user_approval_status,
     is_user_approved,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class UserCreateAPIView(generics.CreateAPIView):
@@ -1161,6 +1164,16 @@ class MyTokenObtainPairView(BaseTokenObtainPairView):
             return Response(
                 {"detail": "认证服务正在启动，请稍后重试。"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except APIException:
+            raise
+
+
+        except Exception:
+            logger.exception("用户登录接口异常")
+            return Response(
+                {"detail": "登录服务出现异常，请稍后重试。"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 

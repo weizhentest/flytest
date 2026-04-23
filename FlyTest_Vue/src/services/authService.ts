@@ -68,6 +68,28 @@ export interface AuthServiceRegisterResponse {
  * @param password 密码
  * @returns 返回一个 Promise，解析为包含认证结果的对象
  */
+
+function normalizeAuthErrorMessage(message?: string, fallback = '??????????????'): string {
+  const normalizedMessage = (message || '').trim();
+  if (!normalizedMessage) {
+    return fallback;
+  }
+
+  const lowerMessage = normalizedMessage.toLowerCase();
+  if (
+    lowerMessage.includes('internal server error') ||
+    lowerMessage.includes('request failed with status code 500')
+  ) {
+    return '??????????????';
+  }
+
+  if (lowerMessage.includes('network error')) {
+    return '????????????????';
+  }
+
+  return normalizedMessage;
+}
+
 export const login = async (username: string, password: string, rememberMe = false): Promise<AuthServiceLoginResponse> => {
   const API_URL = '/token/'; // 使用相对路径，由 axiosInstance 的 baseURL 处理
 
@@ -105,7 +127,7 @@ export const login = async (username: string, password: string, rememberMe = fal
 
       return {
         success: false,
-        error: errorMessage,
+        error: normalizeAuthErrorMessage(errorMessage, '????????????????'),
         statusCode: responseStatus ?? 500,
       };
     }
@@ -121,9 +143,9 @@ export const login = async (username: string, password: string, rememberMe = fal
         if (statusCode === 503) {
           errorMessage = '认证服务正在启动，请稍后重试。';
         } else if (responseData && typeof responseData.message === 'string') {
-          errorMessage = responseData.message;
+          errorMessage = normalizeAuthErrorMessage(responseData.message);
         } else if (responseData && typeof responseData.detail === 'string') { // Django REST framework 常见错误格式
-          errorMessage = responseData.detail;
+          errorMessage = normalizeAuthErrorMessage(responseData.detail);
         } else if (responseData && responseData.username && Array.isArray(responseData.username) && responseData.username.length > 0) {
           errorMessage = responseData.username.join(', ');
         } else {
@@ -137,7 +159,7 @@ export const login = async (username: string, password: string, rememberMe = fal
     // 对于其他类型的错误，保留通用消息
     return {
       success: false,
-      error: errorMessage,
+      error: normalizeAuthErrorMessage(errorMessage, '????????????????'),
       statusCode,
     };
   }
