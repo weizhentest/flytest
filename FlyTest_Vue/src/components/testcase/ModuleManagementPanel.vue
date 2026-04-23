@@ -23,9 +23,15 @@
               </a-button>
               <template #content>
                 <a-doption value="addRoot" class="centered-dropdown-item">添加根模块</a-doption>
-                <a-doption value="addChild" :disabled="!selectedModuleKey" class="centered-dropdown-item">添加子模块</a-doption>
-                <a-doption value="edit" :disabled="!selectedModuleKey" class="centered-dropdown-item">编辑模块</a-doption>
-                <a-doption value="delete" :disabled="!selectedModuleKey" class="centered-dropdown-item">删除模块</a-doption>
+                <a-doption value="addChild" :disabled="!selectedModuleKey" class="centered-dropdown-item">
+                  添加子模块
+                </a-doption>
+                <a-doption value="edit" :disabled="!selectedModuleKey" class="centered-dropdown-item">
+                  编辑模块
+                </a-doption>
+                <a-doption value="delete" :disabled="!selectedModuleKey" class="centered-dropdown-item">
+                  删除模块
+                </a-doption>
               </template>
             </a-dropdown>
           </div>
@@ -110,6 +116,7 @@ const fetchTestCaseModules = async () => {
     testCaseModules.value = [];
     return;
   }
+
   moduleLoading.value = true;
   try {
     const response = await getTestCaseModules(currentProjectId.value, {
@@ -156,6 +163,7 @@ const moduleTreeData = computed(() => buildModuleTree(testCaseModules.value));
 
 const getAllChildModuleIds = (modules: TestCaseModule[], parentId: number): Set<number> => {
   const childrenIds = new Set<number>();
+
   const findChildren = (currentParentId: number) => {
     modules.forEach((module) => {
       if (module.parent === currentParentId || module.parent_id === currentParentId) {
@@ -164,15 +172,16 @@ const getAllChildModuleIds = (modules: TestCaseModule[], parentId: number): Set<
       }
     });
   };
+
   findChildren(parentId);
   return childrenIds;
 };
 
 const moduleTreeForSelect = computed(() => {
   if (isEditingModule.value && moduleForm.id) {
-    const filteredIds = getAllChildModuleIds(testCaseModules.value, moduleForm.id);
-    filteredIds.add(moduleForm.id);
-    const filteredModules = testCaseModules.value.filter((module) => !filteredIds.has(module.id));
+    const excludedIds = getAllChildModuleIds(testCaseModules.value, moduleForm.id);
+    excludedIds.add(moduleForm.id);
+    const filteredModules = testCaseModules.value.filter((module) => !excludedIds.has(module.id));
     return buildModuleTree(filteredModules);
   }
   return moduleTreeData.value;
@@ -192,6 +201,7 @@ const filteredModuleTreeData = computed(() => {
       if (nodeName.includes(keyword) || children.length > 0) {
         acc.push({ ...node, children: children.length > 0 ? children : undefined });
       }
+
       return acc;
     }, [] as TreeNodeData[]);
   };
@@ -200,7 +210,7 @@ const filteredModuleTreeData = computed(() => {
 });
 
 const onModuleSearch = () => {
-  // 使用前端过滤，无需额外请求。
+  // 前端实时过滤，保持当前交互简洁。
 };
 
 const onModuleSelect = (
@@ -267,6 +277,7 @@ const handleModuleAction = (action: string | number | Record<string, any> | unde
       Message.warning('请先选择要删除的模块');
       return;
     }
+
     const moduleToDelete = testCaseModules.value.find((module) => module.id === selectedModuleKey.value);
     if (!moduleToDelete) {
       return;
@@ -275,12 +286,14 @@ const handleModuleAction = (action: string | number | Record<string, any> | unde
     const children = testCaseModules.value.filter(
       (module) => module.parent === selectedModuleKey.value || module.parent_id === selectedModuleKey.value
     );
+
     if (children.length > 0) {
-      Message.error('该模块下有子模块，请先删除子模块');
+      Message.error('该模块下还有子模块，请先删除子模块');
       return;
     }
+
     if (moduleToDelete.test_case_count && moduleToDelete.test_case_count > 0) {
-      Message.error(`模块“${moduleToDelete.name}”下包含 ${moduleToDelete.test_case_count} 个测试用例，请先处理用例。`);
+      Message.error(`模块“${moduleToDelete.name}”下包含 ${moduleToDelete.test_case_count} 个测试用例，请先处理测试用例`);
       return;
     }
 
@@ -335,6 +348,7 @@ watch(currentProjectId, (newProjectId) => {
   selectedModuleKey.value = null;
   selectedModuleKeys.value = [];
   moduleSearchKeyword.value = '';
+
   if (newProjectId) {
     fetchTestCaseModules();
   } else {

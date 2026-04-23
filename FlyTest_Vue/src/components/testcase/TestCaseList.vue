@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="search-box">
         <a-input-search
-          placeholder="鎼滅储鐢ㄤ緥鍚嶇О/鍓嶇疆鏉′欢"
+          placeholder="搜索用例名称/前置条件"
           allow-clear
           class="search-input"
           @search="onSearch"
@@ -445,7 +445,7 @@ const columns = [
   {
     title: '执行人',
     dataIndex: 'assignee_detail',
-    render: ({ record }: { record: TestCaseListItem }) => record.assignee_detail?.username || '-',
+    render: ({ record }: { record: TestCaseListItem }) => record.assignee_detail?.username || '未分配',
     width: 120,
     align: 'center',
   },
