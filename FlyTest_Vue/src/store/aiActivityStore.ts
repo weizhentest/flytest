@@ -274,10 +274,16 @@ export const useAiActivityStore = defineStore('aiActivity', () => {
     if (!generationJobVisible.value || !generationJob.value) {
       return '';
     }
+    const effectiveGeneratedCount = Math.max(
+      generationJob.value.generated_count || 0,
+      Array.isArray(generationJob.value.result_payload?.data)
+        ? generationJob.value.result_payload.data.filter((item) => typeof item?.id === 'number' && item.id > 0).length
+        : 0
+    );
     if (generationJob.value.status === 'success') {
       if (
         generationJob.value.result_payload?.coverage_complete === false ||
-        (generationJob.value.generated_count || 0) === 0
+        effectiveGeneratedCount === 0
       ) {
         return '需补充';
       }
@@ -293,10 +299,16 @@ export const useAiActivityStore = defineStore('aiActivity', () => {
     if (!generationJobVisible.value || !generationJob.value) {
       return '';
     }
+    const effectiveGeneratedCount = Math.max(
+      generationJob.value.generated_count || 0,
+      Array.isArray(generationJob.value.result_payload?.data)
+        ? generationJob.value.result_payload.data.filter((item) => typeof item?.id === 'number' && item.id > 0).length
+        : 0
+    );
     if (generationJob.value.status === 'success') {
       if (
         generationJob.value.result_payload?.coverage_complete === false ||
-        (generationJob.value.generated_count || 0) === 0
+        effectiveGeneratedCount === 0
       ) {
         return '需补充';
       }
@@ -313,10 +325,16 @@ export const useAiActivityStore = defineStore('aiActivity', () => {
     if (!generationJobVisible.value || !generationJob.value) {
       return '';
     }
+    const effectiveGeneratedCount = Math.max(
+      generationJob.value.generated_count || 0,
+      Array.isArray(generationJob.value.result_payload?.data)
+        ? generationJob.value.result_payload.data.filter((item) => typeof item?.id === 'number' && item.id > 0).length
+        : 0
+    );
     if (generationJob.value.status === 'success') {
       if (
         generationJob.value.result_payload?.coverage_complete === false ||
-        (generationJob.value.generated_count || 0) === 0
+        effectiveGeneratedCount === 0
       ) {
         return `${generationJobLabel.value}:需补充`;
       }

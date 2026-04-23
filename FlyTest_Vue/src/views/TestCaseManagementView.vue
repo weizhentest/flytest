@@ -573,6 +573,20 @@ const resolveGeneratedCaseIds = (payload?: { data?: Array<{ id?: number }> } | n
     .filter((id): id is number => typeof id === 'number' && id > 0);
 };
 
+const resolveEffectiveGeneratedCount = (
+  payload?: {
+    generated_count?: number;
+    generatedCount?: number;
+    data?: Array<{ id?: number }>;
+    review_history?: Array<{ generated_count?: number }>;
+  } | null,
+  fallbackCount?: number
+) => {
+  const generatedIdsCount = resolveGeneratedCaseIds(payload).length;
+  const resolvedCount = resolveGeneratedCount(payload, fallbackCount);
+  return Math.max(resolvedCount, generatedIdsCount);
+};
+
 const buildGenerationSuccessSummary = (
   payload: {
     message?: string;
@@ -973,7 +987,7 @@ watch(
       }
       modulePanelRef.value?.refreshModules();
 
-      const generatedCount = resolveGeneratedCount(result, aiActivityStore.generationJob?.generated_count);
+      const generatedCount = resolveEffectiveGeneratedCount(result, aiActivityStore.generationJob?.generated_count);
       const baseMessage = result?.message || `本次共生成 ${generatedCount} 条测试用例`;
       if (result && !result.message) {
         result.message = baseMessage;
