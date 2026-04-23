@@ -967,10 +967,8 @@ watch(
       const result = aiActivityStore.generationJob?.result_payload;
       const generatedCaseIds = resolveGeneratedCaseIds(result);
       if (aiActivityStore.generationJobMeta.mode === 'append' && aiActivityStore.generationJobMeta.targetModuleId) {
-        selectedModuleId.value = aiActivityStore.generationJobMeta.targetModuleId;
         await testCaseListRef.value?.resetToFirstPageAndRefresh?.(generatedCaseIds);
       } else {
-        selectedModuleId.value = null;
         await testCaseListRef.value?.showLatestGeneratedCases?.(generatedCaseIds);
       }
       modulePanelRef.value?.refreshModules();

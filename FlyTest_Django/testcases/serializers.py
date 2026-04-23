@@ -212,6 +212,36 @@ class TestCaseSerializer(serializers.ModelSerializer):
         return TestCaseScreenshotSerializer(screenshots, many=True).data
 
 
+class TestCaseListSerializer(serializers.ModelSerializer):
+    """
+    ?????????
+    ??????????????????????????
+    """
+
+    creator_detail = UserDetailSerializer(source="creator", read_only=True)
+    module_id = serializers.PrimaryKeyRelatedField(source="module", read_only=True)
+    module_detail = serializers.StringRelatedField(source="module", read_only=True)
+
+    class Meta:
+        model = TestCase
+        fields = [
+            "id",
+            "project",
+            "module_id",
+            "module_detail",
+            "name",
+            "precondition",
+            "level",
+            "creator",
+            "creator_detail",
+            "created_at",
+            "updated_at",
+            "review_status",
+            "test_type",
+        ]
+        read_only_fields = fields
+
+
 class TestCaseModuleSerializer(serializers.ModelSerializer):
     """
     用例模块序列化器

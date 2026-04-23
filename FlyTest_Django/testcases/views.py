@@ -35,6 +35,7 @@ from .models import (
 )
 from .serializers import (
     TestCaseSerializer,
+    TestCaseListSerializer,
     TestCaseModuleSerializer,
     TestCaseScreenshotSerializer,
 )
@@ -1481,6 +1482,11 @@ class TestCaseViewSet(viewsets.ModelViewSet):
     filterset_class = TestCaseFilter  # 使用自定义过滤器
     search_fields = ["name", "precondition"]
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return TestCaseListSerializer
+        return TestCaseSerializer
+
     def get_permissions(self):
         """
         返回当前视图所需的权限实例列表，
@@ -1502,12 +1508,14 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         if project_pk:
             project = get_object_or_404(Project, pk=project_pk)
             # IsProjectMemberForTestCase 已检查用户是否属于当前项目
-            return (
+            queryset = (
                 TestCase.objects.filter(project=project)
                 .order_by("-created_at", "-id")
                 .select_related("creator", "module")
-                .prefetch_related("steps")
             )
+            if self.action != "list":
+                queryset = queryset.prefetch_related("steps")
+            return queryset
         # 理论上不会发生，因为这里是嵌套路由
         return TestCase.objects.none()
 
