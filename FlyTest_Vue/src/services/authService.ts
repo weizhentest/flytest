@@ -69,7 +69,7 @@ export interface AuthServiceRegisterResponse {
  * @returns 返回一个 Promise，解析为包含认证结果的对象
  */
 
-function normalizeAuthErrorMessage(message?: string, fallback = '??????????????'): string {
+function normalizeAuthErrorMessage(message?: string, fallback = '服务暂时不可用，请稍后重试。'): string {
   const normalizedMessage = (message || '').trim();
   if (!normalizedMessage) {
     return fallback;
@@ -80,11 +80,15 @@ function normalizeAuthErrorMessage(message?: string, fallback = '??????????????'
     lowerMessage.includes('internal server error') ||
     lowerMessage.includes('request failed with status code 500')
   ) {
-    return '??????????????';
+    return '服务器开小差了，请稍后重试。';
   }
 
   if (lowerMessage.includes('network error')) {
-    return '????????????????';
+    return '网络连接异常，请检查网络后重试。';
+  }
+
+  if (lowerMessage.includes('expected available in')) {
+    return '请求过于频繁，请稍后再试。';
   }
 
   return normalizedMessage;
@@ -103,6 +107,7 @@ export const login = async (username: string, password: string, rememberMe = fal
         remember_me: rememberMe,
       },
       headers: {
+        'X-FlyTest-Login-Source': 'login-page',
         'Content-Type': 'application/json',
         'accept': 'application/json',
       }
@@ -127,7 +132,7 @@ export const login = async (username: string, password: string, rememberMe = fal
 
       return {
         success: false,
-        error: normalizeAuthErrorMessage(errorMessage, '????????????????'),
+        error: normalizeAuthErrorMessage(errorMessage, '认证服务暂时不可用，请稍后重试。'),
         statusCode: responseStatus ?? 500,
       };
     }
@@ -159,7 +164,7 @@ export const login = async (username: string, password: string, rememberMe = fal
     // 对于其他类型的错误，保留通用消息
     return {
       success: false,
-      error: normalizeAuthErrorMessage(errorMessage, '????????????????'),
+      error: normalizeAuthErrorMessage(errorMessage, '认证服务暂时不可用，请稍后重试。'),
       statusCode,
     };
   }
@@ -212,9 +217,9 @@ export const register = async (realName: string, phoneNumber: string, password: 
         statusCode = error.response.status;
         const responseData = error.response.data;
         if (responseData && typeof responseData.message === 'string') {
-          errorMessage = responseData.message;
+          errorMessage = normalizeAuthErrorMessage(responseData.message, '???????????');
         } else if (responseData && typeof responseData.detail === 'string') {
-          errorMessage = responseData.detail;
+          errorMessage = normalizeAuthErrorMessage(responseData.detail, '???????????');
         } else if (responseData && responseData.phone_number && Array.isArray(responseData.phone_number) && responseData.phone_number.length > 0) {
           errorMessage = responseData.phone_number.join(', ');
         } else if (responseData && responseData.real_name && Array.isArray(responseData.real_name) && responseData.real_name.length > 0) {
@@ -233,7 +238,7 @@ export const register = async (realName: string, phoneNumber: string, password: 
     }
     return {
       success: false,
-      error: errorMessage,
+      error: normalizeAuthErrorMessage(errorMessage, '认证服务暂时不可用，请稍后重试。'),
       statusCode,
     };
   }

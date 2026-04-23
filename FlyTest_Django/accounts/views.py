@@ -1137,6 +1137,9 @@ class MyTokenObtainPairView(BaseTokenObtainPairView):
             return False
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
+    def throttled(self, request, wait):
+        raise Throttled(wait=wait, detail="登录请求过于频繁，请稍后再试。")
+
     def post(self, request, *args, **kwargs):
         """
         当数据库尚未就绪时，返回可识别的友好错误，避免直接暴露 500 调试堆栈。

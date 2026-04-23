@@ -4,6 +4,16 @@ from rest_framework.throttling import AnonRateThrottle
 class LoginRateThrottle(AnonRateThrottle):
     scope = "login"
 
+    def allow_request(self, request, view):
+        login_source = (
+            request.headers.get("X-FlyTest-Login-Source")
+            or request.META.get("HTTP_X_FLYTEST_LOGIN_SOURCE")
+            or ""
+        )
+        if str(login_source).strip().lower() == "login-page":
+            return True
+        return super().allow_request(request, view)
+
 
 class RegisterRateThrottle(AnonRateThrottle):
     scope = "register"
