@@ -1,9 +1,9 @@
-<template>
+﻿<template>
   <div ref="testcaseContentRef" class="testcase-content">
     <div class="page-header">
       <div class="search-box">
         <a-input-search
-          placeholder="搜索用例名称/前置条件"
+          placeholder="鎼滅储鐢ㄤ緥鍚嶇О/鍓嶇疆鏉′欢"
           allow-clear
           class="search-input"
           @search="onSearch"
@@ -90,6 +90,7 @@
       :columns="columns"
       :data="testCaseData"
       :pagination="paginationConfig"
+      column-resizable
       :loading="loading"
       :scroll="tableScroll"
       :row-class="getRowClassName"
@@ -199,8 +200,8 @@ import type { TreeNodeData } from '@arco-design/web-vue';
 
 const props = defineProps<{
   currentProjectId: number | null;
-  selectedModuleId?: number | null; // 可选的模块ID，用于筛选
-  moduleTree?: TreeNodeData[]; // 模块树数据
+  selectedModuleId?: number | null; // 鍙€夌殑妯″潡ID锛岀敤浜庣瓫閫?
+  moduleTree?: TreeNodeData[]; // 妯″潡鏍戞暟鎹?
 }>();
 
 const emit = defineEmits<{
@@ -216,7 +217,7 @@ const emit = defineEmits<{
 
 const { currentProjectId, selectedModuleId } = toRefs(props);
 
-// 本地模块选择（与外部 selectedModuleId 同步）
+// 鏈湴妯″潡閫夋嫨锛堜笌澶栭儴 selectedModuleId 鍚屾锛?
 const localSelectedModuleId = ref<number | null>(props.selectedModuleId || null);
 const testcaseContentRef = ref<HTMLElement | null>(null);
 
@@ -225,7 +226,7 @@ const localSearchKeyword = ref('');
 const selectedLevel = ref<string>('');
 const selectedTestType = ref<string>('');
 const highlightedGeneratedCaseIds = ref<number[]>([]);
-// 默认选中除"不可用"之外的所有状态
+// 榛樿閫変腑闄?涓嶅彲鐢?涔嬪鐨勬墍鏈夌姸鎬?
 const DEFAULT_REVIEW_STATUSES: ReviewStatus[] = ['pending_review', 'approved', 'needs_optimization', 'optimization_pending_review'];
 const selectedReviewStatuses = ref<ReviewStatus[]>([...DEFAULT_REVIEW_STATUSES]);
 const testCaseData = ref<TestCase[]>([]);
@@ -233,16 +234,16 @@ const selectedTestCaseIds = ref<number[]>([]);
 const importModalRef = ref<InstanceType<typeof ImportModal> | null>(null);
 const exportModalRef = ref<InstanceType<typeof ExportModal> | null>(null);
 
-// 响应式屏幕宽度检测
+// 鍝嶅簲寮忓睆骞曞搴︽娴?
 const isSmallScreen = ref(window.innerWidth < 1222);
-const tableContainerHeight = ref(400); // 默认高度
+const tableContainerHeight = ref(400); // 榛樿楂樺害
 const handleResize = () => {
   isSmallScreen.value = window.innerWidth < 1222;
-  // 计算表格容器高度：视口高度 - 头部(56) - 边距(86) - 搜索栏(60) - 分页(50) - 其他间距(40)
+  // 璁＄畻琛ㄦ牸瀹瑰櫒楂樺害锛氳鍙ｉ珮搴?- 澶撮儴(56) - 杈硅窛(86) - 鎼滅储鏍?60) - 鍒嗛〉(50) - 鍏朵粬闂磋窛(40)
   tableContainerHeight.value = Math.max(300, window.innerHeight - 56 - 86 - 60 - 50 - 40);
 };
 
-// 表格滚动配置
+// 琛ㄦ牸婊氬姩閰嶇疆
 const tableScroll = computed(() => ({
   x: 900,
   y: tableContainerHeight.value,
@@ -258,22 +259,22 @@ const paginationConfig = reactive({
   pageSizeOptions: [10, 20, 50, 100],
 });
 
-// 复选框选择相关的计算属性和方法
-// 获取当前页实际显示的数据
+// 澶嶉€夋閫夋嫨鐩稿叧鐨勮绠楀睘鎬у拰鏂规硶
+// 鑾峰彇褰撳墠椤靛疄闄呮樉绀虹殑鏁版嵁
 const getCurrentPageData = () => {
   const startIndex = (paginationConfig.current - 1) * paginationConfig.pageSize;
   const endIndex = startIndex + paginationConfig.pageSize;
   return testCaseData.value.slice(startIndex, endIndex);
 };
 
-// 当前页是否全选
+// 褰撳墠椤垫槸鍚﹀叏閫?
 const isCurrentPageAllSelected = computed(() => {
   const currentPageData = getCurrentPageData();
   if (currentPageData.length === 0) return false;
   return currentPageData.every(item => selectedTestCaseIds.value.includes(item.id));
 });
 
-// 当前页是否半选状态
+// 褰撳墠椤垫槸鍚﹀崐閫夌姸鎬?
 const isCurrentPageIndeterminate = computed(() => {
   const currentPageData = getCurrentPageData();
   const currentPageSelectedCount = currentPageData.filter(item =>
@@ -322,7 +323,7 @@ const isHighlightedGeneratedCase = (id?: number | null) =>
 const getRowClassName = ({ record }: { record?: TestCase }) =>
   isHighlightedGeneratedCase(record?.id) ? 'generated-case-row' : '';
 
-// 处理单个复选框变化
+// 澶勭悊鍗曚釜澶嶉€夋鍙樺寲
 const handleCheckboxChange = (id: number, checked: boolean) => {
   if (checked) {
     if (!selectedTestCaseIds.value.includes(id)) {
@@ -336,16 +337,16 @@ const handleCheckboxChange = (id: number, checked: boolean) => {
   }
 };
 
-// 处理当前页全选/取消全选
+// 澶勭悊褰撳墠椤靛叏閫?鍙栨秷鍏ㄩ€?
 const handleSelectCurrentPage = (checked: boolean) => {
-  // 获取当前表格实际显示的数据
-  // Arco Table 会根据 pagination 配置自动切分数据显示
+  // 鑾峰彇褰撳墠琛ㄦ牸瀹為檯鏄剧ず鐨勬暟鎹?
+  // Arco Table 浼氭牴鎹?pagination 閰嶇疆鑷姩鍒囧垎鏁版嵁鏄剧ず
   const startIndex = (paginationConfig.current - 1) * paginationConfig.pageSize;
   const endIndex = startIndex + paginationConfig.pageSize;
   const currentPageData = testCaseData.value.slice(startIndex, endIndex);
   
   if (checked) {
-    // 选中当前页所有项目
+    // 閫変腑褰撳墠椤垫墍鏈夐」鐩?
     const currentPageIds = currentPageData.map(item => item.id);
     currentPageIds.forEach(id => {
       if (!selectedTestCaseIds.value.includes(id)) {
@@ -353,7 +354,7 @@ const handleSelectCurrentPage = (checked: boolean) => {
       }
     });
   } else {
-    // 取消选中当前页所有项目
+    // 鍙栨秷閫変腑褰撳墠椤垫墍鏈夐」鐩?
     const currentPageIds = currentPageData.map(item => item.id);
     selectedTestCaseIds.value = selectedTestCaseIds.value.filter(id =>
       !currentPageIds.includes(id)
@@ -365,40 +366,49 @@ const columns = [
   {
     title: '选择',
     slotName: 'selection',
-    width: 36,
+    width: 48,
     dataIndex: 'selection',
     titleSlotName: 'selectAll',
     align: 'center'
   },
-  { title: 'ID', dataIndex: 'id', width: 50, align: 'center' },
-  { title: '用例名称', dataIndex: 'name', slotName: 'name', width: 180, ellipsis: true, tooltip: false, align: 'center' },
-  { title: '前置条件', dataIndex: 'precondition', width: 120, ellipsis: true, tooltip: true, align: 'center' },
-  { title: '优先级', dataIndex: 'level', slotName: 'level', width: 80, align: 'center' },
-  { title: '测试类型', dataIndex: 'test_type', slotName: 'testType', width: 90, align: 'center' },
-  { title: '审核状态', dataIndex: 'review_status', slotName: 'reviewStatus', width: 120, align: 'center' },
-  { title: '所属模块', dataIndex: 'module_detail', slotName: 'module', width: 100, ellipsis: true, tooltip: true, align: 'center' },
+  { title: 'ID', dataIndex: 'id', width: 70, align: 'center' },
+  { title: '用例名称', dataIndex: 'name', slotName: 'name', width: 220, ellipsis: true, tooltip: false, align: 'center' },
+  { title: '前置条件', dataIndex: 'precondition', width: 180, ellipsis: true, tooltip: true, align: 'center' },
+  { title: '优先级', dataIndex: 'level', slotName: 'level', width: 100, align: 'center' },
+  { title: '测试类型', dataIndex: 'test_type', slotName: 'testType', width: 120, align: 'center' },
+  { title: '审核状态', dataIndex: 'review_status', slotName: 'reviewStatus', width: 140, align: 'center' },
+  { title: '所属模块', dataIndex: 'module_detail', slotName: 'module', width: 180, ellipsis: true, tooltip: true, align: 'center' },
   {
     title: '创建者',
     dataIndex: 'creator_detail',
     render: ({ record }: { record: TestCase }) => record.creator_detail?.username || '-',
-    width: 80,
+    width: 120,
     align: 'center',
   },
   {
     title: '创建时间',
     dataIndex: 'created_at',
     render: ({ record }: { record: TestCase }) => formatDate(record.created_at),
-    width: 130,
+    width: 180,
     align: 'center',
   },
-  { title: '操作', slotName: 'operations', width: 200, fixed: 'right', align: 'center' },
+  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 220, fixed: 'right', align: 'center' },
+  {
+    title: '',
+    dataIndex: '__tail__',
+    width: 8,
+    fixed: 'right',
+    align: 'center',
+    render: () => '',
+    headerCellClass: 'resize-tail-column',
+    cellClass: 'resize-tail-column',
+  },
 ];
-
 const fetchTestCases = async () => {
   if (!currentProjectId.value) {
     testCaseData.value = [];
     paginationConfig.total = 0;
-    selectedTestCaseIds.value = []; // 清空选中状态
+    selectedTestCaseIds.value = []; // 娓呯┖閫変腑鐘舵€?
     return;
   }
   loading.value = true;
@@ -407,25 +417,25 @@ const fetchTestCases = async () => {
       page: paginationConfig.current,
       pageSize: paginationConfig.pageSize,
       search: localSearchKeyword.value,
-      module_id: localSelectedModuleId.value || undefined, // 使用本地模块筛选
-      level: selectedLevel.value || undefined, // 添加优先级筛选
-      test_type: selectedTestType.value || undefined, // 添加测试类型筛选
-      // 多选审核状态筛选：有选中项则传递，否则不限制（显示全部）
+      module_id: localSelectedModuleId.value || undefined, // 浣跨敤鏈湴妯″潡绛涢€?
+      level: selectedLevel.value || undefined, // 娣诲姞浼樺厛绾х瓫閫?
+      test_type: selectedTestType.value || undefined, // 娣诲姞娴嬭瘯绫诲瀷绛涢€?
+      // 澶氶€夊鏍哥姸鎬佺瓫閫夛細鏈夐€変腑椤瑰垯浼犻€掞紝鍚﹀垯涓嶉檺鍒讹紙鏄剧ず鍏ㄩ儴锛?
       review_status_in: selectedReviewStatuses.value.length > 0 ? selectedReviewStatuses.value : undefined,
     });
     if (response.success && response.data) {
       testCaseData.value = response.data;
       paginationConfig.total = response.total || response.data.length;
-      // 清空之前页面的选中状态
+      // 娓呯┖涔嬪墠椤甸潰鐨勯€変腑鐘舵€?
       selectedTestCaseIds.value = [];
     } else {
-      Message.error(response.error || '获取测试用例列表失败');
+      Message.error(response.error || '鑾峰彇娴嬭瘯鐢ㄤ緥鍒楄〃澶辫触');
       testCaseData.value = [];
       paginationConfig.total = 0;
       selectedTestCaseIds.value = [];
     }
   } catch (error) {
-    console.error('获取测试用例列表出错:', error);
+    console.error('鑾峰彇娴嬭瘯鐢ㄤ緥鍒楄〃鍑洪敊:', error);
     Message.error('获取测试用例列表时发生错误');
     testCaseData.value = [];
     paginationConfig.total = 0;
@@ -466,13 +476,13 @@ const onTestTypeChange = (value: string) => {
 const handleReviewStatusChange = async (record: TestCase, newStatus: string) => {
   if (!currentProjectId.value) return;
 
-  // 如果选择"优化"，触发优化弹窗
+  // 濡傛灉閫夋嫨"浼樺寲"锛岃Е鍙戜紭鍖栧脊绐?
   if (newStatus === 'needs_optimization') {
     emit('requestOptimization', record);
     return;
   }
 
-  // 其他状态直接更新
+  // 鍏朵粬鐘舵€佺洿鎺ユ洿鏂?
   try {
     const response = await updateTestCaseReviewStatus(
       currentProjectId.value,
@@ -481,7 +491,7 @@ const handleReviewStatusChange = async (record: TestCase, newStatus: string) => 
     );
     if (response.success) {
       Message.success('状态更新成功');
-      // 更新本地数据
+      // 鏇存柊鏈湴鏁版嵁
       const index = testCaseData.value.findIndex(tc => tc.id === record.id);
       if (index !== -1) {
         testCaseData.value[index].review_status = newStatus as ReviewStatus;
@@ -490,7 +500,7 @@ const handleReviewStatusChange = async (record: TestCase, newStatus: string) => 
       Message.error(response.error || '状态更新失败');
     }
   } catch (error) {
-    Message.error('状态更新时发生错误');
+    Message.error('鐘舵€佹洿鏂版椂鍙戠敓閿欒');
   }
 };
 
@@ -535,7 +545,7 @@ const handleDeleteTestCase = (testCase: TestCase) => {
   if (!currentProjectId.value) return;
   Modal.warning({
     title: '确认删除',
-    content: `确定要删除测试用例 "${testCase.name}" 吗？此操作不可恢复。`,
+    content: `确定要删除测试用例“${testCase.name}”吗？此操作不可恢复。`,
     okText: '确认',
     cancelText: '取消',
     onOk: async () => {
@@ -543,7 +553,7 @@ const handleDeleteTestCase = (testCase: TestCase) => {
         const response = await deleteTestCaseService(currentProjectId.value!, testCase.id);
         if (response.success) {
           Message.success('测试用例删除成功');
-          fetchTestCases(); // 重新加载列表
+          fetchTestCases(); // 閲嶆柊鍔犺浇鍒楄〃
           emit('testCaseDeleted');
         } else {
           Message.error(response.error || '删除测试用例失败');
@@ -559,11 +569,11 @@ const handleExecuteTestCase = (testCase: TestCase) => {
   emit('executeTestCase', testCase);
 };
 
-// 批量删除处理函数
+// 鎵归噺鍒犻櫎澶勭悊鍑芥暟
 const handleBatchDelete = () => {
   if (!currentProjectId.value || selectedTestCaseIds.value.length === 0) return;
 
-  // 获取选中的测试用例信息用于显示
+  // 鑾峰彇閫変腑鐨勬祴璇曠敤渚嬩俊鎭敤浜庢樉绀?
   const selectedTestCases = testCaseData.value.filter(testCase =>
     selectedTestCaseIds.value.includes(testCase.id)
   );
@@ -582,7 +592,7 @@ const handleBatchDelete = () => {
       try {
         const response = await batchDeleteTestCases(currentProjectId.value!, selectedTestCaseIds.value);
         if (response.success && response.data) {
-          // 显示详细的删除结果
+          // 鏄剧ず璇︾粏鐨勫垹闄ょ粨鏋?
           const { deleted_count, deletion_details } = response.data;
 
           let detailMessage = `成功删除 ${deleted_count} 个测试用例`;
@@ -595,7 +605,7 @@ const handleBatchDelete = () => {
 
           Message.success(detailMessage);
 
-          // 清空选中状态并重新加载列表
+          // 娓呯┖閫変腑鐘舵€佸苟閲嶆柊鍔犺浇鍒楄〃
           selectedTestCaseIds.value = [];
           fetchTestCases();
           emit('testCaseDeleted');
@@ -603,7 +613,7 @@ const handleBatchDelete = () => {
           Message.error(response.error || '批量删除测试用例失败');
         }
       } catch (error) {
-        console.error('批量删除测试用例出错:', error);
+        console.error('鎵归噺鍒犻櫎娴嬭瘯鐢ㄤ緥鍑洪敊:', error);
         Message.error('批量删除测试用例时发生错误');
       }
     },
@@ -612,7 +622,7 @@ const handleBatchDelete = () => {
 
 
 
-// 导出处理函数
+// 瀵煎嚭澶勭悊鍑芥暟
 const handleExport = () => {
   if (!currentProjectId.value) {
     Message.warning('请先选择一个项目');
@@ -634,7 +644,7 @@ const onImportSuccess = () => {
 };
 
 onMounted(() => {
-  handleResize(); // 初始化表格高度
+  handleResize(); // 鍒濆鍖栬〃鏍奸珮搴?
   fetchTestCases();
   window.addEventListener('resize', handleResize);
 });
@@ -648,13 +658,13 @@ watch(currentProjectId, () => {
   clearHighlightedGeneratedCases();
   paginationConfig.current = 1;
   localSearchKeyword.value = '';
-  selectedLevel.value = ''; // 项目切换时清空优先级筛选
-  selectedTestType.value = ''; // 项目切换时清空测试类型筛选
-  selectedReviewStatuses.value = [...DEFAULT_REVIEW_STATUSES]; // 项目切换时重置审核状态筛选
+  selectedLevel.value = ''; // 椤圭洰鍒囨崲鏃舵竻绌轰紭鍏堢骇绛涢€?
+  selectedTestType.value = ''; // 椤圭洰鍒囨崲鏃舵竻绌烘祴璇曠被鍨嬬瓫閫?
+  selectedReviewStatuses.value = [...DEFAULT_REVIEW_STATUSES]; // 椤圭洰鍒囨崲鏃堕噸缃鏍哥姸鎬佺瓫閫?
   fetchTestCases();
 });
 
-// 监听外部模块选择变化（来自左侧模块管理面板）
+// 鐩戝惉澶栭儴妯″潡閫夋嫨鍙樺寲锛堟潵鑷乏渚фā鍧楃鐞嗛潰鏉匡級
 watch(selectedModuleId, (newVal) => {
   if (newVal !== localSelectedModuleId.value) {
     clearHighlightedGeneratedCases();
@@ -664,7 +674,7 @@ watch(selectedModuleId, (newVal) => {
   }
 });
 
-// 暴露给父组件的方法
+// 鏆撮湶缁欑埗缁勪欢鐨勬柟娉?
 defineExpose({
   refreshTestCases: async (generatedIds?: number[]) => {
     await fetchTestCases();
@@ -685,7 +695,7 @@ defineExpose({
     await fetchTestCases();
     highlightGeneratedCases(generatedIds);
   },
-  // 获取当前筛选后的用例ID列表（用于编辑页面导航）
+  // 鑾峰彇褰撳墠绛涢€夊悗鐨勭敤渚婭D鍒楄〃锛堢敤浜庣紪杈戦〉闈㈠鑸級
   getTestCaseIds: () => testCaseData.value.map(tc => tc.id),
 });
 
@@ -766,7 +776,7 @@ defineExpose({
   overflow: hidden;
 }
 
-/* 导入导出按钮响应式 */
+/* 瀵煎叆瀵煎嚭鎸夐挳鍝嶅簲寮?*/
 .io-btn {
   flex-shrink: 0;
 }
@@ -788,7 +798,7 @@ defineExpose({
   display: flex;
   justify-content: center;
   align-items: center;
-  height: calc(100% - 60px); /* 减去头部高度 */
+  height: calc(100% - 60px); /* 鍑忓幓澶撮儴楂樺害 */
   flex-grow: 1;
 }
 
@@ -808,6 +818,13 @@ defineExpose({
   overflow-x: auto !important;
 }
 
+:deep(.test-case-table .resize-tail-column) {
+  padding: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  background: transparent !important;
+}
+
 .text-gray {
   color: #86909c;
 }
@@ -822,7 +839,7 @@ defineExpose({
   flex-direction: column;
 }
 
-/* 强制显示单元格下边框 */
+/* 寮哄埗鏄剧ず鍗曞厓鏍间笅杈规 */
 :deep(.test-case-table .arco-table-td) {
   border-bottom: 1px solid var(--color-neutral-3) !important;
 }
@@ -868,7 +885,7 @@ defineExpose({
   min-width: 36px;
 }
 
-/* 勾选框居中显示 */
+/* 鍕鹃€夋灞呬腑鏄剧ず */
 :deep(.test-case-table [data-checkbox]) {
   display: flex;
   justify-content: center;
@@ -881,7 +898,7 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 160px;
+  max-width: 100%;
   color: #1890ff;
   cursor: pointer;
   text-decoration: none;
@@ -915,5 +932,7 @@ defineExpose({
   background: #f3fbf4;
 }
 
-/* 移除重复的样式定义 */
+/* 绉婚櫎閲嶅鐨勬牱寮忓畾涔?*/
 </style>
+
+
