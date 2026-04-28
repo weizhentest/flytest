@@ -112,11 +112,16 @@ import { defineAsyncComponent, h, ref, computed, watch, onMounted, onUnmounted }
 import { useRouter } from 'vue-router';
 import { useProjectStore } from '@/store/projectStore';
 import { useAiActivityStore } from '@/store/aiActivityStore';
-import { generateTestCasesFromRequirement, type TestCase } from '@/services/testcaseService';
+import {
+  clearModuleTestCases,
+  generateTestCasesFromRequirement,
+  getTestCaseList,
+  type TestCase,
+} from '@/services/testcaseService';
 import type { TestCaseModule } from '@/services/testcaseModuleService';
 import type { TreeNodeData } from '@arco-design/web-vue';
 import { getTestCaseModules } from '@/services/testcaseModuleService';
-import { Message, Notification } from '@arco-design/web-vue';
+import { Message, Modal, Notification } from '@arco-design/web-vue';
 
 import ModuleManagementPanel from '@/components/testcase/ModuleManagementPanel.vue';
 import TestCaseList from '@/components/testcase/TestCaseList.vue';
@@ -342,8 +347,7 @@ const handleModuleUpdated = () => {
   // modulePanelRef.value?.refreshModules(); // 假设 ModuleManagementPanel 有此方法
   // 同时刷新模块数据给表单用
   fetchAllModulesForForm();
-  // 如果用例列表依赖模块信息（比如显示模块名），也可能需要刷新用例列表
-  // 如需强制刷新用例列表，可在此调用列表刷新方法。
+  testCaseListRef.value?.refreshTestCases();
 };
 
 const showAddCaseModeModal = () => {
@@ -452,11 +456,13 @@ const handleFormSubmitSuccess = () => {
 
 const handleTestCaseDeleted = () => {
   // 用例在列表组件内部删除并刷新列表，这里可能需要刷新模块面板的用例计数
+  aiActivityStore.clearGenerationJob();
   modulePanelRef.value?.refreshModules();
 };
 
 const handleViewDetailTestCaseDeleted = () => {
     // 从详情页删除后，返回列表并刷新
+    aiActivityStore.clearGenerationJob();
     backToList();
     testCaseListRef.value?.refreshTestCases();
     modulePanelRef.value?.refreshModules();
@@ -464,6 +470,36 @@ const handleViewDetailTestCaseDeleted = () => {
 
 const showGenerateCasesModal = () => {
   isGenerateCasesModalVisible.value = true;
+};
+
+const getModuleExistingCaseCount = async (moduleId: number) => {
+  if (!currentProjectId.value) {
+    return 0;
+  }
+
+  const response = await getTestCaseList(currentProjectId.value, {
+    page: 1,
+    pageSize: 1,
+    module_id: moduleId,
+  });
+
+  if (!response.success) {
+    throw new Error(response.error || '获取当前模块测试用例数量失败');
+  }
+
+  return response.total ?? response.data?.length ?? 0;
+};
+
+const clearModuleCasesBeforeRegenerate = async (moduleId: number) => {
+  if (!currentProjectId.value) {
+    throw new Error('没有有效的项目ID');
+  }
+
+  aiActivityStore.clearGenerationJob();
+  const response = await clearModuleTestCases(currentProjectId.value, moduleId);
+  if (!response.success) {
+    throw new Error(response.error || '清空当前模块测试用例失败');
+  }
 };
 
 const startRequirementCaseGenerationJob = async (
@@ -627,6 +663,31 @@ const resolveEffectiveGeneratedCount = (
   return Math.max(resolvedCount, generatedIdsCount);
 };
 
+const extractGeneratedCountFromText = (text?: string | null) => {
+  if (!text) {
+    return 0;
+  }
+
+  const patterns = [
+    /生成(?:并评审)?\s*(\d+)\s*条/i,
+    /共生成\s*(\d+)\s*条/i,
+    /(\d+)\s*条测试用例/i,
+    /(\d+)\s*条用例/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const count = Number.parseInt(match[1] || '0', 10);
+      if (Number.isFinite(count) && count > 0) {
+        return count;
+      }
+    }
+  }
+
+  return 0;
+};
+
 const buildGenerationSuccessSummary = (
   payload: {
     message?: string;
@@ -695,29 +756,66 @@ const handleGenerateCasesSubmit = async (formData: {
   }
 
   if (['full', 'title_only'].includes(formData.generateMode)) {
-    await startRequirementCaseGenerationJob(
-      {
-        requirement_document_id: formData.requirementDocumentId,
-        requirement_module_id: formData.requirementModuleId,
-        test_case_module_id: formData.testCaseModuleId,
-        prompt_id: formData.promptId,
-        generate_mode: formData.generateMode as 'full' | 'title_only',
-        test_types: formData.testTypes,
-      },
-      {
-        submittingModal: 'generate',
-        startLabel: 'AI正在生成用例',
-        startNotification: {
-          title: '正在生成测试用例',
-          content: '任务已提交到后台，提示将在 10 秒后自动关闭。生成进度请看页面顶部 AI 在线旁边。',
-          duration: 10000,
+    const submitRequirementGeneration = async () => {
+      const testTypePrompt = getTestTypePrompt(formData.testTypes || []);
+      const promptParts = [
+        formData.selectedDocument?.title ? `\u9700\u6c42\u6587\u6863\uff1a${formData.selectedDocument.title}` : '',
+        formData.selectedModule?.title ? `\u9700\u6c42\u6a21\u5757\uff1a${formData.selectedModule.title}` : '',
+        testTypePrompt,
+      ].filter(Boolean);
+
+      await startRequirementCaseGenerationJob(
+        {
+          requirement_document_id: formData.requirementDocumentId,
+          requirement_module_id: formData.requirementModuleId,
+          test_case_module_id: formData.testCaseModuleId,
+          prompt_id: formData.promptId,
+          generate_mode: formData.generateMode as 'full' | 'title_only',
+          test_types: formData.testTypes?.length ? formData.testTypes : ['functional'],
+          extra_prompt: promptParts.join('\n\n'),
+          append_to_existing: false,
         },
-        activityMeta: {
-          mode: 'standard',
-          targetModuleId: null,
-        },
+        {
+          submittingModal: 'generate',
+          startLabel: 'AI\u6b63\u5728\u751f\u6210\u7528\u4f8b',
+          startNotification: {
+            title: '\u6b63\u5728\u91cd\u65b0\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b',
+            content: '\u4efb\u52a1\u5df2\u63d0\u4ea4\u5230\u540e\u53f0\uff0c\u7cfb\u7edf\u4f1a\u5148\u6e05\u7a7a\u5f53\u524d\u6a21\u5757\u7684\u65e7\u7528\u4f8b\uff0c\u518d\u91cd\u65b0\u751f\u6210\u3002',
+            duration: 10000,
+          },
+          activityMeta: {
+            mode: 'standard',
+            targetModuleId: formData.testCaseModuleId,
+          },
+        }
+      );
+    };
+
+    try {
+      const existingCount = await getModuleExistingCaseCount(formData.testCaseModuleId);
+      if (existingCount > 0) {
+        Modal.warning({
+          title: '\u786e\u8ba4\u91cd\u65b0\u751f\u6210',
+          content: `\u5f53\u524d\u6a21\u5757\u5df2\u6709 ${existingCount} \u6761\u6d4b\u8bd5\u7528\u4f8b\u3002\u70b9\u51fb\u786e\u8ba4\u540e\u4f1a\u5148\u5f7b\u5e95\u6e05\u7a7a\u5f53\u524d\u6a21\u5757\u7684\u73b0\u6709\u7528\u4f8b\uff0c\u518d\u91cd\u65b0\u751f\u6210\u3002\u53ea\u6709\u201c\u6dfb\u52a0\u7528\u4f8b\u201d\u624d\u4f1a\u4fdd\u7559\u73b0\u6709\u7528\u4f8b\u5e76\u7ee7\u7eed\u8ffd\u52a0\u3002`,
+          okText: '\u786e\u8ba4\u6e05\u7a7a\u5e76\u751f\u6210',
+          cancelText: '\u53d6\u6d88',
+          onOk: async () => {
+            try {
+              await clearModuleCasesBeforeRegenerate(formData.testCaseModuleId);
+              await submitRequirementGeneration();
+            } catch (error) {
+              Message.error(error instanceof Error ? error.message : '\u91cd\u65b0\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b\u5931\u8d25');
+            }
+          },
+        });
+        return;
       }
-    );
+
+      await clearModuleCasesBeforeRegenerate(formData.testCaseModuleId);
+      await submitRequirementGeneration();
+    } catch (error) {
+      Message.error(error instanceof Error ? error.message : '\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b\u5931\u8d25');
+    }
     return;
   }
 
@@ -1027,8 +1125,16 @@ watch(
       }
       modulePanelRef.value?.refreshModules();
 
-      const generatedCount = resolveEffectiveGeneratedCount(result, aiActivityStore.generationJob?.generated_count);
-      const baseMessage = result?.message || `本次共生成 ${generatedCount} 条测试用例`;
+      const generatedCount = Math.max(
+        resolveEffectiveGeneratedCount(result, aiActivityStore.generationJob?.generated_count),
+        extractGeneratedCountFromText(result?.message),
+        extractGeneratedCountFromText(result?.summary),
+        extractGeneratedCountFromText(aiActivityStore.generationJob?.summary),
+      );
+      const baseMessage =
+        result?.message ||
+        aiActivityStore.generationJob?.summary ||
+        `本次共生成 ${generatedCount} 条测试用例`;
       if (result && !result.message) {
         result.message = baseMessage;
       }
@@ -1154,4 +1260,3 @@ onUnmounted(() => {
   /* 不要用 !important 覆盖 overflow 和 padding，让子组件自行控制滚动 */
 }
 </style>
-

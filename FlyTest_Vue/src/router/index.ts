@@ -13,6 +13,7 @@ const ProjectManagementView = () => import('../views/ProjectManagementView.vue')
 const ProjectDeletionLogView = () => import('../views/ProjectDeletionLogView.vue')
 const TestCaseManagementView = () => import('../views/TestCaseManagementView.vue')
 const TestSuiteManagementView = () => import('../views/TestSuiteManagementView.vue')
+const TestBugManagementView = () => import('../views/TestBugManagementView.vue')
 const TestExecutionHistoryView = () => import('../views/TestExecutionHistoryView.vue')
 const ApiKeyManagementView = () => import('../views/ApiKeyManagementView.vue')
 const RemoteMcpConfigManagementView = () => import('../views/RemoteMcpConfigManagementView.vue')
@@ -118,6 +119,11 @@ const routes: RouteRecordRaw[] = [
         path: 'testsuites',
         name: 'TestSuiteManagement',
         component: TestSuiteManagementView,
+      },
+      {
+        path: 'test-bugs',
+        name: 'TestBugManagement',
+        component: TestBugManagementView,
       },
       {
         path: 'test-executions',

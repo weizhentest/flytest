@@ -1,11 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.db import transaction
+from django.utils import timezone
 from .models import (
     TestCase,
     TestCaseStep,
     TestCaseModule,
     TestCaseScreenshot,
     TestSuite,
+    TestBug,
     TestExecution,
     TestCaseResult,
 )
@@ -83,6 +86,8 @@ class TestCaseSerializer(serializers.ModelSerializer):
             "updated_at",
             "review_status",
             "test_type",
+            "execution_status",
+            "executed_at",
         ]
         read_only_fields = [
             "id",
@@ -92,6 +97,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
             "creator_detail",
             "created_at",
             "updated_at",
+            "executed_at",
         ]
         # project 字段在创建时是必需的，但通常从 URL 获取，不在 request.data 中。
         # 如果要通过 request.data 传递 project_id，则需要将其从 read_only_fields 中移除，
@@ -99,6 +105,23 @@ class TestCaseSerializer(serializers.ModelSerializer):
         # 这里我们假设 project 将从 URL 传递给视图，并在视图的 perform_create 中设置。
         # 因此，对于序列化器本身，project 字段可以被视为只读或在创建时不直接通过此序列化器输入。
         # 为了简单起见，我们先将其保留在 fields 中，视图将负责处理其赋值。
+
+    def _validate_unique_name_in_module(self, attrs):
+        raw_name = attrs.get("name", getattr(self.instance, "name", ""))
+        name = str(raw_name or "").strip()
+        module = attrs.get("module", getattr(self.instance, "module", None))
+
+        if not name or module is None:
+            return
+
+        duplicate_queryset = TestCase.objects.filter(module=module, name=name)
+        if self.instance is not None:
+            duplicate_queryset = duplicate_queryset.exclude(pk=self.instance.pk)
+
+        if duplicate_queryset.exists():
+            raise serializers.ValidationError(
+                {"name": f'模块“{module.name}”下已存在同名测试用例“{name}”'}
+            )
 
     def validate(self, attrs):
         """验证数据"""
@@ -110,6 +133,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
         if self.instance and "module" in attrs and attrs["module"] is None:
             raise serializers.ValidationError({"module_id": "请选择所属模块"})
 
+        self._validate_unique_name_in_module(attrs)
         return attrs
 
     def create(self, validated_data):
@@ -127,6 +151,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         steps_data = validated_data.pop("steps", None)
+        new_execution_status = validated_data.get("execution_status")
 
         # 更新 TestCase 实例的字段
         if "name" in validated_data:
@@ -143,6 +168,10 @@ class TestCaseSerializer(serializers.ModelSerializer):
             instance.review_status = validated_data["review_status"]
         if "test_type" in validated_data:
             instance.test_type = validated_data["test_type"]
+        if "execution_status" in validated_data:
+            instance.execution_status = validated_data["execution_status"]
+            if new_execution_status in {"passed", "failed"}:
+                instance.executed_at = timezone.now()
 
         # project 和 creator 通常不允许通过此接口更新
         instance.save()
@@ -232,6 +261,8 @@ class TestCaseListSerializer(serializers.ModelSerializer):
 
     creator_detail = serializers.SerializerMethodField()
     assignee_detail = serializers.SerializerMethodField()
+    assignment_created_at = serializers.SerializerMethodField()
+    related_bug_count = serializers.SerializerMethodField()
     module_id = serializers.PrimaryKeyRelatedField(source="module", read_only=True)
     module_detail = serializers.StringRelatedField(source="module", read_only=True)
 
@@ -248,10 +279,14 @@ class TestCaseListSerializer(serializers.ModelSerializer):
             "creator",
             "creator_detail",
             "assignee_detail",
+            "assignment_created_at",
             "created_at",
             "updated_at",
             "review_status",
             "test_type",
+            "related_bug_count",
+            "execution_status",
+            "executed_at",
         ]
         read_only_fields = fields
 
@@ -273,6 +308,40 @@ class TestCaseListSerializer(serializers.ModelSerializer):
             "id": assignee.id,
             "username": assignee.username,
         }
+
+    def get_assignment_created_at(self, obj):
+        assignment = getattr(obj, "assignment", None)
+        created_at = getattr(assignment, "created_at", None)
+        return created_at
+
+    def get_related_bug_count(self, obj):
+        candidate_relations = (
+            "bugs",
+            "bug_links",
+            "defects",
+            "defect_links",
+            "issues",
+            "issue_links",
+            "related_bugs",
+            "related_defects",
+            "related_issues",
+        )
+
+        for relation_name in candidate_relations:
+            relation = getattr(obj, relation_name, None)
+            if relation is None:
+                continue
+
+            if hasattr(relation, "count"):
+                try:
+                    return int(relation.count())
+                except TypeError:
+                    pass
+
+            if isinstance(relation, (list, tuple, set)):
+                return len(relation)
+
+        return 0
 
 
 class TestCaseModuleSerializer(serializers.ModelSerializer):
@@ -447,15 +516,13 @@ class TestSuiteSerializer(serializers.ModelSerializer):
 
 
     creator_detail = UserDetailSerializer(source="creator", read_only=True)
-    testcase_ids = serializers.PrimaryKeyRelatedField(
-        queryset=TestCase.objects.all(),
-        source="testcases",
-        many=True,
-        write_only=True,
-        required=False,
-    )
-    testcases_detail = TestCaseSerializer(source="testcases", many=True, read_only=True)
     testcase_count = serializers.SerializerMethodField()
+    parent_id = serializers.PrimaryKeyRelatedField(
+        queryset=TestSuite.objects.all(),
+        source="parent",
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = TestSuite
@@ -464,8 +531,9 @@ class TestSuiteSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "project",
-            "testcase_ids",
-            "testcases_detail",
+            "parent",
+            "parent_id",
+            "level",
             "testcase_count",
             "max_concurrent_tasks",
             "creator",
@@ -476,6 +544,7 @@ class TestSuiteSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "project",
+            "level",
             "creator",
             "creator_detail",
             "created_at",
@@ -486,51 +555,30 @@ class TestSuiteSerializer(serializers.ModelSerializer):
 
     def get_testcase_count(self, obj):
         """获取套件中的用例数量"""
+        annotated_count = getattr(obj, "testcase_count", None)
+        if annotated_count is not None:
+            return int(annotated_count)
         return obj.testcases.count()
 
-    def validate_testcase_ids(self, value):
-        """验证测试用例是否属于同一项目"""
-        if not value:
-            return value
-
-        # 获取项目ID (创建时从context获取，更新时从instance获取)
-        if self.instance:
-            project_id = self.instance.project_id
-        else:
-            project_id = self.context.get("project_id")
-
-        if not project_id:
-            raise serializers.ValidationError("无法确定项目ID")
-
-        # 检查所有用例是否属于同一项目
-        for testcase in value:
-            if testcase.project_id != project_id:
-                raise serializers.ValidationError(
-                    f"测试用例 '{testcase.name}' 不属于当前项目"
-                )
-
-        return value
-
     def validate(self, attrs):
-        """整体验证：至少需要一个用例"""
-        # 如果是部分更新，需要结合现有实例的数据进行验证
-        if self.instance:
-            # 获取现有数据或新数据
-            testcases = attrs.get("testcases")
-            if testcases is None:
-                # 如果请求中没有 testcases，检查实例中是否已有
-                has_testcases = self.instance.testcases.exists()
-            else:
-                has_testcases = bool(testcases)
+        parent = attrs.get("parent")
+        project_id = self.context.get("project_id") or getattr(self.instance, "project_id", None)
 
-            if not has_testcases:
-                raise serializers.ValidationError("测试套件至少需要包含一个测试用例")
-        else:
-            # 创建时，直接检查请求数据
-            testcases = attrs.get("testcases", [])
+        if parent and parent.project_id != project_id:
+            raise serializers.ValidationError({"parent": "父套件必须属于同一个项目"})
 
-            if not testcases:
-                raise serializers.ValidationError("测试套件至少需要包含一个测试用例")
+        if parent and parent.level >= 5:
+            raise serializers.ValidationError({"parent": "套件级别不能超过5级"})
+
+        if self.instance and parent:
+            if parent.id == self.instance.id:
+                raise serializers.ValidationError({"parent": "父套件不能是自己"})
+
+            current_parent = parent
+            while current_parent:
+                if current_parent.parent_id == self.instance.id:
+                    raise serializers.ValidationError({"parent": "不能选择自己的子套件作为父套件"})
+                current_parent = current_parent.parent
 
         return attrs
 
@@ -543,26 +591,167 @@ class TestSuiteSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        testcases = validated_data.pop("testcases", [])
-        suite = TestSuite.objects.create(**validated_data)
-        if testcases:
-            suite.testcases.set(testcases)
-        return suite
+        parent = validated_data.get("parent")
+        validated_data["level"] = parent.level + 1 if parent else 1
+        return TestSuite.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
-        testcases = validated_data.pop("testcases", None)
-
         instance.name = validated_data.get("name", instance.name)
         instance.description = validated_data.get("description", instance.description)
+        if "parent" in validated_data:
+            instance.parent = validated_data.get("parent")
+            instance.level = instance.parent.level + 1 if instance.parent else 1
         instance.max_concurrent_tasks = validated_data.get(
             "max_concurrent_tasks", instance.max_concurrent_tasks
         )
         instance.save()
 
-        if testcases is not None:
-            instance.testcases.set(testcases)
-
         return instance
+
+
+class TestBugSerializer(serializers.ModelSerializer):
+    creator_detail = UserDetailSerializer(source="opened_by", read_only=True)
+    assigned_to_detail = UserDetailSerializer(source="assigned_to", read_only=True)
+    resolved_by_detail = UserDetailSerializer(source="resolved_by", read_only=True)
+    closed_by_detail = UserDetailSerializer(source="closed_by", read_only=True)
+    activated_by_detail = UserDetailSerializer(source="activated_by", read_only=True)
+    suite_name = serializers.CharField(source="suite.name", read_only=True)
+    testcase_name = serializers.CharField(source="testcase.name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    bug_type_display = serializers.CharField(source="get_bug_type_display", read_only=True)
+    resolution_display = serializers.CharField(source="get_resolution_display", read_only=True)
+
+    class Meta:
+        model = TestBug
+        fields = [
+            "id",
+            "project",
+            "suite",
+            "suite_name",
+            "testcase",
+            "testcase_name",
+            "title",
+            "steps",
+            "expected_result",
+            "actual_result",
+            "bug_type",
+            "bug_type_display",
+            "severity",
+            "priority",
+            "status",
+            "status_display",
+            "resolution",
+            "resolution_display",
+            "keywords",
+            "deadline",
+            "assigned_to",
+            "assigned_to_detail",
+            "opened_by",
+            "creator_detail",
+            "opened_at",
+            "assigned_at",
+            "resolved_by",
+            "resolved_by_detail",
+            "resolved_at",
+            "closed_by",
+            "closed_by_detail",
+            "closed_at",
+            "activated_by",
+            "activated_by_detail",
+            "activated_at",
+            "activated_count",
+            "solution",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "project",
+            "opened_by",
+            "creator_detail",
+            "suite_name",
+            "testcase_name",
+            "status_display",
+            "bug_type_display",
+            "resolution_display",
+            "assigned_to_detail",
+            "resolved_by_detail",
+            "closed_by_detail",
+            "activated_by_detail",
+            "opened_at",
+            "assigned_at",
+            "resolved_at",
+            "closed_at",
+            "activated_at",
+            "activated_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        instance = self.instance
+        project = self.context.get("project")
+        suite = attrs.get("suite", getattr(instance, "suite", None))
+        testcase = attrs.get("testcase", getattr(instance, "testcase", None))
+
+        if suite is None:
+            raise serializers.ValidationError({"suite": "请选择所属测试套件"})
+
+        project_obj = project or getattr(instance, "project", None)
+        if project_obj and suite.project_id != project_obj.id:
+            raise serializers.ValidationError({"suite": "测试套件必须属于当前项目"})
+
+        if testcase is not None:
+            if project_obj and testcase.project_id != project_obj.id:
+                raise serializers.ValidationError({"testcase": "测试用例必须属于当前项目"})
+            if testcase.id not in suite.testcases.values_list("id", flat=True):
+                raise serializers.ValidationError({"testcase": "只能关联当前套件中的测试用例"})
+
+        return attrs
+
+
+class TestBugListSerializer(serializers.ModelSerializer):
+    suite_name = serializers.CharField(source="suite.name", read_only=True)
+    testcase_name = serializers.CharField(source="testcase.name", read_only=True)
+    assigned_to_name = serializers.CharField(source="assigned_to.username", read_only=True)
+    opened_by_name = serializers.CharField(source="opened_by.username", read_only=True)
+    resolved_by_name = serializers.CharField(source="resolved_by.username", read_only=True)
+    bug_type_display = serializers.CharField(source="get_bug_type_display", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    resolution_display = serializers.CharField(source="get_resolution_display", read_only=True)
+
+    class Meta:
+        model = TestBug
+        fields = [
+            "id",
+            "suite",
+            "suite_name",
+            "testcase",
+            "testcase_name",
+            "title",
+            "bug_type",
+            "bug_type_display",
+            "severity",
+            "priority",
+            "status",
+            "status_display",
+            "resolution",
+            "resolution_display",
+            "assigned_to",
+            "assigned_to_name",
+            "opened_by",
+            "opened_by_name",
+            "opened_at",
+            "assigned_at",
+            "resolved_by",
+            "resolved_by_name",
+            "resolved_at",
+            "closed_at",
+            "activated_at",
+            "activated_count",
+            "deadline",
+        ]
+        read_only_fields = fields
 
 
 from urllib.parse import urlparse

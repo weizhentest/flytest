@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import { API_BASE_URL } from '@/config/api';
+import { request } from '@/utils/request';
 
 // 测试用例步骤接口
 export interface TestCaseStep {
@@ -18,6 +19,12 @@ export type ReviewStatus =
   | 'needs_optimization'
   | 'optimization_pending_review'
   | 'unavailable';
+
+export type ExecutionStatus =
+  | 'not_executed'
+  | 'passed'
+  | 'failed'
+  | 'not_applicable';
 
 // 截图接口
 export interface TestCaseScreenshot {
@@ -58,6 +65,8 @@ export interface TestCase {
   precondition: string;
   level: string; // P0, P1, P2, P3
   test_type?: string; // smoke, functional, boundary, exception, permission, security, compatibility
+  related_bug_count?: number;
+  execution_status?: ExecutionStatus;
   steps: TestCaseStep[];
   notes?: string; // 备注字段
   screenshot?: string; // 兼容旧的单个截图字段
@@ -74,6 +83,8 @@ export interface TestCase {
     is_active: boolean;
     groups: any[];
   };
+  assignment_created_at?: string | null;
+  executed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -84,6 +95,7 @@ export interface CreateTestCaseRequest {
   precondition: string;
   level: string; // P0, P1, P2, P3
   test_type?: string; // smoke, functional, boundary, exception, permission, security, compatibility
+  execution_status?: ExecutionStatus;
   module_id?: number | null; // 所属模块ID
   steps: Omit<TestCaseStep, 'id'>[];
   notes?: string; // 新增备注字段
@@ -95,6 +107,7 @@ export interface UpdateTestCaseRequest {
   precondition?: string;
   level?: string;
   test_type?: string; // smoke, functional, boundary, exception, permission, security, compatibility
+  execution_status?: ExecutionStatus;
   module_id?: number | null; // 所属模块ID
   steps?: TestCaseStep[];
   notes?: string; // 新增备注字段
@@ -107,11 +120,14 @@ export interface PaginationParams {
   pageSize: number;
   search?: string;
   module_id?: number; // 添加可选的模块ID用于筛选
+  suite_id?: number; // 添加可选的套件ID用于筛选
   level?: string; // 添加可选的优先级用于筛选
   review_status?: ReviewStatus; // 添加可选的审核状态用于筛选（单个）
   review_status_in?: ReviewStatus[]; // 多个审核状态筛选
   test_type?: string; // 单个测试类型筛选
   test_type_in?: string[]; // 多个测试类型筛选
+  assignee_id?: number; // 单个执行人筛选
+  assignee_id_in?: number[]; // 多个执行人筛选
 }
 
 // 测试用例列表响应接口
@@ -273,79 +289,68 @@ export interface ScreenshotUploadResponse {
  * @returns 返回一个Promise，解析为包含测试用例列表的响应对象
  */
 export const getTestCaseList = async (projectId: number, params?: PaginationParams): Promise<TestCaseListResponse> => {
-  const authStore = useAuthStore();
-  const accessToken = authStore.getAccessToken;
-
-  if (!accessToken) {
-    return {
-      success: false,
-      error: '未登录或会话已过期',
-    };
-  }
-
   try {
-    const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/testcases/`, {
-      params: params ? {
+    const response = await request<TestCase[] | { results?: TestCase[]; count?: number; total?: number }>({
+      url: `/projects/${projectId}/testcases/`,
+      method: 'GET',
+      params: params
+        ? {
         page: params.page,
         page_size: params.pageSize,
         search: params.search || '',
-        module_id: params.module_id, // 传递 module_id
-        level: params.level, // 传递 level
-        review_status: params.review_status, // 传递 review_status（单个）
-        // 多个审核状态筛选，用逗号连接
+        module_id: params.module_id,
+        suite_id: params.suite_id,
+        level: params.level,
+        review_status: params.review_status,
         review_status_in: params.review_status_in?.join(','),
-        test_type: params.test_type, // 传递 test_type（单个）
-        // 多个测试类型筛选，用逗号连接
+        test_type: params.test_type,
         test_type_in: params.test_type_in?.join(','),
-      } : undefined,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+        assignee_id: params.assignee_id,
+        assignee_id_in: params.assignee_id_in?.join(','),
+      }
+        : undefined,
     });
 
-    // 检查响应格式
-    if (response.data && response.data.status === 'success') {
-      // 处理直接返回数组的情况
-      if (Array.isArray(response.data.data)) {
-        return {
-          success: true,
-          data: response.data.data,
-          total: response.data.data.length,
-          statusCode: response.data.code,
-        };
-      }
-      // 处理返回分页对象的情况
-      else if (response.data.data && response.data.data.results) {
-        return {
-          success: true,
-          data: response.data.data.results,
-          total: response.data.data.count,
-          statusCode: response.data.code,
-        };
-      }
-      // 其他情况
-      else {
-        return {
-          success: false,
-          error: '获取测试用例列表失败：响应数据格式不正确',
-          statusCode: response.data.code,
-        };
-      }
-    } else {
+    if (!response.success) {
       return {
         success: false,
-        error: response.data?.message || '获取测试用例列表失败：响应状态不是success',
-        statusCode: response.data?.code,
+        error: response.error || '获取测试用例列表失败',
+        statusCode: (response as any).status,
       };
     }
+
+    const payload = response.data;
+    if (Array.isArray(payload)) {
+      return {
+        success: true,
+        data: payload,
+        total: response.total ?? payload.length,
+        statusCode: 200,
+      };
+    }
+
+    if (payload && typeof payload === 'object') {
+      const items = Array.isArray(payload.results) ? payload.results : [];
+      const total = payload.count ?? payload.total ?? response.total ?? items.length;
+      return {
+        success: true,
+        data: items,
+        total,
+        statusCode: 200,
+      };
+    }
+
+    return {
+      success: false,
+      error: '获取测试用例列表失败：响应数据格式不正确',
+      statusCode: 500,
+    };
   } catch (error: any) {
     console.error('获取测试用例列表出错:', error);
     return {
       success: false,
-      error: error.response?.data?.message || error.message || '获取测试用例列表时发生错误',
-      statusCode: error.response?.status,
+      error: error?.error || error.response?.data?.message || error.message || '获取测试用例列表时发生错误',
+      statusCode: error?.status || error.response?.status,
     };
   }
 };
@@ -454,7 +459,7 @@ export const generateTestCasesFromRequirement = async (
 
     const rawPayload = response.data?.data ?? response.data ?? {};
     const resultPayload = normalizeGenerationResultPayload(
-      rawPayload?.result_payload?.data ?? rawPayload?.result_payload ?? rawPayload?.data ?? rawPayload
+      rawPayload?.result_payload ?? rawPayload?.data ?? rawPayload
     );
 
     return {
@@ -512,7 +517,7 @@ export const getTestCaseGenerationJobStatus = async (
     const rawPayload = response.data?.data ?? response.data ?? {};
     const payload = rawPayload?.data ?? rawPayload;
     const resultPayload = normalizeGenerationResultPayload(
-      payload?.result_payload?.data ?? payload?.result_payload ?? null
+      payload?.result_payload ?? null
     );
 
     return {
@@ -731,6 +736,53 @@ export interface BatchDeleteResponse {
   statusCode?: number;
 }
 
+export interface BatchMoveCopyResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    message: string;
+    moved_count?: number;
+    copied_count?: number;
+    moved_testcases?: Array<{
+      id: number;
+      name: string;
+      from_module?: string | null;
+      to_module?: string | null;
+    }>;
+    target_module_id: number;
+    target_module_name: string;
+    data?: TestCase[];
+    cleared_job_count?: number;
+  };
+  error?: string;
+  statusCode?: number;
+}
+
+export interface ClearModuleTestCasesResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    message: string;
+    deleted_count: number;
+    deleted_testcases: BatchDeletedTestCase[];
+    deletion_details: Record<string, number>;
+    cleared_job_count?: number;
+  };
+  error?: string;
+  statusCode?: number;
+}
+
+export interface BatchUpdateExecutionStatusResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    updated_count: number;
+    execution_status: ExecutionStatus;
+  };
+  error?: string;
+  statusCode?: number;
+}
+
 /**
  * 批量删除测试用例
  * @param projectId 项目ID
@@ -788,6 +840,161 @@ export const batchDeleteTestCases = async (projectId: number, testCaseIds: numbe
     return {
       success: false,
       error: error.response?.data?.message || error.message || '批量删除测试用例时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const clearModuleTestCases = async (
+  projectId: number,
+  moduleId: number
+): Promise<ClearModuleTestCasesResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/testcases/clear-module/`,
+      { module_id: moduleId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    if (response.data && response.data.status === 'success') {
+      return {
+        success: true,
+        message: response.data.message || '模块测试用例已清空',
+        data: response.data.data,
+        statusCode: response.data.code,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data?.message || '清空模块测试用例失败',
+      statusCode: response.data?.code,
+    };
+  } catch (error: any) {
+    console.error('清空模块测试用例失败:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '清空模块测试用例时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const batchMoveTestCases = async (
+  projectId: number,
+  testCaseIds: number[],
+  targetModuleId: number
+): Promise<BatchMoveCopyResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/testcases/batch-move/`,
+      { ids: testCaseIds, target_module_id: targetModuleId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    if (response.data && response.data.status === 'success') {
+      return {
+        success: true,
+        message: response.data.message || '测试用例移动成功',
+        data: response.data.data,
+        statusCode: response.data.code,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data?.message || '移动测试用例失败',
+      statusCode: response.data?.code,
+    };
+  } catch (error: any) {
+    console.error('移动测试用例失败:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '移动测试用例时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const batchCopyTestCases = async (
+  projectId: number,
+  testCaseIds: number[],
+  targetModuleId: number
+): Promise<BatchMoveCopyResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/testcases/batch-copy/`,
+      { ids: testCaseIds, target_module_id: targetModuleId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    if (response.data && response.data.status === 'success') {
+      return {
+        success: true,
+        message: response.data.message || '测试用例复制成功',
+        data: response.data.data,
+        statusCode: response.data.code,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data?.message || '复制测试用例失败',
+      statusCode: response.data?.code,
+    };
+  } catch (error: any) {
+    console.error('复制测试用例失败:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '复制测试用例时发生错误',
       statusCode: error.response?.status,
     };
   }
@@ -1317,4 +1524,67 @@ export const updateTestCaseReviewStatus = async (
   reviewStatus: ReviewStatus
 ): Promise<TestCaseResponse> => {
   return updateTestCase(projectId, testCaseId, { review_status: reviewStatus });
+};
+
+
+export const updateTestCaseExecutionStatus = async (
+  projectId: number,
+  testCaseId: number,
+  executionStatus: ExecutionStatus
+): Promise<TestCaseResponse> => {
+  return updateTestCase(projectId, testCaseId, { execution_status: executionStatus });
+};
+
+export const batchUpdateTestCaseExecutionStatus = async (
+  projectId: number,
+  testCaseIds: number[],
+  executionStatus: ExecutionStatus
+): Promise<BatchUpdateExecutionStatusResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: 'Not logged in or session expired',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/testcases/batch-update-execution-status/`,
+      { ids: testCaseIds, execution_status: executionStatus },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    if (response.data && (response.data.success || response.data.status === 'success')) {
+      return {
+        success: true,
+        message: response.data.message || 'Batch update execution status succeeded',
+        data: {
+          updated_count: response.data.updated_count ?? response.data.data?.updated_count ?? testCaseIds.length,
+          execution_status: response.data.execution_status ?? response.data.data?.execution_status ?? executionStatus,
+        },
+        statusCode: response.status,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data?.error || response.data?.message || 'Batch update execution status failed',
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || 'Batch update execution status failed',
+      statusCode: error.response?.status,
+    };
+  }
 };

@@ -58,6 +58,7 @@ from langgraph_integration.models import (
 from langgraph_integration.views import (
     create_llm_instance,
     create_sse_data,
+    get_llm_tool_calling_support,
     get_effective_system_prompt_async,
     check_project_permission,
 )
@@ -93,6 +94,87 @@ def _build_sse_error_event(exc: Exception) -> Dict[str, Any]:
         return event
 
     return {"type": "error", "message": f"执行错误: {str(exc)}", "code": 500}
+
+
+def _message_content_to_openai_payload(content: Any) -> Any:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[Dict[str, Any]] = []
+        for item in content:
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type == "text":
+                    parts.append({"type": "text", "text": item.get("text", "")})
+                elif item_type == "image_url":
+                    parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": item.get("image_url", {}),
+                        }
+                    )
+            elif isinstance(item, str):
+                parts.append({"type": "text", "text": item})
+        return parts
+    return str(content)
+
+
+def _langchain_message_to_openai_dict(message: Any) -> Dict[str, Any]:
+    role = "user"
+    if isinstance(message, SystemMessage):
+        role = "system"
+    elif isinstance(message, AIMessage):
+        role = "assistant"
+    elif isinstance(message, ToolMessage):
+        role = "tool"
+
+    payload: Dict[str, Any] = {
+        "role": role,
+        "content": _message_content_to_openai_payload(getattr(message, "content", "")),
+    }
+    if role == "tool":
+        tool_call_id = getattr(message, "tool_call_id", None)
+        if tool_call_id:
+            payload["tool_call_id"] = tool_call_id
+    return payload
+
+
+async def _stream_proxy_plain_chat(
+    active_config: LLMConfig, messages: List[Any]
+) -> tuple[str, List[str]]:
+    base_url = (active_config.api_url or "").rstrip("/")
+    endpoint = f"{base_url}/chat/completions"
+    payload = {
+        "model": active_config.name or "gpt-5",
+        "messages": [_langchain_message_to_openai_dict(msg) for msg in messages],
+        "stream": True,
+    }
+    headers = {"Content-Type": "application/json"}
+    api_key = (active_config.api_key or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    chunks: List[str] = []
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=20.0)) as client:
+        async with client.stream(
+            "POST", endpoint, headers=headers, json=payload
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                delta = event.get("delta") if isinstance(event, dict) else None
+                if isinstance(delta, str) and delta:
+                    chunks.append(delta)
+
+    return "".join(chunks), chunks
 
 
 # ============== 统一响应辅助函数 ==============
@@ -764,6 +846,9 @@ class AgentLoopStreamAPIView(View):
             llm = await sync_to_async(create_llm_instance)(
                 active_config, temperature=0.7
             )
+            tool_calling_supported, tool_support_reason = (
+                get_llm_tool_calling_support(active_config)
+            )
             context_limit = resolve_runtime_context_limit(
                 active_config.context_limit, llm, model_name
             )
@@ -849,6 +934,14 @@ class AgentLoopStreamAPIView(View):
             )
             tools.extend(builtin_tools)
             logger.info(f"AgentLoopStreamAPI: Added {len(builtin_tools)} builtin tools")
+            if not tool_calling_supported:
+                logger.warning("AgentLoopStreamAPI: %s", tool_support_reason)
+                if tools:
+                    logger.warning(
+                        "AgentLoopStreamAPI: Clearing %d tools because the active endpoint does not support tool-calling.",
+                        len(tools),
+                    )
+                tools = []
 
             # 7. 获取或创建 ChatSession（使用 get_or_create 避免竞态条件）
             prompt_obj = None
@@ -959,6 +1052,32 @@ class AgentLoopStreamAPIView(View):
             )
 
             # 12. 创建 Agent（LangChain v1 统一路径）
+            if not tool_calling_supported:
+                logger.info(
+                    "AgentLoopStreamAPI: Tool-calling unsupported for active endpoint; using silent plain-chat fallback."
+                )
+                direct_messages = [user_msg]
+                if effective_prompt:
+                    direct_messages.insert(0, SystemMessage(content=effective_prompt))
+                direct_text, direct_chunks = await _stream_proxy_plain_chat(
+                    active_config, direct_messages
+                )
+                if direct_chunks:
+                    for chunk in direct_chunks:
+                        yield create_sse_data({"type": "stream", "data": chunk})
+                elif direct_text:
+                    yield create_sse_data({"type": "stream", "data": direct_text})
+                yield create_sse_data(
+                    {
+                        "type": "context_update",
+                        "context_token_count": 0,
+                        "context_limit": context_limit,
+                    }
+                )
+                yield create_sse_data({"type": "complete", "total_steps": 0})
+                yield "data: [DONE]\n\n"
+                return
+
             async with get_async_checkpointer() as checkpointer:
                 # 获取中间件（需要同步到异步，因为内部有 ORM 查询）
                 middleware = await sync_to_async(get_middleware_from_config)(
@@ -1760,9 +1879,21 @@ class AgentLoopResumeAPIView(View):
                 context_limit = active_config.context_limit or 128000
                 model_name = active_config.name or "gpt-4o"
                 llm = await sync_to_async(create_llm_instance)(active_config)
+                tool_calling_supported, tool_support_reason = (
+                    get_llm_tool_calling_support(active_config)
+                )
                 context_limit = resolve_runtime_context_limit(
                     active_config.context_limit, llm, model_name
                 )
+                if not tool_calling_supported:
+                    logger.warning("AgentLoopResumeAPI: %s", tool_support_reason)
+                    yield create_sse_data(
+                        {
+                            "type": "error",
+                            "message": "当前模型代理不支持工具调用，无法继续审批型工具对话。",
+                        }
+                    )
+                    return
 
                 # 4. 加载工具
                 tools = []

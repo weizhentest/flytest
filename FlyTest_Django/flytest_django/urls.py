@@ -17,6 +17,7 @@ from testcases.views import (
     TestCaseViewSet,
     TestCaseModuleViewSet,
     TestSuiteViewSet,
+    TestBugViewSet,
     TestExecutionViewSet,
 )
 
@@ -40,6 +41,7 @@ projects_router.register(
 projects_router.register(
     r"test-suites", TestSuiteViewSet, basename="project-test-suites"
 )
+projects_router.register(r"test-bugs", TestBugViewSet, basename="project-test-bugs")
 projects_router.register(
     r"test-executions",
     TestExecutionViewSet,

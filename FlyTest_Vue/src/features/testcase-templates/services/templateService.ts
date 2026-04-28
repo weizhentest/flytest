@@ -118,26 +118,6 @@ export interface FieldOption {
   is_step_field?: boolean;
 }
 
-// 导入结果
-export interface ImportResult {
-  success: boolean;
-  total_rows: number;
-  imported_count: number;
-  skipped_count: number;
-  error_count: number;
-  duplicate_names: {
-    row: number;
-    name: string;
-    module: string;
-    existing_ids: number[];
-  }[];
-  errors: {
-    row: number;
-    error: string;
-    name?: string;
-  }[];
-  created_testcase_ids: number[];
-}
 
 // API 操作响应
 export interface OperationResponse<T = any> {
@@ -357,46 +337,6 @@ export const duplicateTemplate = async (id: number): Promise<OperationResponse<I
     return {
       success: false,
       error: error.response?.data?.error || error.message || '复制模版失败',
-    };
-  }
-};
-
-/**
- * 导入用例
- */
-export const importTestCases = async (
-  projectId: number,
-  file: File,
-  templateId: number
-): Promise<OperationResponse<ImportResult>> => {
-  const authStore = useAuthStore();
-  const accessToken = authStore.getAccessToken;
-
-  if (!accessToken) {
-    return { success: false, error: '未登录或会话已过期' };
-  }
-
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('template_id', String(templateId));
-
-    const response = await axios.post(
-      `${API_BASE_URL}/projects/${projectId}/testcases/import-excel/`,
-      formData,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    );
-    return { success: true, data: unwrapResponse<ImportResult>(response.data) };
-  } catch (error: any) {
-    return {
-      success: false,
-      data: error.response?.data,
-      error: error.response?.data?.error || error.message || '导入用例失败',
     };
   }
 };

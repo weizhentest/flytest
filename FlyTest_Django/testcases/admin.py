@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import TestCase, TestCaseStep, TestCaseModule
+from .models import TestBug, TestCase, TestCaseStep, TestCaseModule
 
 class TestCaseStepInline(admin.TabularInline):
     """
@@ -120,4 +120,11 @@ class TestCaseModuleAdmin(admin.ModelAdmin):
             instance.save()
         formset.save_m2m()
 
+
+@admin.register(TestBug)
+class TestBugAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "project", "suite", "status", "severity", "priority", "assigned_to", "opened_at")
+    list_filter = ("project", "suite", "status", "severity", "priority", "bug_type")
+    search_fields = ("title", "steps", "actual_result", "expected_result", "keywords")
+    readonly_fields = ("opened_at", "assigned_at", "resolved_at", "closed_at", "activated_at", "activated_count", "created_at", "updated_at")
 

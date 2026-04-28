@@ -2,7 +2,6 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/authStore';
 import { API_BASE_URL } from '@/config/api';
-import type { TestCase } from './testcaseService';
 
 // 测试套件接口
 export interface TestSuite {
@@ -10,9 +9,11 @@ export interface TestSuite {
   name: string;
   description?: string;
   project: number;
+  parent?: number | null;
+  parent_id?: number | null;
+  level?: number;
   testcase_count: number;
   max_concurrent_tasks: number;
-  testcases_detail?: TestCase[];
   creator: number;
   creator_detail: {
     id: number;
@@ -27,7 +28,8 @@ export interface TestSuite {
 export interface CreateTestSuiteRequest {
   name: string;
   description?: string;
-  testcase_ids?: number[];
+  parent?: number | null;
+  parent_id?: number | null;
   max_concurrent_tasks?: number;
 }
 
@@ -35,7 +37,8 @@ export interface CreateTestSuiteRequest {
 export interface UpdateTestSuiteRequest {
   name?: string;
   description?: string;
-  testcase_ids?: number[];
+  parent?: number | null;
+  parent_id?: number | null;
   max_concurrent_tasks?: number;
 }
 
@@ -65,6 +68,12 @@ export interface OperationResponse {
   statusCode?: number;
 }
 
+export interface SuiteBatchTransferResponse extends OperationResponse {
+  copied_count?: number;
+  moved_count?: number;
+  skipped_count?: number;
+}
+
 /**
  * 获取项目下的测试套件列表
  * @param projectId 项目ID
@@ -73,7 +82,7 @@ export interface OperationResponse {
  */
 export const getTestSuiteList = async (
   projectId: number,
-  params?: { search?: string }
+  params?: { search?: string; module_id?: number }
 ): Promise<TestSuiteListResponse> => {
   const authStore = useAuthStore();
   const accessToken = authStore.getAccessToken;
@@ -349,6 +358,95 @@ export const deleteTestSuite = async (
     return {
       success: false,
       error: error.response?.data?.message || error.message || '删除测试套件时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const moveSuiteTestCases = async (
+  projectId: number,
+  suiteId: number,
+  testCaseIds: number[],
+  targetSuiteId: number
+): Promise<SuiteBatchTransferResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-suites/${suiteId}/move-testcases/`,
+      { ids: testCaseIds, target_suite_id: targetSuiteId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      message: response.data?.message || '测试用例移动成功',
+      moved_count: response.data?.moved_count,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '移动测试用例时发生错误',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const copySuiteTestCases = async (
+  projectId: number,
+  suiteId: number,
+  testCaseIds: number[],
+  targetSuiteId: number
+): Promise<SuiteBatchTransferResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-suites/${suiteId}/copy-testcases/`,
+      { ids: testCaseIds, target_suite_id: targetSuiteId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      message: response.data?.message || '测试用例复制成功',
+      copied_count: response.data?.copied_count,
+      skipped_count: response.data?.skipped_count,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '复制测试用例时发生错误',
       statusCode: error.response?.status,
     };
   }

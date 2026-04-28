@@ -1,6 +1,6 @@
 <template>
   <div class="module-panel-wrapper">
-    <a-card class="module-panel" :bordered="false" title="模块管理">
+    <a-card class="module-panel" :bordered="false" :title="panelTitle">
       <div class="module-panel-content">
         <div class="module-panel-header">
           <a-input-search
@@ -22,15 +22,14 @@
                 操作
               </a-button>
               <template #content>
-                <a-doption value="addRoot" class="centered-dropdown-item">添加根模块</a-doption>
-                <a-doption value="addChild" :disabled="!selectedModuleKey" class="centered-dropdown-item">
-                  添加子模块
-                </a-doption>
-                <a-doption value="edit" :disabled="!selectedModuleKey" class="centered-dropdown-item">
-                  编辑模块
-                </a-doption>
-                <a-doption value="delete" :disabled="!selectedModuleKey" class="centered-dropdown-item">
-                  删除模块
+                <a-doption
+                  v-for="item in moduleActionMenuItems"
+                  :key="item.value"
+                  :value="item.value"
+                  :disabled="item.requiresSelection && !selectedModuleKey"
+                  class="centered-dropdown-item"
+                >
+                  {{ item.label }}
                 </a-doption>
               </template>
             </a-dropdown>
@@ -53,8 +52,28 @@
             @expand="onTreeExpand"
           >
             <template #title="nodeData">
-              <span>{{ nodeData.name }}</span>
-              <span class="module-count">({{ nodeData.testcase_count || nodeData.test_case_count || 0 }})</span>
+              <a-dropdown
+                trigger="contextMenu"
+                position="br"
+                :popup-max-width="false"
+                @select="handleModuleAction"
+              >
+                <span class="module-node-title" @contextmenu="handleModuleNodeContextMenu(nodeData)">
+                  <span>{{ nodeData.name }}</span>
+                  <span class="module-count">({{ nodeData.testcase_count || nodeData.test_case_count || 0 }})</span>
+                </span>
+                <template #content>
+                  <a-doption
+                    v-for="item in moduleActionMenuItems"
+                    :key="item.value"
+                    :value="item.value"
+                    :disabled="item.requiresSelection && !selectedModuleKey"
+                    class="centered-dropdown-item"
+                  >
+                    {{ item.label }}
+                  </a-doption>
+                </template>
+              </a-dropdown>
             </template>
           </a-tree>
           <a-empty v-else description="暂无模块数据" />
@@ -70,6 +89,93 @@
         @submit="handleModuleSubmit"
         @close="closeModuleModal"
       />
+
+      <a-modal
+        v-model:visible="testCaseTransferModalVisible"
+        :title="testCaseTransferMode === 'move' ? '移动测试用例' : '复制测试用例'"
+        :confirm-loading="testCaseTransferSubmitting"
+        width="920px"
+        :ok-button-props="{ disabled: !canSubmitTestCaseTransfer }"
+        @ok="submitTestCaseTransfer"
+        @cancel="closeTestCaseTransferModal"
+      >
+        <div class="testcase-transfer-modal">
+          <div class="testcase-transfer-toolbar">
+            <div class="testcase-transfer-source-group">
+              <div class="testcase-transfer-source">
+                当前模块：<strong>{{ selectedModuleName || '未选择模块' }}</strong>
+              </div>
+              <div class="testcase-transfer-actions">
+                <a-button size="mini" @click="selectAllTransferCases">全选</a-button>
+                <a-button size="mini" @click="invertTransferCasesSelection">反选</a-button>
+                <a-button size="mini" @click="clearTransferCasesSelection">清空</a-button>
+              </div>
+            </div>
+            <a-input-search
+              v-model="testCaseTransferSearchKeyword"
+              placeholder="搜索当前模块中的测试用例"
+              allow-clear
+              style="width: 260px;"
+              @search="fetchModuleTestCasesForTransfer"
+              @clear="fetchModuleTestCasesForTransfer"
+            />
+          </div>
+
+          <div class="testcase-transfer-body">
+            <div class="testcase-transfer-table">
+              <a-table
+                :columns="testCaseTransferColumns"
+                :data="moduleTestCaseOptions"
+                :loading="testCaseTransferLoading"
+                :pagination="false"
+                row-key="id"
+                :scroll="{ y: 360 }"
+              >
+                <template #selection="{ record }">
+                  <a-checkbox
+                    :model-value="selectedTransferTestCaseIds.includes(record.id)"
+                    @change="(checked: boolean) => handleTransferCaseSelect(record.id, checked)"
+                  />
+                </template>
+                <template #selectAll>
+                  <a-checkbox
+                    :model-value="isAllTransferCasesSelected"
+                    :indeterminate="isTransferCasesIndeterminate"
+                    @change="handleSelectAllTransferCases"
+                  />
+                </template>
+              </a-table>
+            </div>
+
+            <div class="testcase-transfer-target">
+              <a-form layout="vertical">
+                <a-form-item label="目标模块" required>
+                  <a-select
+                    v-model="targetTransferModuleId"
+                    placeholder="请选择目标根模块或子模块"
+                    allow-search
+                  >
+                    <a-option
+                      v-for="module in selectableTargetModules"
+                      :key="module.id"
+                      :value="module.id"
+                    >
+                      {{ module.indentName }}
+                    </a-option>
+                  </a-select>
+                </a-form-item>
+              </a-form>
+
+              <div class="testcase-transfer-summary">
+                已选 <strong>{{ selectedTransferTestCaseIds.length }}</strong> 条测试用例
+              </div>
+              <div class="testcase-transfer-summary">
+                目标位置：<strong>{{ selectedTransferTargetPath || '未选择目标模块' }}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </a-modal>
     </a-card>
   </div>
 </template>
@@ -84,11 +190,22 @@ import {
   type CreateTestCaseModuleRequest,
   type TestCaseModule,
 } from '@/services/testcaseModuleService';
+import {
+  batchCopyTestCases,
+  batchMoveTestCases,
+  getTestCaseList,
+  type TestCase,
+} from '@/services/testcaseService';
 import ModuleEditModal from './ModuleEditModal.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   currentProjectId: number | null;
-}>();
+  panelTitle?: string;
+  entityName?: string;
+}>(), {
+  panelTitle: '模块管理',
+  entityName: '模块',
+});
 
 const emit = defineEmits<{
   (e: 'moduleSelected', moduleId: number | null): void;
@@ -103,6 +220,29 @@ const testCaseModules = ref<TestCaseModule[]>([]);
 const selectedModuleKey = ref<number | null>(null);
 const selectedModuleKeys = ref<(number | string)[]>([]);
 const expandedKeys = ref<(number | string)[]>([]);
+const moduleActionMenuItems = computed(() => [
+  { value: 'addRoot', label: `添加根${props.entityName}`, requiresSelection: false },
+  { value: 'addChild', label: `添加子${props.entityName}`, requiresSelection: true },
+  { value: 'moveCases', label: '移动测试用例', requiresSelection: true },
+  { value: 'copyCases', label: '复制测试用例', requiresSelection: true },
+  { value: 'edit', label: `编辑${props.entityName}`, requiresSelection: true },
+  { value: 'delete', label: `删除${props.entityName}`, requiresSelection: true },
+]);
+const testCaseTransferModalVisible = ref(false);
+const testCaseTransferMode = ref<'move' | 'copy'>('move');
+const testCaseTransferLoading = ref(false);
+const testCaseTransferSubmitting = ref(false);
+const testCaseTransferSearchKeyword = ref('');
+const moduleTestCaseOptions = ref<TestCase[]>([]);
+const selectedTransferTestCaseIds = ref<number[]>([]);
+const targetTransferModuleId = ref<number | null>(null);
+const testCaseTransferColumns = [
+  { title: '选择', slotName: 'selection', width: 54, titleSlotName: 'selectAll', align: 'center' as const },
+  { title: 'ID', dataIndex: 'id', width: 76 },
+  { title: '用例名称', dataIndex: 'name', ellipsis: true, tooltip: true },
+  { title: '优先级', dataIndex: 'level', width: 88 },
+  { title: '测试类型', dataIndex: 'test_type', width: 110 },
+];
 
 const moduleModalVisible = ref(false);
 const isEditingModule = ref(false);
@@ -144,7 +284,7 @@ const buildModuleTree = (modules: TestCaseModule[], parentId: number | null = nu
       const children = buildModuleTree(modules, module.id);
       const directCount = Number((module as any).testcase_count || module.test_case_count || 0);
       const childrenCount = children.reduce(
-        (total, child) => total + Number((child as any).test_case_count || 0),
+        (total, child) => total + Number((child as any).testcase_count || (child as any).test_case_count || 0),
         0
       );
 
@@ -209,8 +349,194 @@ const filteredModuleTreeData = computed(() => {
   return filterTree(moduleTreeData.value);
 });
 
+const selectedModuleName = computed(() => {
+  const moduleItem = testCaseModules.value.find((module) => module.id === selectedModuleKey.value);
+  return moduleItem?.name || '';
+});
+
+const selectableTargetModules = computed(() => {
+  const result: Array<TestCaseModule & { indentName: string; fullPath: string }> = [];
+  const build = (modules: TreeNodeData[], level = 0, parentPath = '') => {
+    modules.forEach((node) => {
+      const nodeId = Number((node as any).id ?? node.key);
+      const nodeName = String((node as any).name || node.title || '');
+      const fullPath = parentPath ? `${parentPath} / ${nodeName}` : nodeName;
+      if (nodeId && nodeId !== selectedModuleKey.value) {
+        result.push({
+          ...(node as unknown as TestCaseModule),
+          id: nodeId,
+          indentName: `${'　'.repeat(level)}${nodeName}`,
+          fullPath,
+        });
+      }
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        build(node.children as TreeNodeData[], level + 1, fullPath);
+      }
+    });
+  };
+
+  build(moduleTreeData.value);
+  return result;
+});
+
+const selectedTransferTargetPath = computed(() => {
+  const targetModule = selectableTargetModules.value.find((module) => module.id === targetTransferModuleId.value);
+  return targetModule?.fullPath || '';
+});
+
+const isAllTransferCasesSelected = computed(() => {
+  return moduleTestCaseOptions.value.length > 0
+    && moduleTestCaseOptions.value.every((testCase) => selectedTransferTestCaseIds.value.includes(testCase.id));
+});
+
+const isTransferCasesIndeterminate = computed(() => {
+  const selectedCount = moduleTestCaseOptions.value.filter((testCase) =>
+    selectedTransferTestCaseIds.value.includes(testCase.id)
+  ).length;
+  return selectedCount > 0 && selectedCount < moduleTestCaseOptions.value.length;
+});
+
+const canSubmitTestCaseTransfer = computed(() => {
+  return selectedTransferTestCaseIds.value.length > 0 && !!targetTransferModuleId.value;
+});
+
 const onModuleSearch = () => {
   // 前端实时过滤，保持当前交互简洁。
+};
+
+const setSelectedModule = (moduleId: number | null) => {
+  selectedModuleKey.value = moduleId;
+  selectedModuleKeys.value = moduleId ? [moduleId] : [];
+  emit('moduleSelected', moduleId);
+};
+
+const fetchModuleTestCasesForTransfer = async () => {
+  if (!currentProjectId.value || !selectedModuleKey.value) {
+    moduleTestCaseOptions.value = [];
+    return;
+  }
+
+  testCaseTransferLoading.value = true;
+  try {
+    const response = await getTestCaseList(currentProjectId.value, {
+      page: 1,
+      pageSize: 1000,
+      module_id: selectedModuleKey.value,
+      search: testCaseTransferSearchKeyword.value.trim() || undefined,
+    });
+
+    if (response.success && response.data) {
+      moduleTestCaseOptions.value = response.data;
+      selectedTransferTestCaseIds.value = selectedTransferTestCaseIds.value.filter((id) =>
+        response.data!.some((testCase) => testCase.id === id)
+      );
+    } else {
+      Message.error(response.error || '获取模块测试用例失败');
+      moduleTestCaseOptions.value = [];
+      selectedTransferTestCaseIds.value = [];
+    }
+  } catch (error) {
+    Message.error('获取模块测试用例时发生错误');
+    moduleTestCaseOptions.value = [];
+    selectedTransferTestCaseIds.value = [];
+  } finally {
+    testCaseTransferLoading.value = false;
+  }
+};
+
+const openTestCaseTransferModal = async (mode: 'move' | 'copy') => {
+  if (!selectedModuleKey.value) {
+    Message.warning('请先选择一个模块');
+    return;
+  }
+
+  testCaseTransferMode.value = mode;
+  testCaseTransferModalVisible.value = true;
+  testCaseTransferSearchKeyword.value = '';
+  selectedTransferTestCaseIds.value = [];
+  targetTransferModuleId.value = null;
+  await fetchModuleTestCasesForTransfer();
+};
+
+const closeTestCaseTransferModal = () => {
+  testCaseTransferModalVisible.value = false;
+  testCaseTransferSearchKeyword.value = '';
+  moduleTestCaseOptions.value = [];
+  selectedTransferTestCaseIds.value = [];
+  targetTransferModuleId.value = null;
+};
+
+const handleTransferCaseSelect = (testCaseId: number, checked: boolean) => {
+  if (checked) {
+    if (!selectedTransferTestCaseIds.value.includes(testCaseId)) {
+      selectedTransferTestCaseIds.value.push(testCaseId);
+    }
+    return;
+  }
+
+  selectedTransferTestCaseIds.value = selectedTransferTestCaseIds.value.filter((id) => id !== testCaseId);
+};
+
+const handleSelectAllTransferCases = (checked: boolean) => {
+  if (checked) {
+    selectedTransferTestCaseIds.value = moduleTestCaseOptions.value.map((testCase) => testCase.id);
+    return;
+  }
+  selectedTransferTestCaseIds.value = [];
+};
+
+const selectAllTransferCases = () => {
+  selectedTransferTestCaseIds.value = moduleTestCaseOptions.value.map((testCase) => testCase.id);
+};
+
+const clearTransferCasesSelection = () => {
+  selectedTransferTestCaseIds.value = [];
+};
+
+const invertTransferCasesSelection = () => {
+  const selectedSet = new Set(selectedTransferTestCaseIds.value);
+  selectedTransferTestCaseIds.value = moduleTestCaseOptions.value
+    .map((testCase) => testCase.id)
+    .filter((id) => !selectedSet.has(id));
+};
+
+const submitTestCaseTransfer = async () => {
+  if (!currentProjectId.value || !selectedModuleKey.value) {
+    Message.warning('请先选择一个模块');
+    return;
+  }
+  if (selectedTransferTestCaseIds.value.length === 0) {
+    Message.warning('请先选择要处理的测试用例');
+    return;
+  }
+  if (!targetTransferModuleId.value) {
+    Message.warning('请选择目标模块');
+    return;
+  }
+
+  testCaseTransferSubmitting.value = true;
+  try {
+    const response = testCaseTransferMode.value === 'move'
+      ? await batchMoveTestCases(currentProjectId.value, selectedTransferTestCaseIds.value, targetTransferModuleId.value)
+      : await batchCopyTestCases(currentProjectId.value, selectedTransferTestCaseIds.value, targetTransferModuleId.value);
+
+    if (!response.success) {
+      Message.error(response.error || (testCaseTransferMode.value === 'move' ? '移动测试用例失败' : '复制测试用例失败'));
+      return;
+    }
+
+    Message.success(
+      response.message || (testCaseTransferMode.value === 'move' ? '测试用例移动成功' : '测试用例复制成功')
+    );
+    await fetchTestCaseModules();
+    emit('moduleSelected', selectedModuleKey.value);
+    closeTestCaseTransferModal();
+    emit('moduleUpdated');
+  } catch (error) {
+    Message.error(testCaseTransferMode.value === 'move' ? '移动测试用例时发生错误' : '复制测试用例时发生错误');
+  } finally {
+    testCaseTransferSubmitting.value = false;
+  }
 };
 
 const onModuleSelect = (
@@ -218,16 +544,21 @@ const onModuleSelect = (
   data: { selected?: boolean; node?: TreeNodeData }
 ) => {
   if (data.selected && data.node) {
-    selectedModuleKey.value = data.node.key as number;
-    emit('moduleSelected', selectedModuleKey.value);
+    setSelectedModule(data.node.key as number);
   } else {
-    selectedModuleKey.value = null;
-    emit('moduleSelected', null);
+    setSelectedModule(null);
   }
 };
 
 const onTreeExpand = (newExpandedKeys: (string | number)[]) => {
   expandedKeys.value = newExpandedKeys;
+};
+
+const handleModuleNodeContextMenu = (nodeData: TreeNodeData) => {
+  const nodeKey = Number(nodeData.key ?? nodeData.id);
+  if (Number.isFinite(nodeKey) && nodeKey > 0) {
+    setSelectedModule(nodeKey);
+  }
 };
 
 const handleModuleAction = (action: string | number | Record<string, any> | undefined) => {
@@ -252,6 +583,16 @@ const handleModuleAction = (action: string | number | Record<string, any> | unde
     moduleForm.name = '';
     moduleForm.parent = selectedModuleKey.value;
     moduleModalVisible.value = true;
+    return;
+  }
+
+  if (actionValue === 'moveCases') {
+    void openTestCaseTransferModal('move');
+    return;
+  }
+
+  if (actionValue === 'copyCases') {
+    void openTestCaseTransferModal('copy');
     return;
   }
 
@@ -442,6 +783,59 @@ defineExpose({
   margin-left: 4px;
 }
 
+.module-node-title {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+
+.testcase-transfer-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.testcase-transfer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.testcase-transfer-source-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.testcase-transfer-source {
+  color: var(--color-text-2);
+}
+
+.testcase-transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.testcase-transfer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 16px;
+}
+
+.testcase-transfer-table,
+.testcase-transfer-target {
+  min-width: 0;
+}
+
+.testcase-transfer-summary {
+  margin-top: 12px;
+  color: var(--color-text-2);
+  word-break: break-word;
+}
+
 .module-panel-header {
   flex-shrink: 0;
   padding: 16px;
@@ -493,5 +887,13 @@ defineExpose({
 :deep(.arco-dropdown-menu) {
   width: 100%;
   padding: 4px 0;
+}
+
+@media (max-width: 768px) {
+  .testcase-transfer-toolbar,
+  .testcase-transfer-body {
+    display: flex;
+    flex-direction: column;
+  }
 }
 </style>

@@ -48,6 +48,16 @@
               {{ aiActivityStore.generationStageText }}
             </span>
           </span>
+          <button
+            v-if="canDismissGenerationBadge"
+            type="button"
+            class="generation-badge-close"
+            aria-label="关闭生成提示"
+            title="关闭生成提示"
+            @click.stop="aiActivityStore.clearGenerationJob()"
+          >
+            <icon-close />
+          </button>
         </div>
         <ImportJobStatusBadge v-if="hasApiAutomationPermission" />
       </div>
@@ -202,6 +212,10 @@
             <a-menu-item key="testsuites" v-if="hasTestSuitesPermission">
               <template #icon><icon-folder /></template>
               <span class="menu-link" title="测试套件">测试套件</span>
+            </a-menu-item>
+            <a-menu-item key="test-bugs" v-if="hasTestBugsPermission">
+              <template #icon><icon-bug /></template>
+              <span class="menu-link" title="BUG管理">BUG管理</span>
             </a-menu-item>
             <a-menu-item key="test-executions" v-if="hasTestExecutionsPermission">
               <template #icon><icon-history /></template>
@@ -552,6 +566,7 @@ import {
   IconBook,
   IconFolder,
   IconHistory,
+  IconBug,
   IconExperiment,
   IconHome,
   IconComputer,
@@ -560,6 +575,7 @@ import {
   IconFire,
   IconFontColors,
   IconLock,
+  IconClose,
   IconSunFill,
   IconMoonFill,
   IconUserGroup,
@@ -648,6 +664,11 @@ const generationBadgeState = computed(() => {
     return 'failed';
   }
   return 'running';
+});
+
+const canDismissGenerationBadge = computed(() => {
+  const status = aiActivityStore.generationJob?.status;
+  return status === 'success' || status === 'failed';
 });
 
 async function checkVersion() {
@@ -806,6 +827,7 @@ const menuNavigationMap: Record<string, MenuNavigationTarget> = {
   'ui-automation-actuators': { route: { path: '/ui-automation', query: { tab: 'actuators' } }, requiresProject: true },
   testcases: { route: '/testcases', requiresProject: true },
   testsuites: { route: '/testsuites', requiresProject: true },
+  'test-bugs': { route: '/test-bugs', requiresProject: true },
   'test-executions': { route: '/test-executions', requiresProject: true },
   'langgraph-chat': { route: '/langgraph-chat', requiresProject: true },
   'knowledge-management': { route: '/knowledge-management', requiresProject: true },
@@ -834,6 +856,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/projects')) return 'projects';
   if (path.startsWith('/requirements')) return 'requirements';
   if (path.startsWith('/testsuites')) return 'testsuites';
+  if (path.startsWith('/test-bugs')) return 'test-bugs';
   if (path.startsWith('/test-executions')) return 'test-executions';
   if (path.startsWith('/testcases')) return 'testcases';
   if (path.startsWith('/users')) return 'users';
@@ -902,7 +925,7 @@ const activeGroupKey = computed(() => {
   if (activeMenu.value.startsWith('app-automation-')) return 'app-automation';
   if (activeMenu.value.startsWith('ui-automation-')) return 'ui-automation';
   if (activeMenu.value.startsWith('data-factory-')) return 'data-factory';
-  if (['testcases', 'testsuites', 'test-executions'].includes(activeMenu.value)) return 'test-management';
+  if (['testcases', 'testsuites', 'test-bugs', 'test-executions'].includes(activeMenu.value)) return 'test-management';
   if (['users', 'organizations', 'permissions', 'project-deletion-logs', 'llm-configs', 'api-keys', 'remote-mcp-configs', 'skills'].includes(activeMenu.value)) {
     return 'settings';
   }
@@ -925,6 +948,10 @@ const hasTestcasesPermission = computed(() => {
 });
 
 const hasTestSuitesPermission = computed(() => {
+  return authStore.hasPermission('testcases.view_testsuite');
+});
+
+const hasTestBugsPermission = computed(() => {
   return authStore.hasPermission('testcases.view_testsuite');
 });
 
@@ -1103,6 +1130,7 @@ const hasSkillsPermission = computed(() => {
 const hasTestManagementMenuItems = computed(() => {
   return hasTestcasesPermission.value ||
          hasTestSuitesPermission.value ||
+         hasTestBugsPermission.value ||
          hasTestExecutionsPermission.value;
 });
 
@@ -2084,6 +2112,30 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.generation-badge-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0.72;
+  flex: 0 0 auto;
+}
+
+.generation-badge-close:hover {
+  opacity: 1;
+}
+
+.generation-badge-close :deep(svg) {
+  width: 14px;
+  height: 14px;
 }
 
 .generation-badge-stage {

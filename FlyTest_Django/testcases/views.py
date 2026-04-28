@@ -13,7 +13,6 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
-from rest_framework.parsers import MultiPartParser, FormParser
 import io
 import json
 import logging
@@ -34,21 +33,28 @@ from .models import (
     TestExecution,
     TestCaseResult,
     TestCaseAssignment,
+    TestBug,
 )
 from .serializers import (
     TestCaseSerializer,
     TestCaseListSerializer,
     TestCaseModuleSerializer,
     TestCaseScreenshotSerializer,
+    TestBugSerializer,
+    TestBugListSerializer,
 )
 from .permissions import IsProjectMemberForTestCase, IsProjectMemberForTestCaseModule
-from .filters import TestCaseFilter  # 导入自定义过滤器
+from .filters import TestBugFilter, TestCaseFilter  # 导入自定义过滤器
 
 # 确保导入项目自定义的权限类
 from flytest_django.permissions import HasModelPermission, permission_required
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph_integration.models import get_user_active_llm_config
-from langgraph_integration.views import create_llm_instance, _extract_llm_response_text
+from langgraph_integration.views import (
+    create_llm_instance,
+    _extract_llm_response_text,
+    invoke_plain_text_llm,
+)
 from prompts.models import UserPrompt
 from requirements.models import RequirementDocument, RequirementModule
 from projects.models import ProjectMember
@@ -97,6 +103,29 @@ def _save_case_generation_job(job_id: str, **updates):
             _CASE_GENERATION_JOBS[job_id] = job
         job.update(updates)
         return deepcopy(job)
+
+
+def _clear_case_generation_jobs(
+    *,
+    user_id=None,
+    project_id=None,
+    test_case_module_id=None,
+):
+    with _CASE_GENERATION_JOBS_LOCK:
+        matched_job_ids = []
+        for job_id, job in list(_CASE_GENERATION_JOBS.items()):
+            if user_id is not None and job.get("user_id") != user_id:
+                continue
+            if project_id is not None and job.get("project_id") != project_id:
+                continue
+            if test_case_module_id is not None and job.get("test_case_module_id") != test_case_module_id:
+                continue
+            matched_job_ids.append(job_id)
+
+        for job_id in matched_job_ids:
+            _CASE_GENERATION_JOBS.pop(job_id, None)
+
+        return matched_job_ids
 
 
 def _update_case_generation_job_progress(
@@ -278,7 +307,55 @@ def _extract_json_payload(text: str):
             except json.JSONDecodeError:
                 continue
 
+    decoder = json.JSONDecoder()
+    candidate_payload = None
+    preferred_payload = None
+    for index, char in enumerate(stripped):
+        if char not in "[{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        candidate_payload = payload
+        if isinstance(payload, dict) and any(
+            key in payload for key in ("testcases", "cases", "summary", "gaps")
+        ):
+            preferred_payload = payload
+
+    if preferred_payload is not None:
+        return preferred_payload
+
+    if candidate_payload is not None:
+        return candidate_payload
+
     raise ValueError("无法解析模型返回的 JSON 结果")
+
+
+def _repair_mojibake_text(value: str):
+    text = str(value or "")
+    suspicious_markers = ("å", "æ", "ç", "é", "ï¼", "â€", "Ã")
+    if not any(marker in text for marker in suspicious_markers):
+        return text
+
+    try:
+        repaired = text.encode("latin1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+    return repaired if repaired else text
+
+
+def _repair_payload_mojibake(payload):
+    if isinstance(payload, dict):
+        return {
+            _repair_mojibake_text(key): _repair_payload_mojibake(value)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, list):
+        return [_repair_payload_mojibake(item) for item in payload]
+    if isinstance(payload, str):
+        return _repair_mojibake_text(payload)
+    return payload
 
 
 def _normalize_level(level: str | None) -> str:
@@ -336,14 +413,31 @@ def _normalize_generated_cases(payload, *, allowed_test_types: list[str], title_
         if not name:
             continue
 
-        precondition = str(item.get("precondition") or item.get("preconditions") or "").strip()
-        level = _normalize_level(item.get("level"))
+        raw_preconditions = item.get("precondition") or item.get("preconditions") or ""
+        if isinstance(raw_preconditions, list):
+            precondition = "\n".join(
+                str(entry).strip() for entry in raw_preconditions if str(entry).strip()
+            ).strip()
+        else:
+            precondition = str(raw_preconditions).strip()
+
+        level = _normalize_level(item.get("level") or item.get("priority"))
         test_type = _normalize_test_type(item.get("test_type"), allowed_test_types)
 
         raw_steps = item.get("steps") or []
         normalized_steps = []
         if isinstance(raw_steps, list):
             for step in raw_steps:
+                if isinstance(step, str):
+                    description = step.strip()
+                    if description:
+                        normalized_steps.append(
+                            {
+                                "description": description,
+                                "expected_result": "系统表现符合需求预期",
+                            }
+                        )
+                    continue
                 if not isinstance(step, dict):
                     continue
                 description = str(step.get("description") or step.get("step") or "").strip()
@@ -926,7 +1020,6 @@ def _review_generated_testcase_coverage(
     if progress_callback:
         progress_callback(10, "review", f"AI 正在评审第 {round_index} 轮覆盖率")
 
-    llm = create_llm_instance(active_config, temperature=0.1)
     system_prompt = """
 你是 Flytest 的测试用例评审 Agent。请严格根据需求、生成模式、已选测试类型、
 当前模块已有测试用例以及本轮新生成用例，判断覆盖是否完整。
@@ -982,15 +1075,16 @@ JSON 结构：
         indent=2,
     )
 
-    response = llm.invoke(
+    response_text = invoke_plain_text_llm(
+        active_config,
         [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
-        ]
+        ],
+        temperature=0.1,
     )
-    review_result = _normalize_generation_review(
-        _extract_json_payload(_extract_llm_response_text(response))
-    )
+    review_payload = _repair_payload_mojibake(_extract_json_payload(response_text))
+    review_result = _normalize_generation_review(review_payload)
     review_result = _apply_review_guardrails(
         review_result,
         allowed_test_types=allowed_test_types,
@@ -1120,25 +1214,26 @@ def _generate_testcases_from_requirement(
         )
         heartbeat_thread.start()
 
-    llm = create_llm_instance(active_config, temperature=0.2)
     try:
-        response = llm.invoke(
+        response_text = invoke_plain_text_llm(
+            active_config,
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),
-            ]
+            ],
+            temperature=0.2,
         )
     finally:
         if heartbeat_stop_event is not None:
             heartbeat_stop_event.set()
         if heartbeat_thread is not None:
             heartbeat_thread.join(timeout=0.2)
-    response_text = _extract_llm_response_text(response)
 
     if emit_progress:
         emit_progress(72, "parse", "正在解析 AI 返回结果")
 
     payload = _extract_json_payload(response_text)
+    payload = _repair_payload_mojibake(payload)
     normalized = _normalize_generated_cases(
         payload,
         allowed_test_types=allowed_test_types,
@@ -1530,6 +1625,18 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         project = get_object_or_404(Project, pk=project_pk)
         serializer.save(creator=self.request.user, project=project)
 
+    def perform_destroy(self, instance):
+        module_id = instance.module_id
+        project_id = instance.project_id
+        user_id = self.request.user.id
+        instance.delete()
+        if module_id:
+            _clear_case_generation_jobs(
+                user_id=user_id,
+                project_id=project_id,
+                test_case_module_id=module_id,
+            )
+
     def _ensure_project_admin(self, project):
         if project.creator_id == self.request.user.id:
             return
@@ -1673,6 +1780,254 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 "data": _build_case_generation_job_response(job),
             },
             status=status.HTTP_200_OK,
+        )
+
+    def _clear_generation_jobs_for_modules(self, *, user_id: int, project_id: int, module_ids):
+        cleared_job_ids = []
+        for module_id in {int(module_id) for module_id in module_ids if module_id}:
+            cleared_job_ids.extend(
+                _clear_case_generation_jobs(
+                    user_id=user_id,
+                    project_id=project_id,
+                    test_case_module_id=module_id,
+                )
+            )
+        return cleared_job_ids
+
+    @action(detail=False, methods=["post"], url_path="clear-module")
+    def clear_module(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        module_id = request.data.get("module_id")
+
+        if not module_id:
+            return Response(
+                {"error": "module_id 不能为空"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            module_id = int(module_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "module_id 参数格式错误"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        test_case_module = get_object_or_404(
+            TestCaseModule,
+            pk=module_id,
+            project=project,
+        )
+
+        queryset = self.get_queryset().filter(module=test_case_module)
+        deleted_testcases_info = [
+            {
+                "id": testcase.id,
+                "name": testcase.name,
+                "module": testcase.module.name if testcase.module else None,
+            }
+            for testcase in queryset
+        ]
+
+        try:
+            with transaction.atomic():
+                _, deleted_details = queryset.delete()
+                cleared_job_ids = self._clear_generation_jobs_for_modules(
+                    user_id=request.user.id,
+                    project_id=project.id,
+                    module_ids=[test_case_module.id],
+                )
+
+            return Response(
+                {
+                    "message": f"已清空模块 {test_case_module.name} 下的测试用例",
+                    "deleted_count": len(deleted_testcases_info),
+                    "deleted_testcases": deleted_testcases_info,
+                    "deletion_details": deleted_details,
+                    "cleared_job_count": len(cleared_job_ids),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as exc:
+            return Response(
+                {"error": f"清空模块测试用例失败: {str(exc)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=False, methods=["post"], url_path="batch-move")
+    def batch_move(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        ids_data = request.data.get("ids", [])
+        target_module_id = request.data.get("target_module_id")
+
+        if not ids_data:
+            return Response({"error": "请提供要移动的测试用例 ID 列表"}, status=status.HTTP_400_BAD_REQUEST)
+        if not target_module_id:
+            return Response({"error": "请选择目标模块"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+            target_module_id = int(target_module_id)
+        except (TypeError, ValueError):
+            return Response({"error": "移动参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_module = get_object_or_404(TestCaseModule, pk=target_module_id, project=project)
+        queryset = self.get_queryset().filter(id__in=testcase_ids)
+        found_ids = list(queryset.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        source_module_ids = set(queryset.values_list("module_id", flat=True))
+        if len(source_module_ids) != 1:
+            return Response({"error": "一次只能移动同一模块下的测试用例"}, status=status.HTTP_400_BAD_REQUEST)
+        source_module_id = next(iter(source_module_ids))
+        if source_module_id == target_module.id:
+            return Response({"error": "目标模块不能与当前模块相同"}, status=status.HTTP_400_BAD_REQUEST)
+
+        testcase_names = [testcase.name for testcase in queryset]
+        existing_duplicate_names = set(
+            TestCase.objects.filter(project=project, module=target_module, name__in=testcase_names)
+            .values_list("name", flat=True)
+        )
+        if existing_duplicate_names:
+            duplicate_names_text = "、".join(sorted(existing_duplicate_names))
+            return Response(
+                {"error": f"目标模块下已存在同名测试用例：{duplicate_names_text}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        moved_testcases = [
+            {
+                "id": testcase.id,
+                "name": testcase.name,
+                "from_module": testcase.module.name if testcase.module else None,
+                "to_module": target_module.name,
+            }
+            for testcase in queryset
+        ]
+
+        with transaction.atomic():
+            updated_count = queryset.update(module=target_module)
+            cleared_job_ids = self._clear_generation_jobs_for_modules(
+                user_id=request.user.id,
+                project_id=project.id,
+                module_ids=[source_module_id, target_module.id],
+            )
+
+        return Response(
+            {
+                "message": f"已成功移动 {updated_count} 个测试用例",
+                "moved_count": updated_count,
+                "moved_testcases": moved_testcases,
+                "target_module_id": target_module.id,
+                "target_module_name": target_module.name,
+                "cleared_job_count": len(cleared_job_ids),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="batch-copy")
+    def batch_copy(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        ids_data = request.data.get("ids", [])
+        target_module_id = request.data.get("target_module_id")
+
+        if not ids_data:
+            return Response({"error": "请提供要复制的测试用例 ID 列表"}, status=status.HTTP_400_BAD_REQUEST)
+        if not target_module_id:
+            return Response({"error": "请选择目标模块"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+            target_module_id = int(target_module_id)
+        except (TypeError, ValueError):
+            return Response({"error": "复制参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_module = get_object_or_404(TestCaseModule, pk=target_module_id, project=project)
+        queryset = self.get_queryset().filter(id__in=testcase_ids).prefetch_related("steps")
+        found_ids = list(queryset.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        source_module_ids = set(queryset.values_list("module_id", flat=True))
+        if len(source_module_ids) != 1:
+            return Response({"error": "一次只能复制同一模块下的测试用例"}, status=status.HTTP_400_BAD_REQUEST)
+        source_module_id = next(iter(source_module_ids))
+        if source_module_id == target_module.id:
+            return Response({"error": "目标模块不能与当前模块相同"}, status=status.HTTP_400_BAD_REQUEST)
+
+        testcase_names = [testcase.name for testcase in queryset]
+        existing_duplicate_names = set(
+            TestCase.objects.filter(project=project, module=target_module, name__in=testcase_names)
+            .values_list("name", flat=True)
+        )
+        if existing_duplicate_names:
+            duplicate_names_text = "、".join(sorted(existing_duplicate_names))
+            return Response(
+                {"error": f"目标模块下已存在同名测试用例：{duplicate_names_text}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        selected_duplicate_names = {
+            name for name in testcase_names if testcase_names.count(name) > 1
+        }
+        if selected_duplicate_names:
+            duplicate_names_text = "、".join(sorted(selected_duplicate_names))
+            return Response(
+                {"error": f"所选测试用例中包含重复名称，无法复制到同一模块：{duplicate_names_text}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        copied_cases = []
+        with transaction.atomic():
+            for testcase in queryset:
+                copied_case = TestCase.objects.create(
+                    project=project,
+                    module=target_module,
+                    name=testcase.name,
+                    precondition=testcase.precondition,
+                    level=testcase.level,
+                    creator=request.user,
+                    notes=testcase.notes,
+                    screenshot=testcase.screenshot,
+                    review_status=testcase.review_status,
+                    test_type=testcase.test_type,
+                )
+                for step in testcase.steps.all().order_by("step_number"):
+                    TestCaseStep.objects.create(
+                        test_case=copied_case,
+                        step_number=step.step_number,
+                        description=step.description,
+                        expected_result=step.expected_result,
+                        creator=request.user,
+                    )
+                copied_cases.append(copied_case)
+
+            cleared_job_ids = self._clear_generation_jobs_for_modules(
+                user_id=request.user.id,
+                project_id=project.id,
+                module_ids=[target_module.id],
+            )
+
+        serializer = TestCaseListSerializer(copied_cases, many=True)
+        return Response(
+            {
+                "message": f"已成功复制 {len(copied_cases)} 个测试用例",
+                "copied_count": len(copied_cases),
+                "target_module_id": target_module.id,
+                "target_module_name": target_module.name,
+                "data": serializer.data,
+                "cleared_job_count": len(cleared_job_ids),
+            },
+            status=status.HTTP_201_CREATED,
         )
 
     # create/update 默认走序列化器中的嵌套写入逻辑。
@@ -1847,74 +2202,15 @@ class TestCaseViewSet(viewsets.ModelViewSet):
 
         return "\n".join(steps_desc), "\n".join(expected_results)
 
-    @action(
-        detail=False,
-        methods=["post"],
-        url_path="import-excel",
-        parser_classes=[MultiPartParser, FormParser],
-    )
-    def import_excel(self, request, project_pk=None):
-        """
-        使用模板导入用例。
-        POST /api/projects/{project_pk}/testcases/import-excel/
-        请求体: multipart/form-data
-        - file: Excel 文件
-        - template_id: 导入模板 ID
-        """
-        from testcase_templates.models import ImportExportTemplate
-        from testcase_templates.import_service import TestCaseImportService
-
-        # 校验请求参数
-        file = request.FILES.get("file")
-        template_id = request.data.get("template_id")
-
-        if not file:
-            return Response(
-                {"error": "请上传 Excel 文件"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not template_id:
-            return Response(
-                {"error": "请选择导入模板"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # 获取导入模板
-        try:
-            template = ImportExportTemplate.objects.get(id=template_id, is_active=True)
-        except ImportExportTemplate.DoesNotExist:
-            return Response(
-                {"error": "模板不存在或已禁用"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-        # 获取项目
-        project = get_object_or_404(Project, pk=project_pk)
-
-        # 执行导入
-        service = TestCaseImportService(template, project, request.user)
-        result = service.import_from_file(file)
-
-        return Response(
-            {
-                "success": result.success,
-                "total_rows": result.total_rows,
-                "imported_count": result.imported_count,
-                "skipped_count": result.skipped_count,
-                "error_count": result.error_count,
-                "duplicate_names": result.duplicate_names,
-                "errors": result.errors[:20],  # 只返回前 20 条错误
-                "created_testcase_ids": result.created_testcases,
-            },
-            status=status.HTTP_200_OK
-            if result.success
-            else status.HTTP_400_BAD_REQUEST,
-        )
-
     @action(detail=False, methods=["post"], url_path="batch-delete")
     def batch_delete(self, request, **kwargs):
         """
         批量删除用例。
         POST 请求体格式: `{"ids": [1, 2, 3, 4]}`
         """
+        project_pk = self.kwargs.get("project_pk")
+        project = get_object_or_404(Project, pk=project_pk)
+
         # 获取要删除的用例 ID 列表
         ids_data = request.data.get("ids", [])
 
@@ -1959,7 +2255,10 @@ class TestCaseViewSet(viewsets.ModelViewSet):
 
         # 记录删除前的信息，便于返回给前端
         deleted_testcases_info = []
+        affected_module_ids = set()
         for testcase in testcases_to_delete:
+            if testcase.module_id:
+                affected_module_ids.add(testcase.module_id)
             deleted_testcases_info.append(
                 {
                     "id": testcase.id,
@@ -1973,6 +2272,11 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 # 删除用例时，关联步骤会因外键级联自动删除
                 deleted_count, deleted_details = testcases_to_delete.delete()
+                cleared_job_ids = self._clear_generation_jobs_for_modules(
+                    user_id=request.user.id,
+                    project_id=project.id,
+                    module_ids=affected_module_ids,
+                )
 
                 return Response(
                     {
@@ -1980,6 +2284,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         "deleted_count": len(deleted_testcases_info),
                         "deleted_testcases": deleted_testcases_info,
                         "deletion_details": deleted_details,
+                        "cleared_job_count": len(cleared_job_ids),
                     },
                     status=status.HTTP_200_OK,
                 )
@@ -1989,6 +2294,63 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 {"error": f"删除过程中发生错误: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    @action(detail=False, methods=["post"], url_path="batch-update-execution-status")
+    def batch_update_execution_status(self, request, project_pk=None):
+        ids_data = request.data.get("ids", [])
+        execution_status = request.data.get("execution_status")
+
+        if not ids_data:
+            return Response(
+                {"error": "请提供要更新的测试用例 ID 列表"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not execution_status:
+            return Response(
+                {"error": "请选择执行状态"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "批量更新参数格式错误"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        allowed_statuses = {
+            choice[0] for choice in TestCase.EXECUTION_STATUS_CHOICES
+        }
+        if execution_status not in allowed_statuses:
+            return Response(
+                {"error": "执行状态无效"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        queryset = self.get_queryset().filter(id__in=testcase_ids)
+        found_ids = list(queryset.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        update_payload = {"execution_status": execution_status}
+        if execution_status in {"passed", "failed"}:
+            update_payload["executed_at"] = timezone.now()
+
+        updated_count = queryset.update(**update_payload)
+        return Response(
+            {
+                "success": True,
+                "message": f"已成功更新 {updated_count} 个测试用例的执行状态",
+                "updated_count": updated_count,
+                "execution_status": execution_status,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["post"], url_path="batch-assign")
     def batch_assign(self, request, project_pk=None):
@@ -2024,6 +2386,18 @@ class TestCaseViewSet(viewsets.ModelViewSet):
         if missing_ids:
             return Response(
                 {"error": f"以下测试用例不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        unapproved_cases = list(
+            queryset.exclude(review_status="approved").values_list("name", flat=True)
+        )
+        if unapproved_cases:
+            return Response(
+                {
+                    "error": "只有审核状态为“通过”的测试用例才能分配",
+                    "invalid_testcases": unapproved_cases,
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -2374,9 +2748,22 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         project_pk = self.kwargs.get("project_pk")
         if project_pk:
             project = get_object_or_404(Project, pk=project_pk)
-            return TestSuite.objects.filter(project=project).prefetch_related(
-                "testcases", "creator"
+            queryset = TestSuite.objects.filter(project=project).select_related(
+                "creator", "parent"
             )
+
+            module_id = self.request.query_params.get("module_id")
+            if module_id:
+                try:
+                    module = TestCaseModule.objects.get(project=project, id=int(module_id))
+                except (ValueError, TypeError, TestCaseModule.DoesNotExist):
+                    return TestSuite.objects.none()
+
+                queryset = queryset.filter(
+                    testcases__module_id__in=module.get_all_descendant_ids()
+                ).distinct()
+
+            return queryset.annotate(testcase_count=Count("testcases", distinct=True))
         return TestSuite.objects.none()
 
     def get_serializer_class(self):
@@ -2398,6 +2785,240 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         project_pk = self.kwargs.get("project_pk")
         project = get_object_or_404(Project, pk=project_pk)
         serializer.save(creator=self.request.user, project=project)
+
+    def perform_destroy(self, instance):
+        if instance.children.exists():
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError(f"无法删除套件 {instance.name}，请先删除其子套件。")
+        instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="move-testcases")
+    def move_testcases(self, request, project_pk=None, pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        source_suite = get_object_or_404(TestSuite, pk=pk, project=project)
+        ids_data = request.data.get("ids", [])
+        target_suite_id = request.data.get("target_suite_id")
+
+        if not ids_data:
+            return Response({"error": "请提供要移动的测试用例 ID 列表"}, status=status.HTTP_400_BAD_REQUEST)
+        if not target_suite_id:
+            return Response({"error": "请选择目标套件"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+            target_suite_id = int(target_suite_id)
+        except (TypeError, ValueError):
+            return Response({"error": "移动参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_suite = get_object_or_404(TestSuite, pk=target_suite_id, project=project)
+        if target_suite.id == source_suite.id:
+            return Response({"error": "目标套件不能与当前套件相同"}, status=status.HTTP_400_BAD_REQUEST)
+
+        source_testcases = source_suite.testcases.filter(id__in=testcase_ids)
+        found_ids = list(source_testcases.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不在当前套件中: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        moved_testcases = list(source_testcases)
+        with transaction.atomic():
+            source_suite.testcases.remove(*moved_testcases)
+            target_suite.testcases.add(*moved_testcases)
+            TestCaseAssignment.objects.filter(
+                testcase_id__in=found_ids,
+                suite=source_suite,
+            ).update(suite=target_suite)
+
+        return Response(
+            {
+                "success": True,
+                "message": f"已成功移动 {len(found_ids)} 个测试用例",
+                "moved_count": len(found_ids),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="copy-testcases")
+    def copy_testcases(self, request, project_pk=None, pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        source_suite = get_object_or_404(TestSuite, pk=pk, project=project)
+        ids_data = request.data.get("ids", [])
+        target_suite_id = request.data.get("target_suite_id")
+
+        if not ids_data:
+            return Response({"error": "请提供要复制的测试用例 ID 列表"}, status=status.HTTP_400_BAD_REQUEST)
+        if not target_suite_id:
+            return Response({"error": "请选择目标套件"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            testcase_ids = [int(item) for item in ids_data]
+            target_suite_id = int(target_suite_id)
+        except (TypeError, ValueError):
+            return Response({"error": "复制参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_suite = get_object_or_404(TestSuite, pk=target_suite_id, project=project)
+        if target_suite.id == source_suite.id:
+            return Response({"error": "目标套件不能与当前套件相同"}, status=status.HTTP_400_BAD_REQUEST)
+
+        source_testcases = source_suite.testcases.filter(id__in=testcase_ids)
+        found_ids = list(source_testcases.values_list("id", flat=True))
+        missing_ids = [item for item in testcase_ids if item not in found_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试用例不在当前套件中: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing_target_ids = set(target_suite.testcases.filter(id__in=found_ids).values_list("id", flat=True))
+        testcase_list = list(source_testcases)
+        addable_testcases = [item for item in testcase_list if item.id not in existing_target_ids]
+
+        with transaction.atomic():
+            if addable_testcases:
+                target_suite.testcases.add(*addable_testcases)
+
+        return Response(
+            {
+                "success": True,
+                "message": f"已成功复制 {len(addable_testcases)} 个测试用例",
+                "copied_count": len(addable_testcases),
+                "skipped_count": len(existing_target_ids),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TestBugViewSet(viewsets.ModelViewSet):
+    """测试套件下的 BUG 管理视图集。"""
+
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = TestBugFilter
+    search_fields = ["title", "steps", "actual_result", "expected_result", "keywords"]
+    ordering_fields = ["id", "severity", "priority", "opened_at", "assigned_at", "resolved_at", "closed_at"]
+    ordering = ["-id"]
+
+    def get_permissions(self):
+        from .permissions import IsProjectMemberForTestSuite
+
+        return [
+            permissions.IsAuthenticated(),
+            HasModelPermission(),
+            IsProjectMemberForTestSuite(),
+        ]
+
+    def get_queryset(self):
+        project_pk = self.kwargs.get("project_pk")
+        if project_pk:
+            project = get_object_or_404(Project, pk=project_pk)
+            return TestBug.objects.filter(project=project).select_related(
+                "suite",
+                "testcase",
+                "assigned_to",
+                "opened_by",
+                "resolved_by",
+                "closed_by",
+                "activated_by",
+            )
+        return TestBug.objects.none()
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return TestBugListSerializer
+        return TestBugSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        project_pk = self.kwargs.get("project_pk")
+        if project_pk:
+            context["project"] = get_object_or_404(Project, pk=project_pk)
+        return context
+
+    def perform_create(self, serializer):
+        project = self.get_serializer_context()["project"]
+        serializer.save(project=project, opened_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+    @action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        assignee_id = request.data.get("assigned_to")
+        if not assignee_id:
+            return Response({"error": "请选择指派人"}, status=status.HTTP_400_BAD_REQUEST)
+
+        member = ProjectMember.objects.filter(project=bug.project, user_id=assignee_id).select_related("user").first()
+        if member is None:
+            return Response({"error": "指派人必须是当前项目成员"}, status=status.HTTP_400_BAD_REQUEST)
+
+        bug.assigned_to = member.user
+        bug.assigned_at = timezone.now()
+        bug.save(update_fields=["assigned_to", "assigned_at", "updated_at"])
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="resolve")
+    def resolve(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        resolution = request.data.get("resolution")
+        solution = request.data.get("solution", "")
+
+        allowed_resolutions = {choice[0] for choice in TestBug.RESOLUTION_CHOICES if choice[0]}
+        if resolution not in allowed_resolutions:
+            return Response({"error": "请选择有效的解决方案"}, status=status.HTTP_400_BAD_REQUEST)
+
+        bug.status = "resolved"
+        bug.resolution = resolution
+        bug.solution = solution
+        bug.resolved_by = request.user
+        bug.resolved_at = timezone.now()
+        bug.save(
+            update_fields=[
+                "status",
+                "resolution",
+                "solution",
+                "resolved_by",
+                "resolved_at",
+                "updated_at",
+            ]
+        )
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="activate")
+    def activate(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        bug.status = "active"
+        bug.activated_by = request.user
+        bug.activated_at = timezone.now()
+        bug.activated_count = (bug.activated_count or 0) + 1
+        bug.closed_by = None
+        bug.closed_at = None
+        bug.save(
+            update_fields=[
+                "status",
+                "activated_by",
+                "activated_at",
+                "activated_count",
+                "closed_by",
+                "closed_at",
+                "updated_at",
+            ]
+        )
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="close")
+    def close(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        solution = request.data.get("solution", "")
+        bug.status = "closed"
+        bug.solution = solution or bug.solution
+        bug.closed_by = request.user
+        bug.closed_at = timezone.now()
+        bug.save(update_fields=["status", "solution", "closed_by", "closed_at", "updated_at"])
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
 
 class TestExecutionViewSet(viewsets.ModelViewSet):

@@ -28,6 +28,25 @@ export const getLevelColor = (level?: string): string => {
   }
 };
 
+export const EXECUTION_STATUS_OPTIONS = [
+  { value: 'not_executed', label: '未执行', color: 'gray' },
+  { value: 'passed', label: '通过', color: 'green' },
+  { value: 'failed', label: '失败', color: 'red' },
+  { value: 'not_applicable', label: '无需执行', color: 'arcoblue' },
+] as const;
+
+export const getExecutionStatusLabel = (status?: string): string => {
+  if (!status) return '未执行';
+  const option = EXECUTION_STATUS_OPTIONS.find(o => o.value === status);
+  return option?.label || status;
+};
+
+export const getExecutionStatusColor = (status?: string): string => {
+  if (!status) return 'gray';
+  const option = EXECUTION_STATUS_OPTIONS.find(o => o.value === status);
+  return option?.color || 'gray';
+};
+
 export const formatDuration = (seconds?: number): string => {
   if (seconds === undefined || seconds === null || isNaN(seconds)) {
     return '-';

@@ -102,6 +102,7 @@ import os
 import uuid  # Import uuid module
 import re
 import base64  # For requirement doc images (multimodal)
+from urllib.parse import urlparse
 
 
 # 知识库集成
@@ -241,6 +242,168 @@ def create_llm_instance(active_config, temperature=0.7):
         raise
 
     return llm
+
+
+def get_llm_tool_calling_support(active_config) -> tuple[bool, Optional[str]]:
+    """Return whether the configured endpoint can safely receive `tools`."""
+    base_url = (getattr(active_config, "api_url", None) or "").strip()
+    if not base_url:
+        return True, None
+
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").strip().lower()
+    port = parsed.port
+
+    if host in {"127.0.0.1", "localhost"} and port == 8327:
+        reason = (
+            f"LLM endpoint {base_url} does not support tool-calling requests; "
+            "falling back to plain chat mode."
+        )
+        return False, reason
+
+    return True, None
+
+
+def invoke_plain_text_llm(
+    active_config,
+    messages: list[AnyMessage],
+    *,
+    temperature: float = 0.7,
+    timeout: int | float | None = None,
+) -> str:
+    """
+    Invoke a plain-text chat completion and return extracted text.
+
+    Some local proxy endpoints accept chat requests but return empty
+    `message.content` in non-stream responses. For those endpoints, fall back
+    to parsing streamed `response.output_text.delta` events directly.
+    """
+    tool_calling_supported, _ = get_llm_tool_calling_support(active_config)
+    if tool_calling_supported:
+        llm = create_llm_instance(active_config, temperature=temperature)
+        response = llm.invoke(messages)
+        return _extract_llm_response_text(response)
+
+    base_url = (getattr(active_config, "api_url", None) or "").rstrip("/")
+    endpoint = f"{base_url}/chat/completions"
+    request_timeout = timeout or getattr(active_config, "request_timeout", None) or 120
+
+    payload_messages = []
+    for message in messages:
+        role = "user"
+        if isinstance(message, SystemMessage):
+            role = "system"
+        elif isinstance(message, AIMessage):
+            role = "assistant"
+        elif isinstance(message, ToolMessage):
+            role = "tool"
+
+        content = message.content
+        if isinstance(content, list):
+            normalized_content = []
+            for item in content:
+                if isinstance(item, dict):
+                    item_type = item.get("type")
+                    if item_type == "text":
+                        normalized_content.append(
+                            {"type": "text", "text": item.get("text", "")}
+                        )
+                    elif item_type == "image_url":
+                        normalized_content.append(
+                            {
+                                "type": "image_url",
+                                "image_url": item.get("image_url", {}),
+                            }
+                        )
+                elif isinstance(item, str):
+                    normalized_content.append({"type": "text", "text": item})
+            content = normalized_content
+
+        payload_item = {"role": role, "content": content}
+        tool_call_id = getattr(message, "tool_call_id", None)
+        if role == "tool" and tool_call_id:
+            payload_item["tool_call_id"] = tool_call_id
+        payload_messages.append(payload_item)
+
+    headers = {"Content-Type": "application/json"}
+    api_key = (getattr(active_config, "api_key", None) or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    response = http_requests.post(
+        endpoint,
+        headers=headers,
+        json={
+            "model": getattr(active_config, "name", None) or "gpt-5",
+            "messages": payload_messages,
+            "temperature": temperature,
+            "stream": True,
+        },
+        timeout=request_timeout,
+        stream=True,
+    )
+    response.raise_for_status()
+
+    text_chunks: list[str] = []
+    seen_texts: set[str] = set()
+    for raw_line in response.iter_lines(decode_unicode=False):
+        if not raw_line:
+            continue
+        if isinstance(raw_line, bytes):
+            try:
+                line = raw_line.decode("utf-8")
+            except UnicodeDecodeError:
+                line = raw_line.decode("utf-8", errors="ignore")
+        else:
+            line = str(raw_line)
+        if not line.startswith("data: "):
+            continue
+        data = line[6:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        candidate_texts: list[str] = []
+        if isinstance(event, dict):
+            delta = event.get("delta")
+            if isinstance(delta, str) and delta:
+                candidate_texts.append(delta)
+
+            part = event.get("part")
+            if isinstance(part, dict):
+                part_text = part.get("text")
+                if isinstance(part_text, str) and part_text:
+                    candidate_texts.append(part_text)
+
+            item = event.get("item")
+            if isinstance(item, dict):
+                for content_item in item.get("content", []) or []:
+                    if not isinstance(content_item, dict):
+                        continue
+                    content_text = content_item.get("text")
+                    if isinstance(content_text, str) and content_text:
+                        candidate_texts.append(content_text)
+
+            response_payload = event.get("response")
+            if isinstance(response_payload, dict):
+                for output_item in response_payload.get("output", []) or []:
+                    if not isinstance(output_item, dict):
+                        continue
+                    for content_item in output_item.get("content", []) or []:
+                        if not isinstance(content_item, dict):
+                            continue
+                        content_text = content_item.get("text")
+                        if isinstance(content_text, str) and content_text:
+                            candidate_texts.append(content_text)
+
+        for text in candidate_texts:
+            if text and text not in seen_texts:
+                seen_texts.add(text)
+                text_chunks.append(text)
+
+    return "".join(text_chunks).strip()
 
 
 def create_sse_data(data_dict):
@@ -1357,7 +1520,12 @@ class ChatAPIView(APIView):
         try:
             # 使用新的LLM工厂函数，支持多供应商
             llm = create_llm_instance(active_config, temperature=0.7)
+            tool_calling_supported, tool_support_reason = (
+                get_llm_tool_calling_support(active_config)
+            )
             logger.info(f"ChatAPIView: Initialized LLM with provider auto-detection")
+            if not tool_calling_supported:
+                logger.warning("ChatAPIView: %s", tool_support_reason)
 
             async with get_async_checkpointer() as actual_memory_checkpointer:
                 # 加载远程 MCP 工具
@@ -1417,6 +1585,17 @@ class ChatAPIView(APIView):
                         f"ChatAPIView: Error loading remote MCP tools: {e}",
                         exc_info=True,
                     )
+                if not tool_calling_supported:
+                    if mcp_tools_list:
+                        logger.warning(
+                            "ChatAPIView: Clearing %d loaded tools because the active endpoint does not support tool-calling.",
+                            len(mcp_tools_list),
+                        )
+                    else:
+                        logger.warning(
+                            "ChatAPIView: Tool-calling disabled for the active endpoint; using plain chat fallback."
+                        )
+                    mcp_tools_list = []
                 # mcp_tools_list 为空时回退到基础聊天机器人
 
                 # 准备 LangGraph 可执行对象
@@ -1520,7 +1699,7 @@ class ChatAPIView(APIView):
                             exc_info=True,
                         )
 
-                if not runnable_to_invoke:
+                if not runnable_to_invoke and tool_calling_supported:
                     logger.info(
                         "ChatAPIView: No remote tools or agent creation failed. Trying middleware-enabled agent fallback."
                     )
@@ -1577,6 +1756,10 @@ class ChatAPIView(APIView):
                             f"ChatAPIView: Failed to create fallback agent: {e}",
                             exc_info=True,
                         )
+                elif not runnable_to_invoke:
+                    logger.info(
+                        "ChatAPIView: Skipping middleware-enabled fallback agent because tool-calling is disabled for this endpoint."
+                    )
 
                 # 兜底：极端情况下 create_agent 失败，回退到旧 StateGraph（无中间件）
                 if not runnable_to_invoke:
@@ -2980,6 +3163,18 @@ class ChatResumeAPIView(View):
 
         try:
             llm = create_llm_instance(active_config, temperature=0.7)
+            tool_calling_supported, tool_support_reason = (
+                get_llm_tool_calling_support(active_config)
+            )
+            if not tool_calling_supported:
+                logger.warning("ChatResumeAPIView: %s", tool_support_reason)
+                yield create_sse_data(
+                    {
+                        "type": "error",
+                        "message": "当前模型代理不支持工具调用，无法继续审批型工具对话。",
+                    }
+                )
+                return
 
             async with get_async_checkpointer() as actual_memory_checkpointer:
                 # 加载 MCP 工具（与 AgentLoopStreamAPIView 相同逻辑）

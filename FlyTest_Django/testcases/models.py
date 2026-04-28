@@ -56,6 +56,13 @@ class TestCase(models.Model):
         ('unavailable', _('不可用')),
     ]
 
+    EXECUTION_STATUS_CHOICES = [
+        ('not_executed', _('Not Executed')),
+        ('passed', _('Passed')),
+        ('failed', _('Failed')),
+        ('not_applicable', _('Not Applicable')),
+    ]
+
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -111,6 +118,15 @@ class TestCase(models.Model):
         blank=True,
     )
 
+    execution_status = models.CharField(
+        _('Execution Status'),
+        max_length=20,
+        choices=EXECUTION_STATUS_CHOICES,
+        default='not_executed',
+        blank=True,
+    )
+    executed_at = models.DateTimeField(_('Execution Time'), null=True, blank=True)
+
     class Meta:
         verbose_name = _('用例')
         verbose_name_plural = _('用例')
@@ -119,7 +135,22 @@ class TestCase(models.Model):
     def __str__(self):
         return f"{self.project.name} - {self.name}"
 
+    def clean(self):
+        self.name = str(self.name or "").strip()
+        if not self.name:
+            raise ValidationError(_("用例名称不能为空"))
+
+        if self.module_id:
+            duplicate_queryset = TestCase.objects.filter(module_id=self.module_id, name=self.name)
+            if self.pk:
+                duplicate_queryset = duplicate_queryset.exclude(pk=self.pk)
+            if duplicate_queryset.exists():
+                raise ValidationError(
+                    {"name": _(f'模块“{self.module.name}”下已存在同名测试用例“{self.name}”')}
+                )
+
     def save(self, *args, **kwargs):
+        self.clean()
         if self.pk is not None:
             return super().save(*args, **kwargs)
 
@@ -314,6 +345,15 @@ class TestSuite(models.Model):
         verbose_name=_('测试用例'),
         blank=True
     )
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='children',
+        verbose_name=_('父套件')
+    )
+    level = models.PositiveSmallIntegerField(_('套件级别'), default=1)
     creator = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -334,10 +374,34 @@ class TestSuite(models.Model):
         verbose_name = _('测试套件')
         verbose_name_plural = _('测试套件')
         ordering = ['-created_at']
-        unique_together = ('project', 'name')
-    
+        unique_together = ('project', 'parent', 'name')
+
     def __str__(self):
+        if self.parent:
+            return f"{self.parent} > {self.name}"
         return f"{self.project.name} - {self.name}"
+
+    def clean(self):
+        if self.level > 5:
+            raise ValidationError(_('套件级别不能超过5级'))
+
+        if self.parent and self.parent.project_id != self.project_id:
+            raise ValidationError(_('父套件必须属于同一个项目'))
+
+        if self.parent:
+            self.level = self.parent.level + 1
+        else:
+            self.level = 1
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def get_all_descendant_ids(self):
+        ids = [self.id]
+        for child in self.children.all():
+            ids.extend(child.get_all_descendant_ids())
+        return ids
 
 
 class TestExecution(models.Model):
@@ -530,3 +594,178 @@ class TestCaseAssignment(models.Model):
 
     def __str__(self):
         return f"{self.testcase.name} -> {self.assignee.username}"
+
+
+class TestBug(models.Model):
+    """测试套件下的缺陷管理，参考禅道 BUG 流转。"""
+
+    SEVERITY_CHOICES = [
+        ("1", _("1")),
+        ("2", _("2")),
+        ("3", _("3")),
+        ("4", _("4")),
+    ]
+
+    PRIORITY_CHOICES = [
+        ("1", _("1")),
+        ("2", _("2")),
+        ("3", _("3")),
+        ("4", _("4")),
+    ]
+
+    TYPE_CHOICES = [
+        ("codeerror", _("Code Error")),
+        ("config", _("Config")),
+        ("install", _("Install")),
+        ("security", _("Security")),
+        ("performance", _("Performance")),
+        ("standard", _("Standard")),
+        ("design", _("Design")),
+        ("others", _("Others")),
+    ]
+
+    STATUS_CHOICES = [
+        ("active", _("Active")),
+        ("resolved", _("Resolved")),
+        ("closed", _("Closed")),
+    ]
+
+    RESOLUTION_CHOICES = [
+        ("", _("-")),
+        ("fixed", _("Fixed")),
+        ("postponed", _("Postponed")),
+        ("notrepro", _("Not Repro")),
+        ("external", _("External")),
+        ("duplicate", _("Duplicate")),
+        ("wontfix", _("Wont Fix")),
+        ("bydesign", _("By Design")),
+    ]
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="test_bugs",
+        verbose_name=_("所属项目"),
+    )
+    suite = models.ForeignKey(
+        TestSuite,
+        on_delete=models.CASCADE,
+        related_name="bugs",
+        verbose_name=_("所属套件"),
+    )
+    testcase = models.ForeignKey(
+        TestCase,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bugs",
+        verbose_name=_("关联测试用例"),
+    )
+    title = models.CharField(_("Bug标题"), max_length=255)
+    steps = models.TextField(_("重现步骤"), blank=True, default="")
+    expected_result = models.TextField(_("期望结果"), blank=True, default="")
+    actual_result = models.TextField(_("实际结果"), blank=True, default="")
+    bug_type = models.CharField(
+        _("Bug类型"),
+        max_length=20,
+        choices=TYPE_CHOICES,
+        default="codeerror",
+    )
+    severity = models.CharField(
+        _("严重程度"),
+        max_length=1,
+        choices=SEVERITY_CHOICES,
+        default="3",
+    )
+    priority = models.CharField(
+        _("优先级"),
+        max_length=1,
+        choices=PRIORITY_CHOICES,
+        default="3",
+    )
+    status = models.CharField(
+        _("状态"),
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="active",
+    )
+    resolution = models.CharField(
+        _("解决方案"),
+        max_length=20,
+        choices=RESOLUTION_CHOICES,
+        blank=True,
+        default="",
+    )
+    keywords = models.CharField(_("关键词"), max_length=255, blank=True, default="")
+    deadline = models.DateField(_("截止日期"), null=True, blank=True)
+    assigned_to = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_test_bugs",
+        verbose_name=_("指派给"),
+    )
+    opened_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="opened_test_bugs",
+        verbose_name=_("由谁创建"),
+    )
+    opened_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
+    assigned_at = models.DateTimeField(_("指派时间"), null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_test_bugs",
+        verbose_name=_("由谁解决"),
+    )
+    resolved_at = models.DateTimeField(_("解决时间"), null=True, blank=True)
+    closed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="closed_test_bugs",
+        verbose_name=_("由谁关闭"),
+    )
+    closed_at = models.DateTimeField(_("关闭时间"), null=True, blank=True)
+    activated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activated_test_bugs",
+        verbose_name=_("由谁激活"),
+    )
+    activated_at = models.DateTimeField(_("激活时间"), null=True, blank=True)
+    activated_count = models.PositiveIntegerField(_("激活次数"), default=0)
+    solution = models.TextField(_("处理备注"), blank=True, default="")
+    created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("更新时间"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("测试Bug")
+        verbose_name_plural = _("测试Bug")
+        ordering = ["-id"]
+
+    def clean(self):
+        if self.suite_id and self.project_id and self.suite.project_id != self.project_id:
+            raise ValidationError(_("测试套件必须属于当前项目"))
+
+        if self.testcase_id:
+            if self.project_id and self.testcase.project_id != self.project_id:
+                raise ValidationError(_("测试用例必须属于当前项目"))
+            if self.suite_id and not self.suite.testcases.filter(id=self.testcase_id).exists():
+                raise ValidationError(_("关联测试用例必须已分配到当前测试套件"))
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"BUG#{self.pk} {self.title}"

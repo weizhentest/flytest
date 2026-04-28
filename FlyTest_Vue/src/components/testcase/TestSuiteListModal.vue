@@ -90,7 +90,6 @@
       v-model:visible="showSuiteForm"
       :current-project-id="currentProjectId"
       :suite-id="editingSuiteId"
-      :initial-test-case-ids="initialTestCaseIds"
       @success="handleFormSuccess"
     />
 
@@ -148,7 +147,6 @@ const showSuiteForm = ref(false);
 const showExecutionConfirm = ref(false);
 const showExecutionList = ref(false);
 const editingSuiteId = ref<number | null>(null);
-const initialTestCaseIds = ref<number[]>([]);
 const selectedSuite = ref<TestSuite | null>(null);
 
 const paginationConfig = reactive({
@@ -227,7 +225,6 @@ const onPageSizeChange = (pageSize: number) => {
 // 创建测试套件
 const handleCreate = () => {
   editingSuiteId.value = null;
-  initialTestCaseIds.value = [];
   showSuiteForm.value = true;
 };
 
@@ -235,7 +232,6 @@ const handleCreate = () => {
 const handleEdit = (suite: TestSuite) => {
   editingSuiteId.value = suite.id;
   // TODO: 加载套件详情获取test case IDs
-  initialTestCaseIds.value = [];
   showSuiteForm.value = true;
 };
 

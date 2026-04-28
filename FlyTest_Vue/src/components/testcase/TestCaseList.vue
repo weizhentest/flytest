@@ -12,7 +12,7 @@
         />
         <a-select
           v-model="selectedLevel"
-          :placeholder="isSmallScreen ? '优先级' : '筛选优先级'"
+          placeholder="优先级"
           allow-clear
           class="level-filter"
           :style="{ width: isSmallScreen ? '90px' : '130px' }"
@@ -24,8 +24,9 @@
           <a-option value="P3">{{ isSmallScreen ? 'P3' : 'P3 - 低' }}</a-option>
         </a-select>
         <a-select
+          v-if="showReviewStatus"
           v-model="selectedReviewStatuses"
-          placeholder="筛选审核状态"
+          placeholder="审核状态"
           multiple
           allow-clear
           :max-tag-count="1"
@@ -40,7 +41,7 @@
         </a-select>
         <a-select
           v-model="selectedTestType"
-          :placeholder="isSmallScreen ? '类型' : '筛选测试类型'"
+          placeholder="测试类型"
           allow-clear
           class="test-type-filter"
           :style="{ width: isSmallScreen ? '90px' : '130px' }"
@@ -50,25 +51,42 @@
             {{ option.label }}
           </a-option>
         </a-select>
+        <a-select
+          v-model="selectedAssigneeIds"
+          placeholder="执行人"
+          multiple
+          allow-clear
+          :max-tag-count="1"
+          tag-nowrap
+          class="assignee-filter"
+          :style="{ width: '220px' }"
+          @change="onAssigneeChange"
+        >
+          <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
+            {{ member.user_detail.username }}
+          </a-option>
+        </a-select>
         <a-button type="outline" class="io-btn" @click="handleExport">
           <template #icon>
             <icon-download />
           </template>
           <span class="io-btn-text">导出</span>
         </a-button>
-        <a-button type="outline" class="io-btn" @click="handleImport">
-          <template #icon>
-            <icon-upload />
-          </template>
-          <span class="io-btn-text">导入</span>
-        </a-button>
       </div>
       <div class="action-buttons">
         <template v-if="hasSelection">
           <a-button type="primary" status="danger" @click="handleBatchDelete">批量删除</a-button>
-          <a-button type="primary" @click="openAssignModal(selectedTestCaseIds)">批量分配</a-button>
+          <a-dropdown trigger="click" @select="(value: string) => handleBatchExecutionStatusChange(value as ExecutionStatus)">
+            <a-button type="primary">执行状态</a-button>
+            <template #content>
+              <a-doption v-for="option in EXECUTION_STATUS_OPTIONS" :key="option.value" :value="option.value">
+                <a-tag :color="option.color" size="small">{{ option.label }}</a-tag>
+              </a-doption>
+            </template>
+          </a-dropdown>
+          <a-button v-if="!isSuiteActionMode" type="primary" @click="openAssignModal(selectedTestCaseIds)">批量分配</a-button>
         </template>
-        <template v-else>
+        <template v-else-if="showCreateActions">
           <a-button type="primary" @click="handleGenerateTestCases">生成用例</a-button>
           <a-button type="primary" @click="handleAddTestCase">添加用例</a-button>
         </template>
@@ -140,10 +158,27 @@
           </template>
         </a-dropdown>
       </template>
+      <template #executionStatus="{ record }">
+        <a-dropdown v-if="record" trigger="click" @select="(value: string) => handleExecutionStatusChange(record, value as ExecutionStatus)">
+          <a-tag :color="getExecutionStatusColor(record.execution_status)" style="cursor: pointer;">
+            {{ getExecutionStatusLabel(record.execution_status) }}
+            <icon-down style="margin-left: 4px; font-size: 10px;" />
+          </a-tag>
+          <template #content>
+            <a-doption v-for="option in EXECUTION_STATUS_OPTIONS" :key="option.value" :value="option.value">
+              <a-tag :color="option.color" size="small">{{ option.label }}</a-tag>
+            </a-doption>
+          </template>
+        </a-dropdown>
+      </template>
       <template #testType="{ record }">
         <a-tag v-if="record">{{ getTestTypeLabel(record.test_type) }}</a-tag>
       </template>
-      <template #reviewStatus="{ record }">
+      <template #relatedBug="{ record }">
+        <span v-if="(record?.related_bug_count || 0) > 0">{{ record.related_bug_count }}</span>
+        <span v-else>-</span>
+      </template>
+      <template v-if="showReviewStatus" #reviewStatus="{ record }">
         <a-dropdown v-if="record" trigger="click" @select="(value: string) => handleReviewStatusChange(record, value)">
           <a-tag
             :color="getReviewStatusColor(record.review_status)"
@@ -167,19 +202,27 @@
         <a-space v-if="record" :size="4">
           <a-button type="primary" size="mini" @click.stop="handleViewTestCase(record)">查看</a-button>
           <a-button type="primary" size="mini" @click.stop="handleEditTestCase(record)">编辑</a-button>
-          <a-button type="outline" size="mini" @click.stop="openAssignModal([record.id])">分配</a-button>
-          <a-button type="outline" size="mini" @click.stop="handleExecuteTestCase(record)">执行</a-button>
+          <a-dropdown
+            v-if="isSuiteActionMode"
+            trigger="click"
+            @select="(value: string) => handleExecutionStatusChange(record, value as ExecutionStatus)"
+          >
+            <a-button type="outline" size="mini" @click.stop>执行</a-button>
+            <template #content>
+              <a-doption
+                v-for="option in suiteExecuteOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                <a-tag :color="option.color" size="small">{{ option.label }}</a-tag>
+              </a-doption>
+            </template>
+          </a-dropdown>
+          <a-button v-else type="outline" size="mini" @click.stop="openAssignModal([record.id])">分配</a-button>
           <a-button type="primary" status="danger" size="mini" @click.stop="handleDeleteTestCase(record)">删除</a-button>
         </a-space>
       </template>
     </a-table>
-
-    <ImportModal
-      v-if="currentProjectId"
-      ref="importModalRef"
-      :project-id="currentProjectId"
-      @success="onImportSuccess"
-    />
 
     <ExportModal
       v-if="currentProjectId"
@@ -220,10 +263,9 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, toRefs, nextTick } from 'vue';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
-import { IconFolder, IconDownload, IconUpload, IconDown } from '@arco-design/web-vue/es/icon';
+import { IconFolder, IconDownload, IconDown } from '@arco-design/web-vue/es/icon';
 import { useAuthStore } from '@/store/authStore';
 import { API_BASE_URL } from '@/config/api';
-import ImportModal from '@/features/testcase-templates/components/ImportModal.vue';
 import ExportModal from '@/features/testcase-templates/components/ExportModal.vue';
 import {
   getTestCaseList,
@@ -231,12 +273,15 @@ import {
   batchDeleteTestCases,
   updateTestCase,
   updateTestCaseReviewStatus,
+  updateTestCaseExecutionStatus,
+  batchUpdateTestCaseExecutionStatus,
   type TestCase,
   type ReviewStatus,
+  type ExecutionStatus,
 } from '@/services/testcaseService';
 import { getProjectMembers, type ProjectMember } from '@/services/projectService';
 import { getTestSuiteList, type TestSuite } from '@/services/testSuiteService';
-import { formatDate, getLevelColor, getReviewStatusLabel, getReviewStatusColor, getTestTypeLabel, REVIEW_STATUS_OPTIONS, TEST_TYPE_OPTIONS } from '@/utils/formatters';
+import { formatDate, getLevelColor, getReviewStatusLabel, getReviewStatusColor, getTestTypeLabel, getExecutionStatusLabel, getExecutionStatusColor, REVIEW_STATUS_OPTIONS, EXECUTION_STATUS_OPTIONS, TEST_TYPE_OPTIONS } from '@/utils/formatters';
 import type { TreeNodeData } from '@arco-design/web-vue';
 
 type TestCaseListItem = TestCase & {
@@ -249,7 +294,12 @@ type TestCaseListItem = TestCase & {
 const props = defineProps<{
   currentProjectId: number | null;
   selectedModuleId?: number | null; // 鍙€夌殑妯″潡ID锛岀敤浜庣瓫閫?
+  selectedSuiteId?: number | null;
   moduleTree?: TreeNodeData[]; // 妯″潡鏍戞暟鎹?
+  showCreateActions?: boolean;
+  showReviewStatus?: boolean;
+  actionMode?: 'default' | 'suite';
+  timeColumnMode?: 'created' | 'assigned';
 }>();
 
 const emit = defineEmits<{
@@ -263,7 +313,16 @@ const emit = defineEmits<{
   (e: 'requestOptimization', testCase: TestCase): void;
 }>();
 
-const { currentProjectId, selectedModuleId } = toRefs(props);
+const { currentProjectId, selectedModuleId, selectedSuiteId } = toRefs(props);
+const showCreateActions = computed(() => props.showCreateActions !== false);
+const showReviewStatus = computed(() => props.showReviewStatus !== false);
+const isSuiteActionMode = computed(() => props.actionMode === 'suite');
+const timeColumnMode = computed(() => props.timeColumnMode || 'created');
+const suiteExecuteOptions = computed(() =>
+  EXECUTION_STATUS_OPTIONS.filter((option) =>
+    ['passed', 'failed', 'not_applicable'].includes(option.value)
+  )
+);
 
 // 鏈湴妯″潡閫夋嫨锛堜笌澶栭儴 selectedModuleId 鍚屾锛?
 const localSelectedModuleId = ref<number | null>(props.selectedModuleId || null);
@@ -275,9 +334,9 @@ const selectedLevel = ref<string>('');
 const selectedTestType = ref<string>('');
 const highlightedGeneratedCaseIds = ref<number[]>([]);
 const selectedReviewStatuses = ref<ReviewStatus[]>([]);
+const selectedAssigneeIds = ref<number[]>([]);
 const testCaseData = ref<TestCaseListItem[]>([]);
 const selectedTestCaseIds = ref<number[]>([]);
-const importModalRef = ref<InstanceType<typeof ImportModal> | null>(null);
 const exportModalRef = ref<InstanceType<typeof ExportModal> | null>(null);
 const assignmentModalVisible = ref(false);
 const assignmentLoading = ref(false);
@@ -419,7 +478,8 @@ const handleSelectCurrentPage = (checked: boolean) => {
   }
 };
 
-const columns = [
+const columns = computed(() => {
+  const baseColumns = [
   {
     title: '选择',
     slotName: 'selection',
@@ -432,7 +492,9 @@ const columns = [
   { title: '用例名称', dataIndex: 'name', slotName: 'name', width: 220, ellipsis: true, tooltip: false, align: 'center' },
   { title: '前置条件', dataIndex: 'precondition', width: 180, ellipsis: true, tooltip: true, align: 'center' },
   { title: '优先级', dataIndex: 'level', slotName: 'level', width: 100, align: 'center' },
+  { title: '执行状态', dataIndex: 'execution_status', slotName: 'executionStatus', width: 130, align: 'center' },
   { title: '测试类型', dataIndex: 'test_type', slotName: 'testType', width: 120, align: 'center' },
+  { title: '关联BUG', dataIndex: 'related_bug_count', slotName: 'relatedBug', width: 110, align: 'center' },
   { title: '审核状态', dataIndex: 'review_status', slotName: 'reviewStatus', width: 140, align: 'center' },
   { title: '所属模块', dataIndex: 'module_detail', slotName: 'module', width: 180, ellipsis: true, tooltip: true, align: 'center' },
   {
@@ -450,13 +512,35 @@ const columns = [
     align: 'center',
   },
   {
-    title: '创建时间',
-    dataIndex: 'created_at',
-    render: ({ record }: { record: TestCase }) => formatDate(record.created_at),
+    title: timeColumnMode.value === 'assigned' ? '分配时间' : '创建时间',
+    dataIndex: timeColumnMode.value === 'assigned' ? 'assignment_created_at' : 'created_at',
+    render: ({ record }: { record: TestCase }) =>
+      formatDate(
+        timeColumnMode.value === 'assigned'
+          ? (record.assignment_created_at || record.created_at)
+          : record.created_at
+      ),
     width: 180,
     align: 'center',
   },
-  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 220, fixed: 'right', align: 'center' },
+  ...(timeColumnMode.value === 'assigned'
+    ? [{
+        title: '执行时间',
+        dataIndex: 'executed_at',
+        render: ({ record }: { record: TestCase }) =>
+          record.executed_at ? formatDate(record.executed_at) : '-',
+        width: 180,
+        align: 'center',
+      }]
+    : []),
+  {
+    title: '操作',
+    dataIndex: 'operations',
+    slotName: 'operations',
+    width: isSuiteActionMode.value ? 200 : 180,
+    fixed: 'right',
+    align: 'center'
+  },
   {
     title: '',
     dataIndex: '__tail__',
@@ -467,7 +551,19 @@ const columns = [
     headerCellClass: 'resize-tail-column',
     cellClass: 'resize-tail-column',
   },
-];
+  ];
+
+  if (!showReviewStatus.value) {
+    return baseColumns.filter((column) => column.dataIndex !== 'review_status' && column.slotName !== 'reviewStatus');
+  }
+
+  return baseColumns;
+});
+
+const hasUnapprovedSelection = (ids: number[]) => {
+  const selectedCases = testCaseData.value.filter((item) => ids.includes(item.id));
+  return selectedCases.some((item) => item.review_status !== 'approved');
+};
 
 const loadAssignmentOptions = async () => {
   if (!currentProjectId.value) {
@@ -492,6 +588,20 @@ const loadAssignmentOptions = async () => {
   } finally {
     assignmentLoading.value = false;
   }
+};
+
+const loadProjectMembersForFilter = async () => {
+  if (!currentProjectId.value) {
+    projectMembers.value = [];
+    return;
+  }
+
+  const response = await getProjectMembers(currentProjectId.value);
+  if (!response.success || !response.data) {
+    throw new Error(response.error || '获取项目成员失败');
+  }
+
+  projectMembers.value = response.data;
 };
 
 const assignTestCasesRequest = async (projectId: number, payload: { ids: number[]; suite_id: number; assignee_id: number }) => {
@@ -546,6 +656,10 @@ const openAssignModal = async (ids: number[]) => {
     Message.warning('请先选择要分配的测试用例');
     return;
   }
+  if (hasUnapprovedSelection(normalizedIds)) {
+    Message.warning('只有审核状态为“通过”的测试用例才能分配');
+    return;
+  }
   assignmentTargetIds.value = normalizedIds;
   assignmentForm.suiteId = undefined;
   assignmentForm.assigneeId = undefined;
@@ -573,6 +687,10 @@ const submitAssignment = async () => {
   }
   if (!assignmentForm.assigneeId) {
     Message.warning('请选择执行人');
+    return;
+  }
+  if (hasUnapprovedSelection(assignmentTargetIds.value)) {
+    Message.warning('只有审核状态为“通过”的测试用例才能分配');
     return;
   }
 
@@ -612,6 +730,46 @@ const handlePriorityChange = async (record: TestCase, newLevel: string) => {
   Message.success('优先级更新成功');
 };
 
+const handleExecutionStatusChange = async (record: TestCase, newStatus: ExecutionStatus) => {
+  if (!currentProjectId.value || !newStatus || newStatus === record.execution_status) {
+    return;
+  }
+  const response = await updateTestCaseExecutionStatus(currentProjectId.value, record.id, newStatus);
+  if (!response.success || !response.data) {
+    Message.error(response.error || '更新执行状态失败');
+    return;
+  }
+  const index = testCaseData.value.findIndex((item) => item.id === record.id);
+  if (index !== -1) {
+    testCaseData.value[index].execution_status = response.data.execution_status;
+    testCaseData.value[index].executed_at = response.data.executed_at ?? testCaseData.value[index].executed_at ?? null;
+  }
+  Message.success('执行状态更新成功');
+};
+
+const handleBatchExecutionStatusChange = async (newStatus: ExecutionStatus) => {
+  if (!currentProjectId.value) {
+    return;
+  }
+  if (!selectedTestCaseIds.value.length) {
+    Message.warning('请先选择测试用例');
+    return;
+  }
+
+  const response = await batchUpdateTestCaseExecutionStatus(
+    currentProjectId.value,
+    selectedTestCaseIds.value,
+    newStatus,
+  );
+  if (!response.success) {
+    Message.error(response.error || '批量更新执行状态失败');
+    return;
+  }
+
+  await fetchTestCases();
+  Message.success(response.message || '批量更新执行状态成功');
+};
+
 const fetchTestCases = async () => {
   if (!currentProjectId.value) {
     testCaseData.value = [];
@@ -626,10 +784,12 @@ const fetchTestCases = async () => {
       pageSize: paginationConfig.pageSize,
       search: localSearchKeyword.value,
       module_id: localSelectedModuleId.value || undefined, // 浣跨敤鏈湴妯″潡绛涢€?
+      suite_id: selectedSuiteId?.value || undefined,
       level: selectedLevel.value || undefined, // 娣诲姞浼樺厛绾х瓫閫?
       test_type: selectedTestType.value || undefined, // 娣诲姞娴嬭瘯绫诲瀷绛涢€?
       // 澶氶€夊鏍哥姸鎬佺瓫閫夛細鏈夐€変腑椤瑰垯浼犻€掞紝鍚﹀垯涓嶉檺鍒讹紙鏄剧ず鍏ㄩ儴锛?
       review_status_in: selectedReviewStatuses.value.length > 0 ? selectedReviewStatuses.value : undefined,
+      assignee_id_in: selectedAssigneeIds.value.length > 0 ? selectedAssigneeIds.value : undefined,
     });
     if (response.success && response.data) {
       testCaseData.value = response.data;
@@ -677,6 +837,13 @@ const onReviewStatusChange = (value: ReviewStatus[]) => {
 const onTestTypeChange = (value: string) => {
   clearHighlightedGeneratedCases();
   selectedTestType.value = value;
+  paginationConfig.current = 1;
+  fetchTestCases();
+};
+
+const onAssigneeChange = (value: number[]) => {
+  clearHighlightedGeneratedCases();
+  selectedAssigneeIds.value = value;
   paginationConfig.current = 1;
   fetchTestCases();
 };
@@ -773,10 +940,6 @@ const handleDeleteTestCase = (testCase: TestCase) => {
   });
 };
 
-const handleExecuteTestCase = (testCase: TestCase) => {
-  emit('executeTestCase', testCase);
-};
-
 // 鎵归噺鍒犻櫎澶勭悊鍑芥暟
 const handleBatchDelete = () => {
   if (!currentProjectId.value || selectedTestCaseIds.value.length === 0) return;
@@ -839,21 +1002,10 @@ const handleExport = () => {
   exportModalRef.value?.open();
 };
 
-const handleImport = () => {
-  if (!currentProjectId.value) {
-    Message.warning('请先选择一个项目');
-    return;
-  }
-  importModalRef.value?.open();
-};
-
-const onImportSuccess = () => {
-  fetchTestCases();
-};
-
 onMounted(() => {
   handleResize(); // 鍒濆鍖栬〃鏍奸珮搴?
   fetchTestCases();
+  void loadProjectMembersForFilter();
   window.addEventListener('resize', handleResize);
 });
 
@@ -869,6 +1021,8 @@ watch(currentProjectId, () => {
   selectedLevel.value = ''; // 椤圭洰鍒囨崲鏃舵竻绌轰紭鍏堢骇绛涢€?
   selectedTestType.value = ''; // 椤圭洰鍒囨崲鏃舵竻绌烘祴璇曠被鍨嬬瓫閫?
   selectedReviewStatuses.value = [];
+  selectedAssigneeIds.value = [];
+  void loadProjectMembersForFilter();
   fetchTestCases();
 });
 
@@ -880,6 +1034,12 @@ watch(selectedModuleId, (newVal) => {
     paginationConfig.current = 1;
     fetchTestCases();
   }
+});
+
+watch(selectedSuiteId, () => {
+  clearHighlightedGeneratedCases();
+  paginationConfig.current = 1;
+  fetchTestCases();
 });
 
 // 鏆撮湶缁欑埗缁勪欢鐨勬柟娉?
@@ -899,6 +1059,7 @@ defineExpose({
     selectedLevel.value = '';
     selectedTestType.value = '';
     selectedReviewStatuses.value = [];
+    selectedAssigneeIds.value = [];
     localSelectedModuleId.value = null;
     await fetchTestCases();
     highlightGeneratedCases(generatedIds);
@@ -977,6 +1138,10 @@ defineExpose({
 
 .test-type-filter {
   flex-shrink: 1;
+}
+
+.assignee-filter {
+  flex-shrink: 0;
 }
 
 .review-status-filter :deep(.arco-select-view-multiple) {
