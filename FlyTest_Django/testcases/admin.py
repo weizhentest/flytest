@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import TestBug, TestCase, TestCaseStep, TestCaseModule
+from .models import TestBug, TestBugAttachment, TestCase, TestCaseStep, TestCaseModule
 
 class TestCaseStepInline(admin.TabularInline):
     """
@@ -128,3 +128,10 @@ class TestBugAdmin(admin.ModelAdmin):
     search_fields = ("title", "steps", "actual_result", "expected_result", "keywords")
     readonly_fields = ("opened_at", "assigned_at", "resolved_at", "closed_at", "activated_at", "activated_count", "created_at", "updated_at")
 
+
+@admin.register(TestBugAttachment)
+class TestBugAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("id", "bug", "section", "original_name", "file_type", "uploaded_by", "created_at")
+    list_filter = ("section", "file_type", "created_at")
+    search_fields = ("original_name", "bug__title")
+    readonly_fields = ("created_at",)

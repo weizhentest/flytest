@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db.utils import OperationalError, ProgrammingError
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
@@ -9,6 +10,7 @@ from .models import (
     TestCaseScreenshot,
     TestSuite,
     TestBug,
+    TestBugAttachment,
     TestExecution,
     TestCaseResult,
 )
@@ -610,16 +612,27 @@ class TestSuiteSerializer(serializers.ModelSerializer):
 
 
 class TestBugSerializer(serializers.ModelSerializer):
+    assigned_to_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        write_only=True,
+        allow_empty=True,
+    )
     creator_detail = UserDetailSerializer(source="opened_by", read_only=True)
     assigned_to_detail = UserDetailSerializer(source="assigned_to", read_only=True)
+    assigned_to_details = UserDetailSerializer(source="assigned_users", many=True, read_only=True)
+    assigned_to_names = serializers.SerializerMethodField()
+    assigned_to_ids_read = serializers.SerializerMethodField()
     resolved_by_detail = UserDetailSerializer(source="resolved_by", read_only=True)
     closed_by_detail = UserDetailSerializer(source="closed_by", read_only=True)
     activated_by_detail = UserDetailSerializer(source="activated_by", read_only=True)
     suite_name = serializers.CharField(source="suite.name", read_only=True)
     testcase_name = serializers.CharField(source="testcase.name", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     bug_type_display = serializers.CharField(source="get_bug_type_display", read_only=True)
     resolution_display = serializers.CharField(source="get_resolution_display", read_only=True)
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = TestBug
@@ -642,10 +655,15 @@ class TestBugSerializer(serializers.ModelSerializer):
             "status_display",
             "resolution",
             "resolution_display",
+            "attachments",
             "keywords",
             "deadline",
             "assigned_to",
+            "assigned_to_ids",
+            "assigned_to_ids_read",
+            "assigned_to_names",
             "assigned_to_detail",
+            "assigned_to_details",
             "opened_by",
             "creator_detail",
             "opened_at",
@@ -675,6 +693,7 @@ class TestBugSerializer(serializers.ModelSerializer):
             "bug_type_display",
             "resolution_display",
             "assigned_to_detail",
+            "assigned_to_details",
             "resolved_by_detail",
             "closed_by_detail",
             "activated_by_detail",
@@ -687,6 +706,61 @@ class TestBugSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_status(self, obj):
+        return obj.get_effective_status()
+
+    def get_status_display(self, obj):
+        return obj.get_effective_status_display()
+
+    def get_assigned_to_names(self, obj):
+        assigned_users = list(obj.assigned_users.all())
+        return [user.username for user in assigned_users]
+
+    def get_assigned_to_ids_read(self, obj):
+        return list(obj.assigned_users.values_list("id", flat=True))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["assigned_to_ids"] = data.pop("assigned_to_ids_read", [])
+        return data
+
+    def _get_validated_assigned_users(self, attrs):
+        assigned_to_ids = attrs.pop("assigned_to_ids", None)
+        project = self.context.get("project") or getattr(self.instance, "project", None)
+
+        if assigned_to_ids is None:
+            assigned_user = attrs.get("assigned_to", serializers.empty)
+            if assigned_user is serializers.empty:
+                return None
+            return [assigned_user] if assigned_user else []
+
+        normalized_ids = []
+        for user_id in assigned_to_ids:
+            if user_id not in normalized_ids:
+                normalized_ids.append(user_id)
+
+        if not normalized_ids:
+            attrs["assigned_to"] = None
+            return []
+
+        if project is None:
+            raise serializers.ValidationError({"assigned_to_ids": "当前项目不存在"})
+
+        members = list(
+            User.objects.filter(
+                id__in=normalized_ids,
+                project_memberships__project=project,
+            ).distinct()
+        )
+        member_map = {member.id: member for member in members}
+        invalid_ids = [user_id for user_id in normalized_ids if user_id not in member_map]
+        if invalid_ids:
+            raise serializers.ValidationError({"assigned_to_ids": "指派人员必须是当前项目成员"})
+
+        assigned_users = [member_map[user_id] for user_id in normalized_ids]
+        attrs["assigned_to"] = assigned_users[0] if assigned_users else None
+        return assigned_users
 
     def validate(self, attrs):
         instance = self.instance
@@ -709,15 +783,69 @@ class TestBugSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def create(self, validated_data):
+        assigned_users = self._get_validated_assigned_users(validated_data)
+        bug = super().create(validated_data)
+        if assigned_users is not None:
+            bug.assigned_users.set(assigned_users)
+        return bug
+
+    def update(self, instance, validated_data):
+        assigned_users = self._get_validated_assigned_users(validated_data)
+        bug = super().update(instance, validated_data)
+        if assigned_users is not None:
+            bug.assigned_users.set(assigned_users)
+        return bug
+
+    def get_attachments(self, obj):
+        try:
+            attachments = obj.attachments.select_related("uploaded_by").all()
+            return TestBugAttachmentSerializer(attachments, many=True, context=self.context).data
+        except (OperationalError, ProgrammingError):
+            return []
+
+
+class TestBugAttachmentSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    uploaded_by_name = serializers.CharField(source="uploaded_by.username", read_only=True)
+
+    class Meta:
+        model = TestBugAttachment
+        fields = [
+            "id",
+            "bug",
+            "section",
+            "attachment",
+            "url",
+            "original_name",
+            "file_type",
+            "content_type",
+            "file_size",
+            "uploaded_by",
+            "uploaded_by_name",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_url(self, obj):
+        request = self.context.get("request")
+        if not obj.attachment:
+            return ""
+        url = obj.attachment.url
+        return request.build_absolute_uri(url) if request else url
+
 
 class TestBugListSerializer(serializers.ModelSerializer):
     suite_name = serializers.CharField(source="suite.name", read_only=True)
     testcase_name = serializers.CharField(source="testcase.name", read_only=True)
     assigned_to_name = serializers.CharField(source="assigned_to.username", read_only=True)
+    assigned_to_names = serializers.SerializerMethodField()
+    assigned_to_ids = serializers.SerializerMethodField()
     opened_by_name = serializers.CharField(source="opened_by.username", read_only=True)
     resolved_by_name = serializers.CharField(source="resolved_by.username", read_only=True)
     bug_type_display = serializers.CharField(source="get_bug_type_display", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     resolution_display = serializers.CharField(source="get_resolution_display", read_only=True)
 
     class Meta:
@@ -739,6 +867,8 @@ class TestBugListSerializer(serializers.ModelSerializer):
             "resolution_display",
             "assigned_to",
             "assigned_to_name",
+            "assigned_to_names",
+            "assigned_to_ids",
             "opened_by",
             "opened_by_name",
             "opened_at",
@@ -752,6 +882,18 @@ class TestBugListSerializer(serializers.ModelSerializer):
             "deadline",
         ]
         read_only_fields = fields
+
+    def get_status(self, obj):
+        return obj.get_effective_status()
+
+    def get_status_display(self, obj):
+        return obj.get_effective_status_display()
+
+    def get_assigned_to_names(self, obj):
+        return [user.username for user in obj.assigned_users.all()]
+
+    def get_assigned_to_ids(self, obj):
+        return list(obj.assigned_users.values_list("id", flat=True))
 
 
 from urllib.parse import urlparse

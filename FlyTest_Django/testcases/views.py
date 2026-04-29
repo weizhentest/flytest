@@ -4,6 +4,7 @@ from django_filters.rest_framework import (
 )  # 瀵煎叆 DjangoFilterBackend
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.db import transaction, close_old_connections
 from django.db.models import Count
@@ -34,6 +35,7 @@ from .models import (
     TestCaseResult,
     TestCaseAssignment,
     TestBug,
+    TestBugAttachment,
 )
 from .serializers import (
     TestCaseSerializer,
@@ -42,6 +44,7 @@ from .serializers import (
     TestCaseScreenshotSerializer,
     TestBugSerializer,
     TestBugListSerializer,
+    TestBugAttachmentSerializer,
 )
 from .permissions import IsProjectMemberForTestCase, IsProjectMemberForTestCaseModule
 from .filters import TestBugFilter, TestCaseFilter  # 导入自定义过滤器
@@ -2900,6 +2903,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "steps", "actual_result", "expected_result", "keywords"]
     ordering_fields = ["id", "severity", "priority", "opened_at", "assigned_at", "resolved_at", "closed_at"]
     ordering = ["-id"]
+    _attachment_sections = {"steps", "expected_result", "actual_result"}
 
     def get_permissions(self):
         from .permissions import IsProjectMemberForTestSuite
@@ -2922,7 +2926,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
                 "resolved_by",
                 "closed_by",
                 "activated_by",
-            )
+            ).prefetch_related("attachments", "attachments__uploaded_by", "assigned_users")
         return TestBug.objects.none()
 
     def get_serializer_class(self):
@@ -2939,30 +2943,270 @@ class TestBugViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         project = self.get_serializer_context()["project"]
-        serializer.save(project=project, opened_by=self.request.user)
+        assigned_to = serializer.validated_data.get("assigned_to")
+        assigned_to_ids = serializer.validated_data.get("assigned_to_ids")
+        has_assignees = bool(assigned_to) or bool(assigned_to_ids)
+        initial_status = TestBug.STATUS_ASSIGNED if has_assignees else TestBug.STATUS_UNASSIGNED
+        serializer.save(project=project, opened_by=self.request.user, status=initial_status)
 
     def perform_update(self, serializer):
-        serializer.save()
+        instance = serializer.instance
+        assigned_to_present = "assigned_to" in serializer.validated_data
+        assigned_to_ids_present = "assigned_to_ids" in serializer.validated_data
+        if not assigned_to_present and not assigned_to_ids_present:
+            serializer.save()
+            return
+
+        previous_assignee_ids = list(instance.assigned_users.values_list("id", flat=True))
+        next_assignee_ids = serializer.validated_data.get("assigned_to_ids")
+        if next_assignee_ids is None:
+            assigned_user = serializer.validated_data.get("assigned_to")
+            next_assignee_ids = [assigned_user.id] if assigned_user else []
+        next_assignee_ids = list(dict.fromkeys(next_assignee_ids))
+
+        if previous_assignee_ids == next_assignee_ids:
+            serializer.save()
+            return
+
+        serializer.save(assigned_at=timezone.now() if next_assignee_ids else None)
+
+    def _get_bug_assignee_ids(self, bug):
+        if bug.assigned_to_id:
+            primary_id = bug.assigned_to_id
+        else:
+            primary_id = None
+        assigned_ids = list(bug.assigned_users.values_list("id", flat=True))
+        if primary_id and primary_id not in assigned_ids:
+            assigned_ids.insert(0, primary_id)
+        return assigned_ids
+
+    def _has_bug_assignees(self, bug):
+        return bool(self._get_bug_assignee_ids(bug))
+
+    def _resolve_assigned_members(self, bug, request_data):
+        raw_assigned_to_ids = request_data.get("assigned_to_ids", None)
+        if raw_assigned_to_ids is None:
+            raw_single_assignee = request_data.get("assigned_to", None)
+            raw_assigned_to_ids = [] if raw_single_assignee in (None, "", []) else [raw_single_assignee]
+
+        if not isinstance(raw_assigned_to_ids, list):
+            return None, Response({"error": "指派人员格式不正确"}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_ids = []
+        for raw_user_id in raw_assigned_to_ids:
+            if raw_user_id in (None, ""):
+                continue
+            try:
+                user_id = int(raw_user_id)
+            except (TypeError, ValueError):
+                return None, Response({"error": "指派人员格式不正确"}, status=status.HTTP_400_BAD_REQUEST)
+            if user_id not in normalized_ids:
+                normalized_ids.append(user_id)
+
+        if not normalized_ids:
+            return [], None
+
+        members = list(
+            ProjectMember.objects.filter(project=bug.project, user_id__in=normalized_ids)
+            .select_related("user")
+            .distinct()
+        )
+        member_map = {member.user_id: member for member in members}
+        invalid_ids = [user_id for user_id in normalized_ids if user_id not in member_map]
+        if invalid_ids:
+            return None, Response({"error": "指派人必须是当前项目成员"}, status=status.HTTP_400_BAD_REQUEST)
+        return [member_map[user_id] for user_id in normalized_ids], None
+
+    def _can_manage_bug_status(self, bug, user):
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        if user.id in self._get_bug_assignee_ids(bug) or bug.opened_by_id == user.id:
+            return True
+        return ProjectMember.objects.filter(
+            project=bug.project,
+            user=user,
+            role__in=["owner", "admin"],
+        ).exists()
+
+    def _ensure_can_manage_bug_status(self, bug):
+        if self._can_manage_bug_status(bug, self.request.user):
+            return
+        raise PermissionDenied("只有 BUG 指派人、创建人或管理员可以更改 BUG 状态")
+
+    def _apply_bug_status_change(self, bug, target_status, *, user, solution=""):
+        if target_status == TestBug.STATUS_UNASSIGNED:
+            bug.assigned_to = None
+            bug.assigned_at = None
+            bug.status = TestBug.STATUS_UNASSIGNED
+            bug.save(update_fields=["assigned_to", "assigned_at", "status", "updated_at"])
+            bug.assigned_users.clear()
+            return
+
+        if target_status == TestBug.STATUS_ASSIGNED:
+            if not self._has_bug_assignees(bug):
+                raise PermissionDenied("请先为 BUG 指派处理人")
+            bug.status = TestBug.STATUS_ASSIGNED
+            if not bug.assigned_at:
+                bug.assigned_at = timezone.now()
+            bug.save(update_fields=["status", "assigned_at", "updated_at"])
+            return
+
+        if target_status == TestBug.STATUS_CONFIRMED:
+            if not self._has_bug_assignees(bug):
+                raise PermissionDenied("请先为 BUG 指派处理人")
+            bug.status = TestBug.STATUS_CONFIRMED
+            bug.save(update_fields=["status", "updated_at"])
+            return
+
+        if target_status == TestBug.STATUS_FIXED:
+            bug.status = TestBug.STATUS_FIXED
+            bug.resolution = bug.resolution or "fixed"
+            bug.solution = solution or bug.solution
+            bug.resolved_by = user
+            bug.resolved_at = timezone.now()
+            bug.save(
+                update_fields=[
+                    "status",
+                    "resolution",
+                    "solution",
+                    "resolved_by",
+                    "resolved_at",
+                    "updated_at",
+                ]
+            )
+            return
+
+        if target_status == TestBug.STATUS_PENDING_RETEST:
+            if not bug.resolved_at:
+                bug.resolved_at = timezone.now()
+                bug.resolved_by = user
+            bug.status = TestBug.STATUS_PENDING_RETEST
+            bug.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+            return
+
+        if target_status == TestBug.STATUS_CLOSED:
+            bug.status = TestBug.STATUS_CLOSED
+            bug.solution = solution or bug.solution
+            bug.closed_by = user
+            bug.closed_at = timezone.now()
+            bug.save(update_fields=["status", "solution", "closed_by", "closed_at", "updated_at"])
+            return
+
+        raise PermissionDenied("不支持修改为该 BUG 状态")
+
+    def _classify_bug_attachment_type(self, uploaded_file):
+        content_type = str(getattr(uploaded_file, "content_type", "") or "").lower()
+        if content_type.startswith("image/"):
+            return "image"
+        if content_type.startswith("video/"):
+            return "video"
+        return "file"
+
+    @action(detail=True, methods=["post"], url_path="upload-attachments")
+    def upload_attachments(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        section = str(request.data.get("section") or "").strip()
+        if section not in self._attachment_sections:
+            return Response({"error": "请选择有效的附件区域"}, status=status.HTTP_400_BAD_REQUEST)
+
+        uploaded_files = request.FILES.getlist("files")
+        if not uploaded_files and "file" in request.FILES:
+            uploaded_files = [request.FILES["file"]]
+        if not uploaded_files:
+            return Response({"error": "请上传至少一个文件"}, status=status.HTTP_400_BAD_REQUEST)
+        if len(uploaded_files) > 10:
+            return Response({"error": "一次最多上传 10 个附件"}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_size = 20 * 1024 * 1024
+        created_items = []
+        for uploaded_file in uploaded_files:
+            if uploaded_file.size > max_size:
+                return Response(
+                    {"error": f"文件 {uploaded_file.name} 超过 20MB 限制"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            created_items.append(
+                TestBugAttachment.objects.create(
+                    bug=bug,
+                    section=section,
+                    attachment=uploaded_file,
+                    original_name=uploaded_file.name,
+                    file_type=self._classify_bug_attachment_type(uploaded_file),
+                    content_type=getattr(uploaded_file, "content_type", "") or "",
+                    file_size=getattr(uploaded_file, "size", 0) or 0,
+                    uploaded_by=request.user,
+                )
+            )
+
+        serializer = TestBugAttachmentSerializer(created_items, many=True, context=self.get_serializer_context())
+        return Response({"data": serializer.data}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["delete"], url_path=r"attachments/(?P<attachment_id>[^/.]+)")
+    def delete_attachment(self, request, project_pk=None, pk=None, attachment_id=None):
+        bug = self.get_object()
+        attachment = get_object_or_404(TestBugAttachment, pk=attachment_id, bug=bug)
+        attachment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="assign")
     def assign(self, request, project_pk=None, pk=None):
         bug = self.get_object()
-        assignee_id = request.data.get("assigned_to")
-        if not assignee_id:
+        self._ensure_can_manage_bug_status(bug)
+        members, error_response = self._resolve_assigned_members(bug, request.data)
+        if error_response is not None:
+            return error_response
+        if not members:
             return Response({"error": "请选择指派人"}, status=status.HTTP_400_BAD_REQUEST)
-
-        member = ProjectMember.objects.filter(project=bug.project, user_id=assignee_id).select_related("user").first()
-        if member is None:
-            return Response({"error": "指派人必须是当前项目成员"}, status=status.HTTP_400_BAD_REQUEST)
-
-        bug.assigned_to = member.user
+        bug.assigned_to = members[0].user
+        bug.status = TestBug.STATUS_ASSIGNED
         bug.assigned_at = timezone.now()
-        bug.save(update_fields=["assigned_to", "assigned_at", "updated_at"])
+        bug.save(update_fields=["assigned_to", "status", "assigned_at", "updated_at"])
+        bug.assigned_users.set([member.user for member in members])
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
-    @action(detail=True, methods=["post"], url_path="resolve")
-    def resolve(self, request, project_pk=None, pk=None):
+    @action(detail=True, methods=["post"], url_path="change-status")
+    def change_status(self, request, project_pk=None, pk=None):
         bug = self.get_object()
+        self._ensure_can_manage_bug_status(bug)
+        target_status = str(request.data.get("status") or "").strip()
+        if target_status == TestBug.STATUS_EXPIRED:
+            return Response({"error": "已过期状态由系统自动判断，不能手动修改"}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_statuses = {
+            TestBug.STATUS_UNASSIGNED,
+            TestBug.STATUS_ASSIGNED,
+            TestBug.STATUS_CONFIRMED,
+            TestBug.STATUS_FIXED,
+            TestBug.STATUS_PENDING_RETEST,
+            TestBug.STATUS_CLOSED,
+        }
+        if target_status not in allowed_statuses:
+            return Response({"error": "请选择有效的 BUG 状态"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            self._apply_bug_status_change(bug, target_status, user=request.user)
+        except PermissionDenied as exc:
+            return Response({"error": str(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="confirm")
+    def confirm(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        self._ensure_can_manage_bug_status(bug)
+        if not self._has_bug_assignees(bug):
+            return Response({"error": "请先指派处理人"}, status=status.HTTP_400_BAD_REQUEST)
+
+        bug.status = TestBug.STATUS_CONFIRMED
+        bug.save(update_fields=["status", "updated_at"])
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="fix")
+    def fix(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        self._ensure_can_manage_bug_status(bug)
         resolution = request.data.get("resolution")
         solution = request.data.get("solution", "")
 
@@ -2970,7 +3214,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         if resolution not in allowed_resolutions:
             return Response({"error": "请选择有效的解决方案"}, status=status.HTTP_400_BAD_REQUEST)
 
-        bug.status = "resolved"
+        bug.status = TestBug.STATUS_FIXED
         bug.resolution = resolution
         bug.solution = solution
         bug.resolved_by = request.user
@@ -2987,10 +3231,22 @@ class TestBugViewSet(viewsets.ModelViewSet):
         )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
+    @action(detail=True, methods=["post"], url_path="resolve")
+    def resolve(self, request, project_pk=None, pk=None):
+        bug = self.get_object()
+        self._ensure_can_manage_bug_status(bug)
+        if not bug.resolved_at:
+            bug.resolved_at = timezone.now()
+            bug.resolved_by = request.user
+        bug.status = TestBug.STATUS_PENDING_RETEST
+        bug.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, project_pk=None, pk=None):
         bug = self.get_object()
-        bug.status = "active"
+        self._ensure_can_manage_bug_status(bug)
+        bug.status = TestBug.STATUS_CONFIRMED if self._has_bug_assignees(bug) else TestBug.STATUS_UNASSIGNED
         bug.activated_by = request.user
         bug.activated_at = timezone.now()
         bug.activated_count = (bug.activated_count or 0) + 1
@@ -3012,8 +3268,9 @@ class TestBugViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="close")
     def close(self, request, project_pk=None, pk=None):
         bug = self.get_object()
+        self._ensure_can_manage_bug_status(bug)
         solution = request.data.get("solution", "")
-        bug.status = "closed"
+        bug.status = TestBug.STATUS_CLOSED
         bug.solution = solution or bug.solution
         bug.closed_by = request.user
         bug.closed_at = timezone.now()

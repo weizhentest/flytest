@@ -2,7 +2,14 @@ import axios from 'axios';
 import { API_BASE_URL } from '@/config/api';
 import { useAuthStore } from '@/store/authStore';
 
-export type TestBugStatus = 'active' | 'resolved' | 'closed';
+export type TestBugStatus =
+  | 'unassigned'
+  | 'assigned'
+  | 'confirmed'
+  | 'fixed'
+  | 'pending_retest'
+  | 'closed'
+  | 'expired';
 export type TestBugType =
   | 'codeerror'
   | 'config'
@@ -21,6 +28,8 @@ export type TestBugResolution =
   | 'duplicate'
   | 'wontfix'
   | 'bydesign';
+export type TestBugAttachmentSection = 'steps' | 'expected_result' | 'actual_result';
+export type TestBugAttachmentType = 'image' | 'video' | 'file';
 
 export interface BugUserDetail {
   id: number;
@@ -54,6 +63,9 @@ export interface TestBug {
   assigned_to?: number | null;
   assigned_to_name?: string;
   assigned_to_detail?: BugUserDetail | null;
+  assigned_to_ids?: number[];
+  assigned_to_names?: string[];
+  assigned_to_details?: BugUserDetail[];
   opened_by?: number | null;
   opened_by_name?: string;
   creator_detail?: BugUserDetail | null;
@@ -71,8 +83,24 @@ export interface TestBug {
   activated_at?: string | null;
   activated_count?: number;
   solution?: string;
+  attachments?: TestBugAttachment[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface TestBugAttachment {
+  id: number;
+  bug: number;
+  section: TestBugAttachmentSection;
+  attachment?: string;
+  url: string;
+  original_name: string;
+  file_type: TestBugAttachmentType;
+  content_type?: string;
+  file_size?: number;
+  uploaded_by?: number | null;
+  uploaded_by_name?: string;
+  created_at: string;
 }
 
 export interface TestBugListResponse {
@@ -91,6 +119,12 @@ export interface TestBugResponse {
 export interface OperationResponse {
   success: boolean;
   message?: string;
+  error?: string;
+}
+
+export interface TestBugAttachmentUploadResponse {
+  success: boolean;
+  data?: TestBugAttachment[];
   error?: string;
 }
 
@@ -124,8 +158,39 @@ const parseListPayload = (payload: any) => {
   return { items: [], total: 0 };
 };
 
+const normalizeErrorMessage = (message?: string, fallback?: string) => {
+  const raw = String(message || '').trim();
+  if (!raw) {
+    return fallback || '操作失败，请稍后重试';
+  }
+
+  const lower = raw.toLowerCase();
+  if (lower.includes('network error')) {
+    return '网络异常，请检查服务是否正常启动';
+  }
+  if (lower.includes('request failed with status code 500')) {
+    return '服务器处理失败，请稍后重试';
+  }
+  if (lower.includes('request failed with status code 404')) {
+    return '请求的接口不存在';
+  }
+  if (lower.includes('request failed with status code 403')) {
+    return '没有权限执行当前操作';
+  }
+  if (lower.includes('request failed with status code 401')) {
+    return '登录状态已失效，请重新登录';
+  }
+  if (lower.includes('timeout')) {
+    return '请求超时，请稍后重试';
+  }
+  return raw;
+};
+
 const getErrorMessage = (error: any, fallback: string) =>
-  error.response?.data?.error || error.response?.data?.message || error.message || fallback;
+  normalizeErrorMessage(
+    error.response?.data?.error || error.response?.data?.message || error.message,
+    fallback
+  );
 
 export const getTestBugList = async (
   projectId: number,
@@ -221,13 +286,23 @@ const postAction = async (
   }
 };
 
-export const assignTestBug = async (projectId: number, bugId: number, assignedTo: number) =>
-  postAction(projectId, bugId, 'assign', { assigned_to: assignedTo });
+export const assignTestBug = async (projectId: number, bugId: number, assignedToIds: number[]) =>
+  postAction(projectId, bugId, 'assign', { assigned_to_ids: assignedToIds });
+
+export const confirmTestBug = async (projectId: number, bugId: number) =>
+  postAction(projectId, bugId, 'confirm');
+
+export const fixTestBug = async (
+  projectId: number,
+  bugId: number,
+  resolution: TestBugResolution,
+  solution?: string
+) => postAction(projectId, bugId, 'fix', { resolution, solution });
 
 export const resolveTestBug = async (
   projectId: number,
   bugId: number,
-  resolution: TestBugResolution,
+  resolution?: TestBugResolution,
   solution?: string
 ) => postAction(projectId, bugId, 'resolve', { resolution, solution });
 
@@ -237,21 +312,82 @@ export const activateTestBug = async (projectId: number, bugId: number) =>
 export const closeTestBug = async (projectId: number, bugId: number, solution?: string) =>
   postAction(projectId, bugId, 'close', { solution });
 
+export const changeTestBugStatus = async (
+  projectId: number,
+  bugId: number,
+  status: Exclude<TestBugStatus, 'expired'>
+) => postAction(projectId, bugId, 'change-status', { status });
+
+export const uploadTestBugAttachments = async (
+  projectId: number,
+  bugId: number,
+  section: TestBugAttachmentSection,
+  files: File[]
+): Promise<TestBugAttachmentUploadResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+  if (!accessToken) return { success: false, error: '未登录或会话已过期' };
+
+  try {
+    const formData = new FormData();
+    formData.append('section', section);
+    files.forEach((file) => formData.append('files', file));
+
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-bugs/${bugId}/upload-attachments/`,
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'multipart/form-data',
+          Accept: 'application/json',
+        },
+      }
+    );
+    return { success: true, data: unwrapPayload(response.data) };
+  } catch (error: any) {
+    return { success: false, error: getErrorMessage(error, '上传 BUG 附件失败') };
+  }
+};
+
+export const deleteTestBugAttachment = async (
+  projectId: number,
+  bugId: number,
+  attachmentId: number
+): Promise<OperationResponse> => {
+  const headers = getHeaders();
+  if (!headers) return { success: false, error: '未登录或会话已过期' };
+
+  try {
+    await axios.delete(
+      `${API_BASE_URL}/projects/${projectId}/test-bugs/${bugId}/attachments/${attachmentId}/`,
+      { headers }
+    );
+    return { success: true, message: 'BUG 附件删除成功' };
+  } catch (error: any) {
+    return { success: false, error: getErrorMessage(error, '删除 BUG 附件失败') };
+  }
+};
+
 export const TEST_BUG_TYPE_OPTIONS = [
   { label: '代码错误', value: 'codeerror' },
+  { label: '设计缺陷', value: 'design' },
+  { label: '界面优化', value: 'standard' },
+  { label: '性能问题', value: 'performance' },
   { label: '配置相关', value: 'config' },
   { label: '安装部署', value: 'install' },
   { label: '安全相关', value: 'security' },
-  { label: '性能问题', value: 'performance' },
-  { label: '标准规范', value: 'standard' },
-  { label: '设计缺陷', value: 'design' },
   { label: '其他', value: 'others' },
 ];
 
 export const TEST_BUG_STATUS_OPTIONS = [
-  { label: '激活', value: 'active' },
-  { label: '已解决', value: 'resolved' },
+  { label: '未指派', value: 'unassigned' },
+  { label: '未确认', value: 'assigned' },
+  { label: '已确认', value: 'confirmed' },
+  { label: '已修复', value: 'fixed' },
+  { label: '待复测', value: 'pending_retest' },
   { label: '已关闭', value: 'closed' },
+  { label: '已过期', value: 'expired' },
 ];
 
 export const TEST_BUG_RESOLUTION_OPTIONS = [

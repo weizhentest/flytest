@@ -1,5 +1,6 @@
 import django_filters
 from django_filters import BaseInFilter, CharFilter, NumberFilter
+from django.utils import timezone
 
 from .models import TestBug, TestCase, TestCaseModule, TestSuite
 
@@ -72,12 +73,12 @@ class TestCaseFilter(django_filters.FilterSet):
 class TestBugFilter(django_filters.FilterSet):
     suite_id = django_filters.NumberFilter(method="filter_by_suite_and_descendants")
     testcase_id = django_filters.NumberFilter(field_name="testcase_id", lookup_expr="exact")
-    status = django_filters.CharFilter(field_name="status", lookup_expr="exact")
+    status = django_filters.CharFilter(method="filter_by_status")
     severity = django_filters.CharFilter(field_name="severity", lookup_expr="exact")
     priority = django_filters.CharFilter(field_name="priority", lookup_expr="exact")
     bug_type = django_filters.CharFilter(field_name="bug_type", lookup_expr="exact")
     resolution = django_filters.CharFilter(field_name="resolution", lookup_expr="exact")
-    assigned_to = django_filters.NumberFilter(field_name="assigned_to_id", lookup_expr="exact")
+    assigned_to = django_filters.NumberFilter(method="filter_by_assigned_to")
 
     class Meta:
         model = TestBug
@@ -103,3 +104,24 @@ class TestBugFilter(django_filters.FilterSet):
 
         all_suite_ids = suite.get_all_descendant_ids()
         return queryset.filter(suite_id__in=all_suite_ids)
+
+    def filter_by_status(self, queryset, name, value):
+        if not value:
+            return queryset
+
+        normalized = TestBug.normalize_status_value(value)
+        if normalized == TestBug.STATUS_EXPIRED:
+            return queryset.exclude(status=TestBug.STATUS_CLOSED).filter(deadline__lt=timezone.localdate())
+
+        if normalized == TestBug.STATUS_UNASSIGNED:
+            return queryset.filter(status__in=["active", TestBug.STATUS_UNASSIGNED], assigned_users__isnull=True)
+        if normalized == TestBug.STATUS_ASSIGNED:
+            return queryset.filter(status__in=[TestBug.STATUS_ASSIGNED, "active"], assigned_users__isnull=False).distinct()
+        if normalized == TestBug.STATUS_PENDING_RETEST:
+            return queryset.filter(status__in=[TestBug.STATUS_PENDING_RETEST, "resolved"])
+        return queryset.filter(status=normalized)
+
+    def filter_by_assigned_to(self, queryset, name, value):
+        if value in (None, ""):
+            return queryset
+        return queryset.filter(assigned_users__id=value).distinct()

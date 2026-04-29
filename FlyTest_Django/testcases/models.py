@@ -1,5 +1,6 @@
-from django.db import IntegrityError, models, transaction
+﻿from django.db import IntegrityError, models, transaction
 from django.contrib.auth.models import User
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from projects.models import Project # 确保从正确的应用导入Project模型
@@ -26,6 +27,10 @@ def testcase_screenshot_path(instance, filename):
     路径格式: testcase_screenshots/{project_id}/{testcase_id}/{filename}
     """
     return f"testcase_screenshots/{instance.test_case.project.id}/{instance.test_case.id}/{filename}"
+
+
+def testbug_attachment_path(instance, filename):
+    return f"testbug_attachments/{instance.bug.project.id}/{instance.bug.id}/{instance.section}/{filename}"
 
 class TestCase(models.Model):
     """
@@ -706,6 +711,12 @@ class TestBug(models.Model):
         related_name="assigned_test_bugs",
         verbose_name=_("指派给"),
     )
+    assigned_users = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="multi_assigned_test_bugs",
+        verbose_name=_("指派成员"),
+    )
     opened_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -763,9 +774,100 @@ class TestBug(models.Model):
             if self.suite_id and not self.suite.testcases.filter(id=self.testcase_id).exists():
                 raise ValidationError(_("关联测试用例必须已分配到当前测试套件"))
 
+    def has_assignees(self):
+        if self.assigned_to_id:
+            return True
+        if not self.pk:
+            return False
+        return self.assigned_users.exists()
+
+    @classmethod
+    def normalize_status_value(cls, status, assigned_to_id=None, has_assignees=None):
+        if has_assignees is None:
+            has_assignees = bool(assigned_to_id)
+
+        if status == "active":
+            return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
+        if status == "resolved":
+            return cls.STATUS_PENDING_RETEST
+        if status == "closed":
+            return cls.STATUS_CLOSED
+        if status == cls.STATUS_UNASSIGNED:
+            return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
+        if status == cls.STATUS_ASSIGNED:
+            return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
+        if status in {choice[0] for choice in cls.STATUS_CHOICES}:
+            return status
+        return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
+
+    def get_effective_status(self):
+        normalized_status = self.normalize_status_value(
+            self.status,
+            self.assigned_to_id,
+            self.has_assignees(),
+        )
+        if normalized_status != self.STATUS_CLOSED and self.deadline and self.deadline < timezone.localdate():
+            return self.STATUS_EXPIRED
+        return normalized_status
+
+    def get_effective_status_display(self):
+        effective_status = self.get_effective_status()
+        return dict(self.STATUS_CHOICES).get(effective_status, effective_status)
+
     def save(self, *args, **kwargs):
         self.clean()
+        self.status = self.normalize_status_value(self.status, self.assigned_to_id)
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"BUG#{self.pk} {self.title}"
+
+
+class TestBugAttachment(models.Model):
+    SECTION_CHOICES = [
+        ("steps", _("重现步骤")),
+        ("expected_result", _("期望结果")),
+        ("actual_result", _("实际结果")),
+    ]
+
+    TYPE_CHOICES = [
+        ("image", _("图片")),
+        ("video", _("视频")),
+        ("file", _("文件")),
+    ]
+
+    bug = models.ForeignKey(
+        TestBug,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        verbose_name=_("所属Bug"),
+    )
+    section = models.CharField(_("所属区域"), max_length=30, choices=SECTION_CHOICES)
+    attachment = models.FileField(_("附件"), upload_to=testbug_attachment_path)
+    original_name = models.CharField(_("原始文件名"), max_length=255, blank=True, default="")
+    file_type = models.CharField(_("附件类型"), max_length=20, choices=TYPE_CHOICES, default="file")
+    content_type = models.CharField(_("内容类型"), max_length=120, blank=True, default="")
+    file_size = models.PositiveBigIntegerField(_("文件大小"), default=0)
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_test_bug_attachments",
+        verbose_name=_("上传人"),
+    )
+    created_at = models.DateTimeField(_("上传时间"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("测试Bug附件")
+        verbose_name_plural = _("测试Bug附件")
+        ordering = ["section", "-created_at", "-id"]
+
+    def __str__(self):
+        file_name = self.original_name or os.path.basename(self.attachment.name)
+        return f"{self.bug_id} - {self.section} - {file_name}"
+
+    def delete(self, *args, **kwargs):
+        if self.attachment and os.path.isfile(self.attachment.path):
+            os.remove(self.attachment.path)
+        super().delete(*args, **kwargs)

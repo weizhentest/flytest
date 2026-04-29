@@ -75,6 +75,7 @@ declare module 'vue' {
     IconCalendar: typeof import('@arco-design/web-vue/es/icon')['IconCalendar']
     IconClose: typeof import('@arco-design/web-vue/es/icon')['IconClose']
     IconDelete: typeof import('@arco-design/web-vue/es/icon')['IconDelete']
+    IconDown: typeof import('@arco-design/web-vue/es/icon')['IconDown']
     IconDownload: typeof import('@arco-design/web-vue/es/icon')['IconDownload']
     IconEye: typeof import('@arco-design/web-vue/es/icon')['IconEye']
     IconFile: typeof import('@arco-design/web-vue/es/icon')['IconFile']

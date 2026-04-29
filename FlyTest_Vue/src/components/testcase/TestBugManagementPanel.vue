@@ -1,6 +1,7 @@
 <template>
   <div class="bug-panel">
-    <div class="bug-panel-header">
+    <template v-if="viewMode === 'list'">
+      <div class="bug-panel-header">
       <div class="bug-panel-heading">
         <div class="bug-panel-title">BUG管理</div>
         <div class="bug-panel-subtitle">按禅道式流转管理当前套件中的缺陷，优先处理激活状态与高优先级问题。</div>
@@ -175,8 +176,10 @@
               <a-button size="mini" type="outline">更多</a-button>
               <template #content>
                 <a-doption value="assign">指派</a-doption>
-                <a-doption v-if="record.status === 'active'" value="resolve">解决</a-doption>
-                <a-doption v-if="record.status !== 'active'" value="activate">激活</a-doption>
+                <a-doption v-if="record.status === 'assigned'" value="confirm">确认</a-doption>
+                <a-doption v-if="record.status === 'confirmed'" value="fix">修复</a-doption>
+                <a-doption v-if="record.status === 'fixed'" value="resolve">提交复测</a-doption>
+                <a-doption v-if="['pending_retest', 'closed', 'expired'].includes(record.status)" value="activate">激活</a-doption>
                 <a-doption value="close" :disabled="record.status === 'closed'">关闭</a-doption>
                 <a-doption value="delete">删除</a-doption>
               </template>
@@ -196,6 +199,90 @@
         show-page-size
       />
     </div>
+    </template>
+
+    <template v-else>
+      <div class="bug-detail-page">
+        <div class="bug-detail-page-header">
+          <div class="bug-detail-page-title">
+            <a-button type="text" size="small" @click="backToList">返回列表</a-button>
+            <h2>BUG详情</h2>
+          </div>
+          <div class="bug-detail-page-actions" v-if="detailBug">
+            <a-space>
+              <a-button @click="openDetail(detailBug)">刷新</a-button>
+              <a-button type="primary" @click="openEditModal(detailBug)">编辑</a-button>
+              <a-dropdown trigger="click" @select="(value) => handleActionSelect(detailBug, String(value))">
+                <a-button type="outline">更多</a-button>
+                <template #content>
+                  <a-doption value="assign">指派</a-doption>
+                  <a-doption v-if="detailBug.status === 'assigned'" value="confirm">确认</a-doption>
+                  <a-doption v-if="detailBug.status === 'confirmed'" value="fix">修复</a-doption>
+                  <a-doption v-if="detailBug.status === 'fixed'" value="resolve">提交复测</a-doption>
+                  <a-doption v-if="['pending_retest', 'closed', 'expired'].includes(detailBug.status)" value="activate">激活</a-doption>
+                  <a-doption value="close" :disabled="detailBug.status === 'closed'">关闭</a-doption>
+                  <a-doption value="delete">删除</a-doption>
+                </template>
+              </a-dropdown>
+            </a-space>
+          </div>
+        </div>
+
+        <a-spin :loading="detailLoading" class="bug-detail-spin">
+          <template v-if="detailBug">
+            <div class="bug-detail">
+              <div class="bug-detail-header">
+                <div class="bug-detail-title">{{ detailBug.title }}</div>
+                <div class="bug-detail-tags">
+                  <a-tag :color="getStatusColor(detailBug.status)">{{ detailBug.status_display || detailBug.status }}</a-tag>
+                  <a-tag :color="getSeverityColor(detailBug.severity)">S{{ detailBug.severity }}</a-tag>
+                  <a-tag :color="getPriorityColor(detailBug.priority)">P{{ detailBug.priority }}</a-tag>
+                  <a-tag color="blue">{{ detailBug.bug_type_display || '-' }}</a-tag>
+                </div>
+              </div>
+
+              <div class="bug-detail-section">
+                <div class="bug-detail-section-title">基本信息</div>
+                <div class="bug-detail-grid">
+                  <div><strong>所属套件：</strong>{{ detailBug.suite_name || '-' }}</div>
+                  <div><strong>关联用例：</strong>{{ detailBug.testcase_name || '-' }}</div>
+                  <div><strong>指派给：</strong>{{ getAssignedUserName(detailBug) }}</div>
+                  <div><strong>创建人：</strong>{{ getCreatorName(detailBug) }}</div>
+                  <div><strong>创建时间：</strong>{{ formatDate(detailBug.opened_at) }}</div>
+                  <div><strong>指派时间：</strong>{{ detailBug.assigned_at ? formatDate(detailBug.assigned_at) : '-' }}</div>
+                  <div><strong>解决时间：</strong>{{ detailBug.resolved_at ? formatDate(detailBug.resolved_at) : '-' }}</div>
+                  <div><strong>关闭时间：</strong>{{ detailBug.closed_at ? formatDate(detailBug.closed_at) : '-' }}</div>
+                  <div><strong>解决方案：</strong>{{ detailBug.resolution_display || '-' }}</div>
+                  <div><strong>激活次数：</strong>{{ detailBug.activated_count ?? 0 }}</div>
+                  <div><strong>截止日期：</strong>{{ detailBug.deadline || '-' }}</div>
+                  <div><strong>关键词：</strong>{{ detailBug.keywords || '-' }}</div>
+                </div>
+              </div>
+
+              <div class="bug-detail-section">
+                <div class="bug-detail-section-title">重现步骤</div>
+                <div class="bug-detail-content">{{ detailBug.steps || '-' }}</div>
+              </div>
+
+              <div class="bug-detail-section">
+                <div class="bug-detail-section-title">期望结果</div>
+                <div class="bug-detail-content">{{ detailBug.expected_result || '-' }}</div>
+              </div>
+
+              <div class="bug-detail-section">
+                <div class="bug-detail-section-title">实际结果</div>
+                <div class="bug-detail-content">{{ detailBug.actual_result || '-' }}</div>
+              </div>
+
+              <div class="bug-detail-section">
+                <div class="bug-detail-section-title">处理备注</div>
+                <div class="bug-detail-content">{{ detailBug.solution || '-' }}</div>
+              </div>
+            </div>
+          </template>
+        </a-spin>
+      </div>
+    </template>
 
     <a-modal
       v-model:visible="formVisible"
@@ -219,7 +306,7 @@
             </a-form-item>
 
             <a-form-item field="assigned_to" label="指派给">
-              <a-select v-model="formState.assigned_to" allow-clear placeholder="请选择处理人">
+              <a-select v-model="formState.assigned_to" multiple allow-clear placeholder="请选择处理人">
                 <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
                   {{ member.user_detail.username }}
                 </a-option>
@@ -286,11 +373,28 @@
       <a-form :model="actionForm" layout="vertical">
         <template v-if="actionType === 'assign'">
           <a-form-item field="assigned_to" label="指派给" required>
-            <a-select v-model="actionForm.assigned_to" placeholder="请选择项目成员">
+            <a-select v-model="actionForm.assigned_to" multiple allow-clear placeholder="请选择项目成员">
               <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
                 {{ member.user_detail.username }}
               </a-option>
             </a-select>
+          </a-form-item>
+        </template>
+
+        <template v-else-if="actionType === 'confirm'">
+          <div class="action-confirm-tip">确认后 BUG 状态将更新为已确认。</div>
+        </template>
+
+        <template v-else-if="actionType === 'fix'">
+          <a-form-item field="resolution" label="解决方案" required>
+            <a-select v-model="actionForm.resolution">
+              <a-option v-for="item in TEST_BUG_RESOLUTION_OPTIONS" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item field="solution" label="解决备注">
+            <a-textarea v-model="actionForm.solution" :auto-size="{ minRows: 4, maxRows: 8 }" />
           </a-form-item>
         </template>
 
@@ -323,61 +427,6 @@
       </a-form>
     </a-modal>
 
-    <a-drawer v-model:visible="detailVisible" width="680px" :footer="false" title="Bug详情">
-      <a-spin :loading="detailLoading" style="width: 100%;">
-        <template v-if="detailBug">
-          <div class="bug-detail">
-            <div class="bug-detail-header">
-              <div class="bug-detail-title">{{ detailBug.title }}</div>
-              <div class="bug-detail-tags">
-                <a-tag :color="getStatusColor(detailBug.status)">{{ detailBug.status_display || detailBug.status }}</a-tag>
-                <a-tag :color="getSeverityColor(detailBug.severity)">S{{ detailBug.severity }}</a-tag>
-                <a-tag :color="getPriorityColor(detailBug.priority)">P{{ detailBug.priority }}</a-tag>
-                <a-tag color="blue">{{ detailBug.bug_type_display || '-' }}</a-tag>
-              </div>
-            </div>
-
-            <div class="bug-detail-section">
-              <div class="bug-detail-section-title">基本信息</div>
-              <div class="bug-detail-grid">
-                <div><strong>所属套件：</strong>{{ detailBug.suite_name || '-' }}</div>
-                <div><strong>关联用例：</strong>{{ detailBug.testcase_name || '-' }}</div>
-                <div><strong>指派给：</strong>{{ getAssignedUserName(detailBug) }}</div>
-                <div><strong>创建人：</strong>{{ getCreatorName(detailBug) }}</div>
-                <div><strong>创建时间：</strong>{{ formatDate(detailBug.opened_at) }}</div>
-                <div><strong>指派时间：</strong>{{ detailBug.assigned_at ? formatDate(detailBug.assigned_at) : '-' }}</div>
-                <div><strong>解决时间：</strong>{{ detailBug.resolved_at ? formatDate(detailBug.resolved_at) : '-' }}</div>
-                <div><strong>关闭时间：</strong>{{ detailBug.closed_at ? formatDate(detailBug.closed_at) : '-' }}</div>
-                <div><strong>解决方案：</strong>{{ detailBug.resolution_display || '-' }}</div>
-                <div><strong>激活次数：</strong>{{ detailBug.activated_count ?? 0 }}</div>
-                <div><strong>截止日期：</strong>{{ detailBug.deadline || '-' }}</div>
-                <div><strong>关键词：</strong>{{ detailBug.keywords || '-' }}</div>
-              </div>
-            </div>
-
-            <div class="bug-detail-section">
-              <div class="bug-detail-section-title">重现步骤</div>
-              <div class="bug-detail-content">{{ detailBug.steps || '-' }}</div>
-            </div>
-
-            <div class="bug-detail-section">
-              <div class="bug-detail-section-title">期望结果</div>
-              <div class="bug-detail-content">{{ detailBug.expected_result || '-' }}</div>
-            </div>
-
-            <div class="bug-detail-section">
-              <div class="bug-detail-section-title">实际结果</div>
-              <div class="bug-detail-content">{{ detailBug.actual_result || '-' }}</div>
-            </div>
-
-            <div class="bug-detail-section">
-              <div class="bug-detail-section-title">处理备注</div>
-              <div class="bug-detail-content">{{ detailBug.solution || '-' }}</div>
-            </div>
-          </div>
-        </template>
-      </a-spin>
-    </a-drawer>
   </div>
 </template>
 
@@ -393,8 +442,10 @@ import {
   activateTestBug,
   assignTestBug,
   closeTestBug,
+  confirmTestBug,
   createTestBug,
   deleteTestBug,
+  fixTestBug,
   getTestBugDetail,
   getTestBugList,
   resolveTestBug,
@@ -407,7 +458,7 @@ import {
 import { getProjectMembers, type ProjectMember } from '@/services/projectService';
 import { getTestCaseList, type TestCase } from '@/services/testcaseService';
 
-type ActionType = 'assign' | 'resolve' | 'activate' | 'close' | null;
+type ActionType = 'assign' | 'confirm' | 'fix' | 'resolve' | 'activate' | 'close' | null;
 type StatusView = 'all' | TestBugStatus;
 type QuickView = 'all' | 'assigned_to_me' | 'opened_by_me' | 'unassigned' | 'unresolved';
 
@@ -425,7 +476,7 @@ const submitting = ref(false);
 const actionSubmitting = ref(false);
 const formVisible = ref(false);
 const actionVisible = ref(false);
-const detailVisible = ref(false);
+const viewMode = ref<'list' | 'detail'>('list');
 const bugList = ref<TestBug[]>([]);
 const projectMembers = ref<ProjectMember[]>([]);
 const suiteTestCases = ref<TestCase[]>([]);
@@ -453,7 +504,7 @@ const pagination = reactive({
 const formState = reactive({
   title: '',
   testcase: undefined as number | undefined,
-  assigned_to: undefined as number | undefined,
+  assigned_to: [] as number[],
   bug_type: 'codeerror' as TestBugType,
   severity: '3',
   priority: '3',
@@ -465,20 +516,18 @@ const formState = reactive({
 });
 
 const actionForm = reactive({
-  assigned_to: undefined as number | undefined,
+  assigned_to: [] as number[],
   resolution: 'fixed' as TestBugResolution,
   solution: '',
 });
 
 const statusCards = computed(() => [
   { key: 'all' as const, label: '全部', count: bugList.value.length },
-  { key: 'active' as const, label: '激活', count: bugList.value.filter((item) => item.status === 'active').length },
-  {
-    key: 'resolved' as const,
-    label: '已解决',
-    count: bugList.value.filter((item) => item.status === 'resolved').length,
-  },
+  { key: 'unassigned' as const, label: '未指派', count: bugList.value.filter((item) => item.status === 'unassigned').length },
+  { key: 'assigned' as const, label: '未确认', count: bugList.value.filter((item) => item.status === 'assigned').length },
+  { key: 'pending_retest' as const, label: '待复测', count: bugList.value.filter((item) => item.status === 'pending_retest').length },
   { key: 'closed' as const, label: '已关闭', count: bugList.value.filter((item) => item.status === 'closed').length },
+  { key: 'expired' as const, label: '已过期', count: bugList.value.filter((item) => item.status === 'expired').length },
 ]);
 
 const quickViews = [
@@ -495,13 +544,13 @@ const filteredBugList = computed(() =>
       return false;
     }
 
-    if (activeQuickView.value === 'assigned_to_me' && bug.assigned_to !== currentUserId.value) {
+    if (activeQuickView.value === 'assigned_to_me' && !getAssignedUserIds(bug).includes(currentUserId.value || -1)) {
       return false;
     }
     if (activeQuickView.value === 'opened_by_me' && bug.opened_by !== currentUserId.value) {
       return false;
     }
-    if (activeQuickView.value === 'unassigned' && bug.assigned_to) {
+    if (activeQuickView.value === 'unassigned' && getAssignedUserIds(bug).length > 0) {
       return false;
     }
     if (activeQuickView.value === 'unresolved' && bug.status === 'closed') {
@@ -519,6 +568,8 @@ const pagedBugList = computed(() => {
 
 const actionModalTitle = computed(() => {
   if (actionType.value === 'assign') return '指派 Bug';
+  if (actionType.value === 'confirm') return '确认 Bug';
+  if (actionType.value === 'fix') return '修复 Bug';
   if (actionType.value === 'resolve') return '解决 Bug';
   if (actionType.value === 'activate') return '激活 Bug';
   if (actionType.value === 'close') return '关闭 Bug';
@@ -528,7 +579,7 @@ const actionModalTitle = computed(() => {
 const resetForm = () => {
   formState.title = '';
   formState.testcase = undefined;
-  formState.assigned_to = undefined;
+  formState.assigned_to = [];
   formState.bug_type = 'codeerror';
   formState.severity = '3';
   formState.priority = '3';
@@ -542,7 +593,7 @@ const resetForm = () => {
 const resetActionState = () => {
   actionBug.value = null;
   actionType.value = null;
-  actionForm.assigned_to = undefined;
+  actionForm.assigned_to = [];
   actionForm.resolution = 'fixed';
   actionForm.solution = '';
 };
@@ -566,7 +617,25 @@ const getStatusViewLabel = (value: StatusView) => {
 
 const getQuickViewLabel = (value: QuickView) => quickViews.find((item) => item.key === value)?.label || value;
 
-const getAssignedUserName = (bug: TestBug) => bug.assigned_to_detail?.username || bug.assigned_to_name || '-';
+const getAssignedUserIds = (bug: TestBug) => {
+  if (Array.isArray(bug.assigned_to_ids) && bug.assigned_to_ids.length > 0) {
+    return bug.assigned_to_ids.map((item) => Number(item));
+  }
+  if (bug.assigned_to) {
+    return [Number(bug.assigned_to)];
+  }
+  return [];
+};
+
+const getAssignedUserName = (bug: TestBug) => {
+  if (Array.isArray(bug.assigned_to_names) && bug.assigned_to_names.length > 0) {
+    return bug.assigned_to_names.join('、');
+  }
+  if (Array.isArray(bug.assigned_to_details) && bug.assigned_to_details.length > 0) {
+    return bug.assigned_to_details.map((item) => item.username).join('、');
+  }
+  return bug.assigned_to_detail?.username || bug.assigned_to_name || '-';
+};
 
 const getCreatorName = (bug: TestBug) => bug.creator_detail?.username || bug.opened_by_name || '-';
 
@@ -655,7 +724,7 @@ const openEditModal = async (bug: TestBug) => {
 
   formState.title = detail.title;
   formState.testcase = detail.testcase || undefined;
-  formState.assigned_to = detail.assigned_to || undefined;
+  formState.assigned_to = getAssignedUserIds(detail);
   formState.bug_type = detail.bug_type;
   formState.severity = detail.severity;
   formState.priority = detail.priority;
@@ -668,13 +737,17 @@ const openEditModal = async (bug: TestBug) => {
 };
 
 const openDetail = async (bug: TestBug) => {
-  detailVisible.value = true;
   detailLoading.value = true;
+  viewMode.value = 'detail';
   try {
     detailBug.value = await fetchBugDetail(bug.id);
   } finally {
     detailLoading.value = false;
   }
+};
+
+const backToList = () => {
+  viewMode.value = 'list';
 };
 
 const submitBug = async () => {
@@ -689,7 +762,7 @@ const submitBug = async () => {
     const payload = {
       suite: props.selectedSuiteId,
       testcase: formState.testcase,
-      assigned_to: formState.assigned_to,
+      assigned_to_ids: formState.assigned_to,
       title: formState.title.trim(),
       bug_type: formState.bug_type,
       severity: formState.severity,
@@ -722,7 +795,7 @@ const submitBug = async () => {
 const openActionModal = (bug: TestBug, type: Exclude<ActionType, null>) => {
   actionBug.value = bug;
   actionType.value = type;
-  actionForm.assigned_to = bug.assigned_to || undefined;
+  actionForm.assigned_to = getAssignedUserIds(bug);
   actionForm.resolution = 'fixed';
   actionForm.solution = bug.solution || '';
   actionVisible.value = true;
@@ -733,12 +806,12 @@ const submitAction = async () => {
     return;
   }
 
-  if (actionType.value === 'assign' && !actionForm.assigned_to) {
-    Message.warning('请选择指派人');
+  if (actionType.value === 'assign' && actionForm.assigned_to.length === 0) {
+    Message.warning('请选择指派人员');
     return;
   }
 
-  if (actionType.value === 'resolve' && !actionForm.resolution) {
+  if ((actionType.value === 'fix' || actionType.value === 'resolve') && !actionForm.resolution) {
     Message.warning('请选择解决方案');
     return;
   }
@@ -747,7 +820,16 @@ const submitAction = async () => {
   try {
     let response;
     if (actionType.value === 'assign') {
-      response = await assignTestBug(props.currentProjectId, actionBug.value.id, actionForm.assigned_to!);
+      response = await assignTestBug(props.currentProjectId, actionBug.value.id, actionForm.assigned_to);
+    } else if (actionType.value === 'confirm') {
+      response = await confirmTestBug(props.currentProjectId, actionBug.value.id);
+    } else if (actionType.value === 'fix') {
+      response = await fixTestBug(
+        props.currentProjectId,
+        actionBug.value.id,
+        actionForm.resolution,
+        actionForm.solution.trim()
+      );
     } else if (actionType.value === 'resolve') {
       response = await resolveTestBug(
         props.currentProjectId,
@@ -770,7 +852,7 @@ const submitAction = async () => {
     actionVisible.value = false;
     await fetchBugs();
 
-    if (detailVisible.value && detailBug.value?.id === actionBug.value.id) {
+    if (viewMode.value === 'detail' && detailBug.value?.id === actionBug.value.id) {
       detailBug.value = await fetchBugDetail(actionBug.value.id);
     }
 
@@ -782,7 +864,9 @@ const submitAction = async () => {
 
 const getActionSuccessMessage = (type: Exclude<ActionType, null>) => {
   if (type === 'assign') return 'BUG 指派成功';
-  if (type === 'resolve') return 'BUG 已解决';
+  if (type === 'confirm') return 'BUG 已确认';
+  if (type === 'fix') return 'BUG 已修复';
+  if (type === 'resolve') return 'BUG 已提交复测';
   if (type === 'activate') return 'BUG 已激活';
   return 'BUG 已关闭';
 };
@@ -804,7 +888,7 @@ const handleActionSelect = async (bug: TestBug, action: string) => {
         }
 
         if (detailBug.value?.id === bug.id) {
-          detailVisible.value = false;
+          viewMode.value = 'list';
           detailBug.value = null;
         }
 
@@ -827,8 +911,13 @@ const handleFilterChange = async () => {
 };
 
 const getStatusColor = (status?: string) => {
-  if (status === 'resolved') return 'green';
+  if (status === 'unassigned') return 'gray';
+  if (status === 'assigned') return 'arcoblue';
+  if (status === 'confirmed') return 'blue';
+  if (status === 'fixed') return 'green';
+  if (status === 'pending_retest') return 'gold';
   if (status === 'closed') return 'gray';
+  if (status === 'expired') return 'red';
   return 'arcoblue';
 };
 
@@ -857,6 +946,7 @@ watch(
       bugList.value = [];
       suiteTestCases.value = [];
       detailBug.value = null;
+      viewMode.value = 'list';
       pagination.current = 1;
       activeStatusView.value = 'all';
       activeQuickView.value = 'all';
@@ -1039,6 +1129,45 @@ defineExpose({
   margin-top: 12px;
 }
 
+.bug-detail-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bug-detail-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.bug-detail-page-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.bug-detail-page-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-1);
+}
+
+.bug-detail-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bug-detail-spin {
+  width: 100%;
+}
+
 .bug-form-section-title,
 .bug-detail-section-title {
   margin-bottom: 10px;
@@ -1106,6 +1235,7 @@ defineExpose({
 
 @media (max-width: 960px) {
   .bug-panel-header,
+  .bug-detail-page-header,
   .bug-form-grid,
   .bug-detail-grid,
   .bug-status-grid,
@@ -1113,7 +1243,8 @@ defineExpose({
     grid-template-columns: 1fr;
   }
 
-  .bug-panel-header {
+  .bug-panel-header,
+  .bug-detail-page-header {
     flex-direction: column;
   }
 }
