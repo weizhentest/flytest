@@ -34,7 +34,24 @@
       @change="handleFileChange"
     />
 
-    <div v-if="attachments.length" class="attachment-list">
+    <div v-if="allAttachments.length" class="attachment-list">
+      <div v-for="pending in pendingFiles" :key="pending.id" class="attachment-item">
+        <template v-if="pending.file_type === 'image'">
+          <img :src="pending.url" :alt="pending.original_name" class="attachment-image" />
+        </template>
+        <template v-else-if="pending.file_type === 'video'">
+          <video class="attachment-video" controls :src="pending.url" />
+        </template>
+        <template v-else>
+          <span class="attachment-file-link">{{ pending.original_name }}</span>
+        </template>
+
+        <div class="attachment-meta">
+          <span class="attachment-name">{{ pending.original_name }}</span>
+          <a-button size="mini" status="danger" @click="$emit('remove-pending-file', pending.id)">删除</a-button>
+        </div>
+      </div>
+
       <div v-for="attachment in attachments" :key="attachment.id" class="attachment-item">
         <template v-if="attachment.file_type === 'image'">
           <a :href="attachment.url" target="_blank" rel="noreferrer">
@@ -68,10 +85,12 @@ const props = withDefaults(
     modelValue: string;
     placeholder?: string;
     attachments?: TestBugAttachment[];
+    pendingFiles?: PendingBugAttachmentFile[];
   }>(),
   {
     placeholder: '请输入内容',
     attachments: () => [],
+    pendingFiles: () => [],
   }
 );
 
@@ -79,10 +98,27 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void;
   (e: 'upload-files', files: File[]): void;
   (e: 'remove-attachment', attachment: TestBugAttachment): void;
+  (e: 'remove-pending-file', id: string): void;
 }>();
+
+export interface PendingBugAttachmentFile {
+  id: string;
+  original_name: string;
+  file_type: 'image' | 'video' | 'file';
+  url: string;
+}
 
 const editorRef = ref<HTMLDivElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const allAttachments = ref<(TestBugAttachment | PendingBugAttachmentFile)[]>([]);
+
+watch(
+  () => [props.attachments, props.pendingFiles],
+  () => {
+    allAttachments.value = [...props.pendingFiles, ...props.attachments];
+  },
+  { immediate: true, deep: true }
+);
 
 const syncEditorHtml = async (value: string) => {
   await nextTick();

@@ -1,4 +1,4 @@
-from rest_framework import serializers
+﻿from rest_framework import serializers
 from django.db.utils import OperationalError, ProgrammingError
 from django.contrib.auth.models import User
 from django.db import transaction
@@ -11,6 +11,7 @@ from .models import (
     TestSuite,
     TestBug,
     TestBugAttachment,
+    TestBugActivity,
     TestExecution,
     TestCaseResult,
 )
@@ -633,6 +634,7 @@ class TestBugSerializer(serializers.ModelSerializer):
     bug_type_display = serializers.CharField(source="get_bug_type_display", read_only=True)
     resolution_display = serializers.CharField(source="get_resolution_display", read_only=True)
     attachments = serializers.SerializerMethodField()
+    activity_logs = serializers.SerializerMethodField()
 
     class Meta:
         model = TestBug
@@ -656,6 +658,7 @@ class TestBugSerializer(serializers.ModelSerializer):
             "resolution",
             "resolution_display",
             "attachments",
+            "activity_logs",
             "keywords",
             "deadline",
             "assigned_to",
@@ -804,6 +807,13 @@ class TestBugSerializer(serializers.ModelSerializer):
         except (OperationalError, ProgrammingError):
             return []
 
+    def get_activity_logs(self, obj):
+        try:
+            activities = obj.activities.select_related("operator").all().order_by("-created_at")
+            return TestBugActivitySerializer(activities, many=True, context=self.context).data
+        except (OperationalError, ProgrammingError):
+            return []
+
 
 class TestBugAttachmentSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
@@ -838,6 +848,7 @@ class TestBugAttachmentSerializer(serializers.ModelSerializer):
 class TestBugListSerializer(serializers.ModelSerializer):
     suite_name = serializers.CharField(source="suite.name", read_only=True)
     testcase_name = serializers.CharField(source="testcase.name", read_only=True)
+    testcase_names = serializers.SerializerMethodField()
     assigned_to_name = serializers.CharField(source="assigned_to.username", read_only=True)
     assigned_to_names = serializers.SerializerMethodField()
     assigned_to_ids = serializers.SerializerMethodField()
@@ -856,6 +867,7 @@ class TestBugListSerializer(serializers.ModelSerializer):
             "suite_name",
             "testcase",
             "testcase_name",
+            "testcase_names",
             "title",
             "bug_type",
             "bug_type_display",
@@ -894,6 +906,12 @@ class TestBugListSerializer(serializers.ModelSerializer):
 
     def get_assigned_to_ids(self, obj):
         return list(obj.assigned_users.values_list("id", flat=True))
+
+    def get_testcase_names(self, obj):
+        names = list(obj.related_testcases.values_list("name", flat=True))
+        if names:
+            return names
+        return [obj.testcase.name] if obj.testcase_id and obj.testcase else []
 
 
 from urllib.parse import urlparse
@@ -999,6 +1017,26 @@ class TestExecutionSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class TestBugActivitySerializer(serializers.ModelSerializer):
+    operator_name = serializers.CharField(source="operator.username", read_only=True)
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+
+    class Meta:
+        model = TestBugActivity
+        fields = [
+            "id",
+            "bug",
+            "action",
+            "action_display",
+            "content",
+            "metadata",
+            "operator",
+            "operator_name",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 class TestExecutionCreateSerializer(serializers.Serializer):

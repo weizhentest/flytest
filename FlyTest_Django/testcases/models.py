@@ -604,6 +604,14 @@ class TestCaseAssignment(models.Model):
 class TestBug(models.Model):
     """测试套件下的缺陷管理，参考禅道 BUG 流转。"""
 
+    STATUS_UNASSIGNED = "unassigned"
+    STATUS_ASSIGNED = "assigned"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_FIXED = "fixed"
+    STATUS_PENDING_RETEST = "pending_retest"
+    STATUS_CLOSED = "closed"
+    STATUS_EXPIRED = "expired"
+
     SEVERITY_CHOICES = [
         ("1", _("1")),
         ("2", _("2")),
@@ -619,31 +627,50 @@ class TestBug(models.Model):
     ]
 
     TYPE_CHOICES = [
-        ("codeerror", _("Code Error")),
-        ("config", _("Config")),
-        ("install", _("Install")),
-        ("security", _("Security")),
-        ("performance", _("Performance")),
-        ("standard", _("Standard")),
-        ("design", _("Design")),
-        ("others", _("Others")),
+        ("codeerror", _("代码错误")),
+        ("config", _("配置相关")),
+        ("install", _("安装部署")),
+        ("security", _("安全相关")),
+        ("performance", _("性能问题")),
+        ("standard", _("界面优化")),
+        ("design", _("设计缺陷")),
+        ("others", _("其他")),
     ]
 
-    STATUS_CHOICES = [
-        ("active", _("Active")),
-        ("resolved", _("Resolved")),
-        ("closed", _("Closed")),
+    WORKFLOW_STATUS_CHOICES = [
+        (STATUS_UNASSIGNED, _("未指派")),
+        (STATUS_ASSIGNED, _("未确认")),
+        (STATUS_CONFIRMED, _("已确认")),
+        (STATUS_FIXED, _("已修复")),
+        (STATUS_PENDING_RETEST, _("待复测")),
+        (STATUS_CLOSED, _("已关闭")),
+        (STATUS_EXPIRED, _("已过期")),
+    ]
+
+    LEGACY_STATUS_CHOICES = [
+        ("active", _("激活中")),
+        ("resolved", _("已解决")),
+        ("closed", _("已关闭")),
+    ]
+
+    STATUS_CHOICES = LEGACY_STATUS_CHOICES + [
+        (STATUS_UNASSIGNED, _("未指派")),
+        (STATUS_ASSIGNED, _("未确认")),
+        (STATUS_CONFIRMED, _("已确认")),
+        (STATUS_FIXED, _("已修复")),
+        (STATUS_PENDING_RETEST, _("待复测")),
+        (STATUS_EXPIRED, _("已过期")),
     ]
 
     RESOLUTION_CHOICES = [
         ("", _("-")),
-        ("fixed", _("Fixed")),
-        ("postponed", _("Postponed")),
-        ("notrepro", _("Not Repro")),
-        ("external", _("External")),
-        ("duplicate", _("Duplicate")),
-        ("wontfix", _("Wont Fix")),
-        ("bydesign", _("By Design")),
+        ("fixed", _("已修复")),
+        ("postponed", _("延期处理")),
+        ("notrepro", _("无法重现")),
+        ("external", _("外部原因")),
+        ("duplicate", _("重复 Bug")),
+        ("wontfix", _("不予修复")),
+        ("bydesign", _("设计如此")),
     ]
 
     project = models.ForeignKey(
@@ -665,6 +692,12 @@ class TestBug(models.Model):
         blank=True,
         related_name="bugs",
         verbose_name=_("关联测试用例"),
+    )
+    related_testcases = models.ManyToManyField(
+        TestCase,
+        blank=True,
+        related_name="related_bugs",
+        verbose_name=_("关联测试用例列表"),
     )
     title = models.CharField(_("Bug标题"), max_length=255)
     steps = models.TextField(_("重现步骤"), blank=True, default="")
@@ -774,6 +807,23 @@ class TestBug(models.Model):
             if self.suite_id and not self.suite.testcases.filter(id=self.testcase_id).exists():
                 raise ValidationError(_("关联测试用例必须已分配到当前测试套件"))
 
+        if self.pk and self.suite_id:
+            invalid_related_ids = list(
+                self.related_testcases.exclude(project_id=self.project_id).values_list("id", flat=True)
+            )
+            if invalid_related_ids:
+                raise ValidationError(_("关联测试用例必须属于当前项目"))
+
+            suite_testcase_ids = set(self.suite.testcases.values_list("id", flat=True))
+            if suite_testcase_ids:
+                missing_suite_ids = [
+                    testcase_id
+                    for testcase_id in self.related_testcases.values_list("id", flat=True)
+                    if testcase_id not in suite_testcase_ids
+                ]
+                if missing_suite_ids:
+                    raise ValidationError(_("只能关联当前套件中的测试用例"))
+
     def has_assignees(self):
         if self.assigned_to_id:
             return True
@@ -812,7 +862,7 @@ class TestBug(models.Model):
 
     def get_effective_status_display(self):
         effective_status = self.get_effective_status()
-        return dict(self.STATUS_CHOICES).get(effective_status, effective_status)
+        return dict(self.WORKFLOW_STATUS_CHOICES).get(effective_status, effective_status)
 
     def save(self, *args, **kwargs):
         self.clean()
@@ -871,3 +921,58 @@ class TestBugAttachment(models.Model):
         if self.attachment and os.path.isfile(self.attachment.path):
             os.remove(self.attachment.path)
         super().delete(*args, **kwargs)
+
+
+class TestBugActivity(models.Model):
+    ACTION_CREATE = "create"
+    ACTION_UPDATE = "update"
+    ACTION_ASSIGN = "assign"
+    ACTION_CONFIRM = "confirm"
+    ACTION_FIX = "fix"
+    ACTION_RESOLVE = "resolve"
+    ACTION_ACTIVATE = "activate"
+    ACTION_CLOSE = "close"
+    ACTION_STATUS_CHANGE = "status_change"
+    ACTION_UPLOAD_ATTACHMENT = "upload_attachment"
+    ACTION_DELETE_ATTACHMENT = "delete_attachment"
+
+    ACTION_CHOICES = [
+        (ACTION_CREATE, _("新建")),
+        (ACTION_UPDATE, _("编辑")),
+        (ACTION_ASSIGN, _("指派")),
+        (ACTION_CONFIRM, _("确认")),
+        (ACTION_FIX, _("修复")),
+        (ACTION_RESOLVE, _("提交复测")),
+        (ACTION_ACTIVATE, _("激活")),
+        (ACTION_CLOSE, _("关闭")),
+        (ACTION_STATUS_CHANGE, _("状态变更")),
+        (ACTION_UPLOAD_ATTACHMENT, _("上传附件")),
+        (ACTION_DELETE_ATTACHMENT, _("删除附件")),
+    ]
+
+    bug = models.ForeignKey(
+        TestBug,
+        on_delete=models.CASCADE,
+        related_name="activities",
+        verbose_name=_("所属Bug"),
+    )
+    action = models.CharField(_("操作类型"), max_length=40, choices=ACTION_CHOICES)
+    content = models.TextField(_("操作内容"), blank=True, default="")
+    metadata = models.JSONField(_("附加数据"), blank=True, default=dict)
+    operator = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="operated_test_bug_activities",
+        verbose_name=_("操作人"),
+    )
+    created_at = models.DateTimeField(_("操作时间"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("测试Bug操作历史")
+        verbose_name_plural = _("测试Bug操作历史")
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"BUG#{self.bug_id} {self.get_action_display()} {self.created_at:%Y-%m-%d %H:%M:%S}"

@@ -36,6 +36,7 @@ from .models import (
     TestCaseAssignment,
     TestBug,
     TestBugAttachment,
+    TestBugActivity,
 )
 from .serializers import (
     TestCaseSerializer,
@@ -45,6 +46,7 @@ from .serializers import (
     TestBugSerializer,
     TestBugListSerializer,
     TestBugAttachmentSerializer,
+    TestBugActivitySerializer,
 )
 from .permissions import IsProjectMemberForTestCase, IsProjectMemberForTestCaseModule
 from .filters import TestBugFilter, TestCaseFilter  # 导入自定义过滤器
@@ -2926,7 +2928,14 @@ class TestBugViewSet(viewsets.ModelViewSet):
                 "resolved_by",
                 "closed_by",
                 "activated_by",
-            ).prefetch_related("attachments", "attachments__uploaded_by", "assigned_users")
+            ).prefetch_related(
+                "attachments",
+                "attachments__uploaded_by",
+                "assigned_users",
+                "related_testcases",
+                "activities",
+                "activities__operator",
+            )
         return TestBug.objects.none()
 
     def get_serializer_class(self):
@@ -2941,20 +2950,140 @@ class TestBugViewSet(viewsets.ModelViewSet):
             context["project"] = get_object_or_404(Project, pk=project_pk)
         return context
 
+    def _get_bug_choice_label(self, choices, value, default="-"):
+        if value in (None, ""):
+            return default
+        return dict(choices).get(value, str(value))
+
+    def _get_bug_status_label(self, value):
+        return self._get_bug_choice_label(TestBug.WORKFLOW_STATUS_CHOICES, value)
+
+    def _get_bug_type_label(self, value):
+        return self._get_bug_choice_label(TestBug.TYPE_CHOICES, value)
+
+    def _get_bug_resolution_label(self, value):
+        return self._get_bug_choice_label(TestBug.RESOLUTION_CHOICES, value)
+
+    def _get_bug_attachment_section_label(self, value):
+        return self._get_bug_choice_label(TestBugAttachment.SECTION_CHOICES, value)
+
+    def _build_bug_snapshot(self, bug):
+        related_testcases = list(bug.related_testcases.order_by("id").values("id", "name"))
+        assigned_users = list(bug.assigned_users.order_by("id").values("id", "username"))
+        return {
+            "title": bug.title or "",
+            "bug_type": bug.bug_type or "",
+            "severity": bug.severity or "",
+            "priority": bug.priority or "",
+            "status": bug.get_effective_status(),
+            "resolution": bug.resolution or "",
+            "deadline": bug.deadline.isoformat() if bug.deadline else "",
+            "keywords": bug.keywords or "",
+            "suite_name": bug.suite.name if bug.suite_id and bug.suite else "",
+            "testcase_ids": [item["id"] for item in related_testcases],
+            "testcase_names": [item["name"] for item in related_testcases],
+            "assigned_to_ids": [item["id"] for item in assigned_users],
+            "assigned_to_names": [item["username"] for item in assigned_users],
+        }
+
+    def _format_bug_history_value(self, field_name, value):
+        if field_name == "bug_type":
+            return self._get_bug_type_label(value)
+        if field_name == "status":
+            return self._get_bug_status_label(value)
+        if field_name == "resolution":
+            return self._get_bug_resolution_label(value)
+        if field_name == "severity":
+            return f"S{value}" if value else "-"
+        if field_name == "priority":
+            return f"P{value}" if value else "-"
+        if field_name in {"testcase_names", "assigned_to_names"}:
+            return "、".join(value) if value else "-"
+        return value if value not in (None, "", []) else "-"
+
+    def _build_bug_change_lines(self, before_snapshot, after_snapshot):
+        field_labels = {
+            "title": "Bug标题",
+            "bug_type": "BUG类型",
+            "severity": "严重程度",
+            "priority": "优先级",
+            "status": "BUG状态",
+            "resolution": "解决方案",
+            "deadline": "截止日期",
+            "keywords": "关键词",
+            "testcase_names": "关联用例",
+            "assigned_to_names": "指派给",
+        }
+        changes = []
+        for field_name, field_label in field_labels.items():
+            before_value = before_snapshot.get(field_name)
+            after_value = after_snapshot.get(field_name)
+            if before_value == after_value:
+                continue
+            changes.append(
+                f"{field_label}：{self._format_bug_history_value(field_name, before_value)} -> "
+                f"{self._format_bug_history_value(field_name, after_value)}"
+            )
+        return changes
+
+    def _log_bug_activity(self, bug, action, *, operator, content, metadata=None):
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=action,
+            content=content or "",
+            metadata=metadata or {},
+            operator=operator,
+        )
+
     def perform_create(self, serializer):
         project = self.get_serializer_context()["project"]
         assigned_to = serializer.validated_data.get("assigned_to")
         assigned_to_ids = serializer.validated_data.get("assigned_to_ids")
         has_assignees = bool(assigned_to) or bool(assigned_to_ids)
-        initial_status = TestBug.STATUS_ASSIGNED if has_assignees else TestBug.STATUS_UNASSIGNED
-        serializer.save(project=project, opened_by=self.request.user, status=initial_status)
+        resolution = str(serializer.validated_data.get("resolution") or "").strip()
+        initial_status = (
+            TestBug.STATUS_FIXED
+            if resolution
+            else (TestBug.STATUS_ASSIGNED if has_assignees else TestBug.STATUS_UNASSIGNED)
+        )
+        bug = serializer.save(project=project, opened_by=self.request.user, status=initial_status)
+        self._sync_bug_status_and_resolution(
+            bug,
+            user=self.request.user,
+            status_explicit=True,
+            resolution_explicit=bool(resolution),
+            prefer_confirmed_when_reopen=False,
+        )
+        bug.refresh_from_db()
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_CREATE,
+            operator=self.request.user,
+            content=(
+                f"新建了 BUG，当前状态为“{self._get_bug_status_label(bug.get_effective_status())}”，"
+                f"BUG类型为“{self._get_bug_type_label(bug.bug_type)}”。"
+            ),
+            metadata=self._build_bug_snapshot(bug),
+        )
 
     def perform_update(self, serializer):
         instance = serializer.instance
+        before_snapshot = self._build_bug_snapshot(instance)
+        status_explicit = "status" in serializer.validated_data
+        resolution_explicit = "resolution" in serializer.validated_data
+        previous_status = instance.get_effective_status()
         assigned_to_present = "assigned_to" in serializer.validated_data
         assigned_to_ids_present = "assigned_to_ids" in serializer.validated_data
         if not assigned_to_present and not assigned_to_ids_present:
-            serializer.save()
+            bug = serializer.save()
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=self.request.user,
+                status_explicit=status_explicit,
+                resolution_explicit=resolution_explicit,
+                previous_status=previous_status,
+            )
+            self._record_bug_update_activity(bug, before_snapshot)
             return
 
         previous_assignee_ids = list(instance.assigned_users.values_list("id", flat=True))
@@ -2965,10 +3094,47 @@ class TestBugViewSet(viewsets.ModelViewSet):
         next_assignee_ids = list(dict.fromkeys(next_assignee_ids))
 
         if previous_assignee_ids == next_assignee_ids:
-            serializer.save()
+            bug = serializer.save()
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=self.request.user,
+                status_explicit=status_explicit,
+                resolution_explicit=resolution_explicit,
+                previous_status=previous_status,
+            )
+            self._record_bug_update_activity(bug, before_snapshot)
             return
 
-        serializer.save(assigned_at=timezone.now() if next_assignee_ids else None)
+        bug = serializer.save(assigned_at=timezone.now() if next_assignee_ids else None)
+        self._sync_bug_status_and_resolution(
+            bug,
+            user=self.request.user,
+            status_explicit=status_explicit,
+            resolution_explicit=resolution_explicit,
+            previous_status=previous_status,
+        )
+        self._record_bug_update_activity(bug, before_snapshot)
+
+    def perform_destroy(self, instance):
+        instance.delete()
+
+    def _record_bug_update_activity(self, bug, before_snapshot):
+        bug.refresh_from_db()
+        after_snapshot = self._build_bug_snapshot(bug)
+        change_lines = self._build_bug_change_lines(before_snapshot, after_snapshot)
+        if not change_lines:
+            return
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_UPDATE,
+            operator=self.request.user,
+            content="；".join(change_lines),
+            metadata={
+                "before": before_snapshot,
+                "after": after_snapshot,
+                "changes": change_lines,
+            },
+        )
 
     def _get_bug_assignee_ids(self, bug):
         if bug.assigned_to_id:
@@ -2982,6 +3148,121 @@ class TestBugViewSet(viewsets.ModelViewSet):
 
     def _has_bug_assignees(self, bug):
         return bool(self._get_bug_assignee_ids(bug))
+
+    def _get_default_unresolved_bug_status(self, bug, *, prefer_confirmed=False):
+        if not self._has_bug_assignees(bug):
+            return TestBug.STATUS_UNASSIGNED
+        return TestBug.STATUS_CONFIRMED if prefer_confirmed else TestBug.STATUS_ASSIGNED
+
+    def _sync_bug_status_and_resolution(
+        self,
+        bug,
+        *,
+        user,
+        status_explicit=False,
+        resolution_explicit=False,
+        previous_status=None,
+        prefer_confirmed_when_reopen=True,
+    ):
+        resolved_statuses = {
+            TestBug.STATUS_FIXED,
+            TestBug.STATUS_PENDING_RETEST,
+            TestBug.STATUS_CLOSED,
+        }
+        active_statuses = {
+            TestBug.STATUS_UNASSIGNED,
+            TestBug.STATUS_ASSIGNED,
+            TestBug.STATUS_CONFIRMED,
+        }
+        effective_status = bug.get_effective_status()
+        previous_status = previous_status or effective_status
+        changed_fields = set()
+
+        if status_explicit:
+            if effective_status in active_statuses:
+                if bug.resolution:
+                    bug.resolution = ""
+                    changed_fields.add("resolution")
+            elif effective_status in resolved_statuses and not bug.resolution:
+                bug.resolution = "fixed"
+                changed_fields.add("resolution")
+        elif resolution_explicit:
+            if bug.resolution:
+                if effective_status in active_statuses:
+                    bug.status = TestBug.STATUS_FIXED
+                    effective_status = TestBug.STATUS_FIXED
+                    changed_fields.add("status")
+            elif effective_status in resolved_statuses:
+                bug.status = self._get_default_unresolved_bug_status(
+                    bug,
+                    prefer_confirmed=prefer_confirmed_when_reopen,
+                )
+                effective_status = bug.status
+                changed_fields.add("status")
+        else:
+            if bug.resolution and effective_status in active_statuses:
+                bug.status = TestBug.STATUS_FIXED
+                effective_status = TestBug.STATUS_FIXED
+                changed_fields.add("status")
+            elif not bug.resolution and effective_status in resolved_statuses:
+                bug.status = self._get_default_unresolved_bug_status(
+                    bug,
+                    prefer_confirmed=prefer_confirmed_when_reopen,
+                )
+                effective_status = bug.status
+                changed_fields.add("status")
+
+        if effective_status in active_statuses:
+            if bug.resolution:
+                bug.resolution = ""
+                changed_fields.add("resolution")
+            if bug.resolved_by_id is not None:
+                bug.resolved_by = None
+                changed_fields.add("resolved_by")
+            if bug.resolved_at is not None:
+                bug.resolved_at = None
+                changed_fields.add("resolved_at")
+            if bug.closed_by_id is not None:
+                bug.closed_by = None
+                changed_fields.add("closed_by")
+            if bug.closed_at is not None:
+                bug.closed_at = None
+                changed_fields.add("closed_at")
+
+        if effective_status in {TestBug.STATUS_FIXED, TestBug.STATUS_PENDING_RETEST}:
+            if not bug.resolution:
+                bug.resolution = "fixed"
+                changed_fields.add("resolution")
+            bug.resolved_by = user
+            bug.resolved_at = timezone.now()
+            changed_fields.update({"resolved_by", "resolved_at"})
+            if bug.closed_by_id is not None:
+                bug.closed_by = None
+                changed_fields.add("closed_by")
+            if bug.closed_at is not None:
+                bug.closed_at = None
+                changed_fields.add("closed_at")
+
+        if effective_status == TestBug.STATUS_CLOSED:
+            if not bug.resolution:
+                bug.resolution = "fixed"
+                changed_fields.add("resolution")
+            if not bug.resolved_at:
+                bug.resolved_by = user
+                bug.resolved_at = timezone.now()
+                changed_fields.update({"resolved_by", "resolved_at"})
+            bug.closed_by = user
+            bug.closed_at = timezone.now()
+            changed_fields.update({"closed_by", "closed_at"})
+
+        if previous_status != effective_status:
+            bug.status = effective_status
+            changed_fields.add("status")
+
+        if changed_fields:
+            changed_fields.add("updated_at")
+            bug.save(update_fields=list(changed_fields))
+        return bug
 
     def _resolve_assigned_members(self, bug, request_data):
         raw_assigned_to_ids = request_data.get("assigned_to_ids", None)
@@ -3017,6 +3298,32 @@ class TestBugViewSet(viewsets.ModelViewSet):
             return None, Response({"error": "指派人必须是当前项目成员"}, status=status.HTTP_400_BAD_REQUEST)
         return [member_map[user_id] for user_id in normalized_ids], None
 
+    def _parse_bug_ids(self, request):
+        ids_data = request.data.get("ids", [])
+        if not ids_data:
+            return None, Response({"error": "请至少选择一条 BUG"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            bug_ids = [int(item) for item in ids_data]
+        except (TypeError, ValueError):
+            return None, Response({"error": "BUG ID 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+        if not bug_ids:
+            return None, Response({"error": "BUG ID 列表不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+        return list(dict.fromkeys(bug_ids)), None
+
+    def _get_batch_bug_queryset(self, request):
+        bug_ids, error_response = self._parse_bug_ids(request)
+        if error_response is not None:
+            return None, None, error_response
+        queryset = self.get_queryset().filter(id__in=bug_ids)
+        found_ids = list(queryset.values_list("id", flat=True))
+        missing_ids = [item for item in bug_ids if item not in found_ids]
+        if missing_ids:
+            return None, None, Response(
+                {"error": f"以下 BUG 不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return bug_ids, queryset, None
+
     def _can_manage_bug_status(self, bug, user):
         if not user or not user.is_authenticated:
             return False
@@ -3035,22 +3342,58 @@ class TestBugViewSet(viewsets.ModelViewSet):
             return
         raise PermissionDenied("只有 BUG 指派人、创建人或管理员可以更改 BUG 状态")
 
-    def _apply_bug_status_change(self, bug, target_status, *, user, solution=""):
+    def _apply_bug_status_change(
+        self,
+        bug,
+        target_status,
+        *,
+        user,
+        solution="",
+        resolution=None,
+        members=None,
+        activated=False,
+    ):
+        previous_status = bug.get_effective_status()
+
         if target_status == TestBug.STATUS_UNASSIGNED:
             bug.assigned_to = None
             bug.assigned_at = None
             bug.status = TestBug.STATUS_UNASSIGNED
             bug.save(update_fields=["assigned_to", "assigned_at", "status", "updated_at"])
             bug.assigned_users.clear()
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=False,
+                previous_status=previous_status,
+                prefer_confirmed_when_reopen=False,
+            )
             return
 
         if target_status == TestBug.STATUS_ASSIGNED:
-            if not self._has_bug_assignees(bug):
-                raise PermissionDenied("请先为 BUG 指派处理人")
-            bug.status = TestBug.STATUS_ASSIGNED
-            if not bug.assigned_at:
+            if members is not None:
+                if not members:
+                    raise PermissionDenied("请选择指派人")
+                bug.assigned_to = members[0].user
                 bug.assigned_at = timezone.now()
-            bug.save(update_fields=["status", "assigned_at", "updated_at"])
+                bug.status = TestBug.STATUS_ASSIGNED
+                bug.save(update_fields=["assigned_to", "assigned_at", "status", "updated_at"])
+                bug.assigned_users.set([member.user for member in members])
+            elif not self._has_bug_assignees(bug):
+                raise PermissionDenied("请先为 BUG 指派处理人")
+            else:
+                bug.status = TestBug.STATUS_ASSIGNED
+                bug.assigned_at = timezone.now()
+                bug.save(update_fields=["status", "assigned_at", "updated_at"])
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=False,
+                previous_status=previous_status,
+                prefer_confirmed_when_reopen=False,
+            )
             return
 
         if target_status == TestBug.STATUS_CONFIRMED:
@@ -3058,40 +3401,86 @@ class TestBugViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("请先为 BUG 指派处理人")
             bug.status = TestBug.STATUS_CONFIRMED
             bug.save(update_fields=["status", "updated_at"])
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=False,
+                previous_status=previous_status,
+            )
             return
 
         if target_status == TestBug.STATUS_FIXED:
             bug.status = TestBug.STATUS_FIXED
-            bug.resolution = bug.resolution or "fixed"
+            bug.resolution = resolution or bug.resolution or "fixed"
             bug.solution = solution or bug.solution
-            bug.resolved_by = user
-            bug.resolved_at = timezone.now()
-            bug.save(
-                update_fields=[
-                    "status",
-                    "resolution",
-                    "solution",
-                    "resolved_by",
-                    "resolved_at",
-                    "updated_at",
-                ]
+            bug.save(update_fields=["status", "resolution", "solution", "updated_at"])
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=True,
+                previous_status=previous_status,
             )
             return
 
         if target_status == TestBug.STATUS_PENDING_RETEST:
-            if not bug.resolved_at:
-                bug.resolved_at = timezone.now()
-                bug.resolved_by = user
             bug.status = TestBug.STATUS_PENDING_RETEST
-            bug.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+            if resolution is not None:
+                bug.resolution = resolution or "fixed"
+            if solution:
+                bug.solution = solution
+            update_fields = ["status", "updated_at"]
+            if resolution is not None:
+                update_fields.append("resolution")
+            if solution:
+                update_fields.append("solution")
+            bug.save(update_fields=update_fields)
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=True,
+                previous_status=previous_status,
+            )
             return
 
         if target_status == TestBug.STATUS_CLOSED:
             bug.status = TestBug.STATUS_CLOSED
+            bug.resolution = resolution or bug.resolution or "fixed"
             bug.solution = solution or bug.solution
-            bug.closed_by = user
-            bug.closed_at = timezone.now()
-            bug.save(update_fields=["status", "solution", "closed_by", "closed_at", "updated_at"])
+            bug.save(update_fields=["status", "resolution", "solution", "updated_at"])
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=True,
+                previous_status=previous_status,
+            )
+            return
+
+        if target_status == "activate":
+            bug.status = self._get_default_unresolved_bug_status(bug, prefer_confirmed=True)
+            bug.activated_by = user
+            bug.activated_at = timezone.now()
+            bug.activated_count = (bug.activated_count or 0) + 1
+            bug.save(
+                update_fields=[
+                    "status",
+                    "activated_by",
+                    "activated_at",
+                    "activated_count",
+                    "updated_at",
+                ]
+            )
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=user,
+                status_explicit=True,
+                resolution_explicit=False,
+                previous_status=previous_status,
+                prefer_confirmed_when_reopen=True,
+            )
             return
 
         raise PermissionDenied("不支持修改为该 BUG 状态")
@@ -3119,12 +3508,12 @@ class TestBugViewSet(viewsets.ModelViewSet):
         if len(uploaded_files) > 10:
             return Response({"error": "一次最多上传 10 个附件"}, status=status.HTTP_400_BAD_REQUEST)
 
-        max_size = 20 * 1024 * 1024
+        max_size = 100 * 1024 * 1024
         created_items = []
         for uploaded_file in uploaded_files:
             if uploaded_file.size > max_size:
                 return Response(
-                    {"error": f"文件 {uploaded_file.name} 超过 20MB 限制"},
+                    {"error": f"文件 {uploaded_file.name} 超过 100MB 限制"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             created_items.append(
@@ -3141,13 +3530,43 @@ class TestBugViewSet(viewsets.ModelViewSet):
             )
 
         serializer = TestBugAttachmentSerializer(created_items, many=True, context=self.get_serializer_context())
+        if created_items:
+            attachment_names = "、".join(item.original_name or "未命名文件" for item in created_items[:5])
+            if len(created_items) > 5:
+                attachment_names = f"{attachment_names} 等 {len(created_items)} 个附件"
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_UPLOAD_ATTACHMENT,
+                operator=request.user,
+                content=(
+                    f"在“{self._get_bug_attachment_section_label(section)}”中上传了附件：{attachment_names}"
+                ),
+                metadata={
+                    "section": section,
+                    "attachment_ids": [item.id for item in created_items],
+                    "attachment_names": [item.original_name for item in created_items],
+                },
+            )
         return Response({"data": serializer.data}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["delete"], url_path=r"attachments/(?P<attachment_id>[^/.]+)")
     def delete_attachment(self, request, project_pk=None, pk=None, attachment_id=None):
         bug = self.get_object()
         attachment = get_object_or_404(TestBugAttachment, pk=attachment_id, bug=bug)
+        attachment_name = attachment.original_name or "未命名文件"
+        section_label = self._get_bug_attachment_section_label(attachment.section)
         attachment.delete()
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_DELETE_ATTACHMENT,
+            operator=request.user,
+            content=f"从“{section_label}”中删除了附件：{attachment_name}",
+            metadata={
+                "section": attachment.section,
+                "attachment_id": attachment_id,
+                "attachment_name": attachment_name,
+            },
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="assign")
@@ -3157,13 +3576,25 @@ class TestBugViewSet(viewsets.ModelViewSet):
         members, error_response = self._resolve_assigned_members(bug, request.data)
         if error_response is not None:
             return error_response
-        if not members:
-            return Response({"error": "请选择指派人"}, status=status.HTTP_400_BAD_REQUEST)
-        bug.assigned_to = members[0].user
-        bug.status = TestBug.STATUS_ASSIGNED
-        bug.assigned_at = timezone.now()
-        bug.save(update_fields=["assigned_to", "status", "assigned_at", "updated_at"])
-        bug.assigned_users.set([member.user for member in members])
+        try:
+            self._apply_bug_status_change(
+                bug,
+                TestBug.STATUS_ASSIGNED,
+                user=request.user,
+                members=members,
+            )
+        except PermissionDenied as exc:
+            return Response({"error": str(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_ASSIGN,
+            operator=request.user,
+            content=f"将 BUG 指派给：{'、'.join(member.user.username for member in members)}",
+            metadata={
+                "assigned_to_ids": [member.user_id for member in members],
+                "assigned_to_names": [member.user.username for member in members],
+            },
+        )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="change-status")
@@ -3186,9 +3617,23 @@ class TestBugViewSet(viewsets.ModelViewSet):
             return Response({"error": "请选择有效的 BUG 状态"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            previous_status = bug.get_effective_status()
             self._apply_bug_status_change(bug, target_status, user=request.user)
         except PermissionDenied as exc:
             return Response({"error": str(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_STATUS_CHANGE,
+            operator=request.user,
+            content=(
+                f"BUG状态从“{self._get_bug_status_label(previous_status)}”变更为"
+                f"“{self._get_bug_status_label(bug.get_effective_status())}”"
+            ),
+            metadata={
+                "before_status": previous_status,
+                "after_status": bug.get_effective_status(),
+            },
+        )
 
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
@@ -3196,11 +3641,21 @@ class TestBugViewSet(viewsets.ModelViewSet):
     def confirm(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
-        if not self._has_bug_assignees(bug):
-            return Response({"error": "请先指派处理人"}, status=status.HTTP_400_BAD_REQUEST)
-
-        bug.status = TestBug.STATUS_CONFIRMED
-        bug.save(update_fields=["status", "updated_at"])
+        try:
+            self._apply_bug_status_change(
+                bug,
+                TestBug.STATUS_CONFIRMED,
+                user=request.user,
+            )
+        except PermissionDenied as exc:
+            return Response({"error": str(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_CONFIRM,
+            operator=request.user,
+            content="确认接收该 BUG，状态更新为“已确认”",
+            metadata={"status": TestBug.STATUS_CONFIRMED},
+        )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="fix")
@@ -3214,20 +3669,25 @@ class TestBugViewSet(viewsets.ModelViewSet):
         if resolution not in allowed_resolutions:
             return Response({"error": "请选择有效的解决方案"}, status=status.HTTP_400_BAD_REQUEST)
 
-        bug.status = TestBug.STATUS_FIXED
-        bug.resolution = resolution
-        bug.solution = solution
-        bug.resolved_by = request.user
-        bug.resolved_at = timezone.now()
-        bug.save(
-            update_fields=[
-                "status",
-                "resolution",
-                "solution",
-                "resolved_by",
-                "resolved_at",
-                "updated_at",
-            ]
+        self._apply_bug_status_change(
+            bug,
+            TestBug.STATUS_FIXED,
+            user=request.user,
+            resolution=resolution,
+            solution=solution,
+        )
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_FIX,
+            operator=request.user,
+            content=(
+                f"将 BUG 标记为“已修复”，解决方案为“{self._get_bug_resolution_label(bug.resolution)}”"
+            ),
+            metadata={
+                "status": bug.get_effective_status(),
+                "resolution": bug.resolution,
+                "solution": bug.solution,
+            },
         )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
@@ -3235,33 +3695,53 @@ class TestBugViewSet(viewsets.ModelViewSet):
     def resolve(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
-        if not bug.resolved_at:
-            bug.resolved_at = timezone.now()
-            bug.resolved_by = request.user
-        bug.status = TestBug.STATUS_PENDING_RETEST
-        bug.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        resolution = str(request.data.get("resolution") or bug.resolution or "").strip()
+        if not resolution:
+            resolution = "fixed"
+        solution = request.data.get("solution", "")
+        self._apply_bug_status_change(
+            bug,
+            TestBug.STATUS_PENDING_RETEST,
+            user=request.user,
+            resolution=resolution,
+            solution=solution,
+        )
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_RESOLVE,
+            operator=request.user,
+            content=(
+                f"提交复测，当前解决方案为“{self._get_bug_resolution_label(bug.resolution)}”"
+            ),
+            metadata={
+                "status": bug.get_effective_status(),
+                "resolution": bug.resolution,
+                "solution": bug.solution,
+            },
+        )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
-        bug.status = TestBug.STATUS_CONFIRMED if self._has_bug_assignees(bug) else TestBug.STATUS_UNASSIGNED
-        bug.activated_by = request.user
-        bug.activated_at = timezone.now()
-        bug.activated_count = (bug.activated_count or 0) + 1
-        bug.closed_by = None
-        bug.closed_at = None
-        bug.save(
-            update_fields=[
-                "status",
-                "activated_by",
-                "activated_at",
-                "activated_count",
-                "closed_by",
-                "closed_at",
-                "updated_at",
-            ]
+        self._apply_bug_status_change(
+            bug,
+            "activate",
+            user=request.user,
+            activated=True,
+        )
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_ACTIVATE,
+            operator=request.user,
+            content=(
+                f"重新激活 BUG，状态更新为“{self._get_bug_status_label(bug.get_effective_status())}”"
+            ),
+            metadata={
+                "status": bug.get_effective_status(),
+                "activated_count": bug.activated_count,
+            },
         )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
@@ -3269,13 +3749,306 @@ class TestBugViewSet(viewsets.ModelViewSet):
     def close(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
+        resolution = str(request.data.get("resolution") or bug.resolution or "").strip()
         solution = request.data.get("solution", "")
-        bug.status = TestBug.STATUS_CLOSED
-        bug.solution = solution or bug.solution
-        bug.closed_by = request.user
-        bug.closed_at = timezone.now()
-        bug.save(update_fields=["status", "solution", "closed_by", "closed_at", "updated_at"])
+        self._apply_bug_status_change(
+            bug,
+            TestBug.STATUS_CLOSED,
+            user=request.user,
+            resolution=resolution or "fixed",
+            solution=solution,
+        )
+        self._log_bug_activity(
+            bug,
+            TestBugActivity.ACTION_CLOSE,
+            operator=request.user,
+            content=(
+                f"关闭了 BUG，解决方案为“{self._get_bug_resolution_label(bug.resolution)}”"
+            ),
+            metadata={
+                "status": bug.get_effective_status(),
+                "resolution": bug.resolution,
+                "solution": bug.solution,
+            },
+        )
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["post"], url_path="batch-assign")
+    def batch_assign(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        sample_bug = queryset.first()
+        members, error_response = self._resolve_assigned_members(sample_bug, request.data)
+        if error_response is not None:
+            return error_response
+        if not members:
+            return Response({"error": "请选择指派人"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        assigned_to_ids = [member.user_id for member in members]
+        assigned_to_names = [member.user.username for member in members]
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            self._apply_bug_status_change(
+                bug,
+                TestBug.STATUS_ASSIGNED,
+                user=request.user,
+                members=members,
+            )
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_ASSIGN,
+                operator=request.user,
+                content=f"批量指派给：{'、'.join(assigned_to_names)}",
+                metadata={
+                    "assigned_to_ids": assigned_to_ids,
+                    "assigned_to_names": assigned_to_names,
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量指派 {len(updated_ids)} 条 BUG",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-change-status")
+    def batch_change_status(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        target_status = str(request.data.get("status") or "").strip()
+        allowed_statuses = {
+            TestBug.STATUS_UNASSIGNED,
+            TestBug.STATUS_ASSIGNED,
+            TestBug.STATUS_CONFIRMED,
+            TestBug.STATUS_FIXED,
+            TestBug.STATUS_PENDING_RETEST,
+            TestBug.STATUS_CLOSED,
+        }
+        if target_status == TestBug.STATUS_EXPIRED:
+            return Response({"error": "已过期状态由系统自动判断，不能手动修改"}, status=status.HTTP_400_BAD_REQUEST)
+        if target_status not in allowed_statuses:
+            return Response({"error": "请选择有效的 BUG 状态"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            previous_status = bug.get_effective_status()
+            try:
+                self._apply_bug_status_change(bug, target_status, user=request.user)
+            except PermissionDenied as exc:
+                return Response({"error": str(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_STATUS_CHANGE,
+                operator=request.user,
+                content=(
+                    f"批量将 BUG 状态从“{self._get_bug_status_label(previous_status)}”变更为"
+                    f"“{self._get_bug_status_label(bug.get_effective_status())}”"
+                ),
+                metadata={
+                    "before_status": previous_status,
+                    "after_status": bug.get_effective_status(),
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量更新 {len(updated_ids)} 条 BUG 的状态",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-update-priority")
+    def batch_update_priority(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        priority = str(request.data.get("priority") or "").strip()
+        allowed_priorities = {choice[0] for choice in TestBug.PRIORITY_CHOICES}
+        if priority not in allowed_priorities:
+            return Response({"error": "请选择有效的优先级"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            if bug.priority == priority:
+                continue
+            previous_priority = bug.priority
+            bug.priority = priority
+            bug.save(update_fields=["priority", "updated_at"])
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_UPDATE,
+                operator=request.user,
+                content=f"批量将优先级从“P{previous_priority}”调整为“P{priority}”",
+                metadata={
+                    "before_priority": previous_priority,
+                    "after_priority": priority,
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量更新 {len(updated_ids)} 条 BUG 的优先级",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-update-severity")
+    def batch_update_severity(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        severity = str(request.data.get("severity") or "").strip()
+        allowed_severities = {choice[0] for choice in TestBug.SEVERITY_CHOICES}
+        if severity not in allowed_severities:
+            return Response({"error": "请选择有效的严重程度"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            if bug.severity == severity:
+                continue
+            previous_severity = bug.severity
+            bug.severity = severity
+            bug.save(update_fields=["severity", "updated_at"])
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_UPDATE,
+                operator=request.user,
+                content=f"批量将严重程度从“S{previous_severity}”调整为“S{severity}”",
+                metadata={
+                    "before_severity": previous_severity,
+                    "after_severity": severity,
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量更新 {len(updated_ids)} 条 BUG 的严重程度",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-update-bug-type")
+    def batch_update_bug_type(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        bug_type = str(request.data.get("bug_type") or "").strip()
+        allowed_bug_types = {choice[0] for choice in TestBug.TYPE_CHOICES}
+        if bug_type not in allowed_bug_types:
+            return Response({"error": "请选择有效的 BUG 类型"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            if bug.bug_type == bug_type:
+                continue
+            previous_bug_type = bug.bug_type
+            bug.bug_type = bug_type
+            bug.save(update_fields=["bug_type", "updated_at"])
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_UPDATE,
+                operator=request.user,
+                content=(
+                    f"批量将 BUG 类型从“{self._get_bug_type_label(previous_bug_type)}”调整为"
+                    f"“{self._get_bug_type_label(bug_type)}”"
+                ),
+                metadata={
+                    "before_bug_type": previous_bug_type,
+                    "after_bug_type": bug_type,
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量更新 {len(updated_ids)} 条 BUG 的类型",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-update-resolution")
+    def batch_update_resolution(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        resolution = str(request.data.get("resolution") or "").strip()
+        solution = str(request.data.get("solution") or "").strip()
+        allowed_resolutions = {choice[0] for choice in TestBug.RESOLUTION_CHOICES}
+        if resolution not in allowed_resolutions:
+            return Response({"error": "请选择有效的解决方案"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            previous_resolution = bug.resolution
+            previous_status = bug.get_effective_status()
+            if previous_resolution == resolution and (not solution or bug.solution == solution):
+                continue
+
+            bug.resolution = resolution
+            if solution:
+                bug.solution = solution
+            bug.save(update_fields=["resolution", "solution", "updated_at"] if solution else ["resolution", "updated_at"])
+            self._sync_bug_status_and_resolution(
+                bug,
+                user=request.user,
+                status_explicit=False,
+                resolution_explicit=True,
+                previous_status=previous_status,
+                prefer_confirmed_when_reopen=False,
+            )
+            self._log_bug_activity(
+                bug,
+                TestBugActivity.ACTION_UPDATE,
+                operator=request.user,
+                content=(
+                    f"批量将解决方案从“{self._get_bug_resolution_label(previous_resolution)}”调整为"
+                    f"“{self._get_bug_resolution_label(resolution)}”"
+                ),
+                metadata={
+                    "before_resolution": previous_resolution,
+                    "after_resolution": resolution,
+                    "status": bug.get_effective_status(),
+                    "solution": bug.solution,
+                    "batch": True,
+                },
+            )
+            updated_ids.append(bug.id)
+
+        return Response({
+            "message": f"已批量更新 {len(updated_ids)} 条 BUG 的解决方案",
+            "updated_ids": updated_ids,
+        })
+
+    @action(detail=False, methods=["post"], url_path="batch-delete")
+    def batch_delete(self, request, project_pk=None):
+        bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
+        if error_response is not None:
+            return error_response
+
+        deleted_ids = []
+        for bug in queryset:
+            self._ensure_can_manage_bug_status(bug)
+            deleted_ids.append(bug.id)
+            bug.delete()
+
+        return Response({
+            "message": f"已批量删除 {len(deleted_ids)} 条 BUG",
+            "updated_ids": deleted_ids,
+        })
 
 
 class TestExecutionViewSet(viewsets.ModelViewSet):

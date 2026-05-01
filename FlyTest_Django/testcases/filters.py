@@ -6,17 +6,15 @@ from .models import TestBug, TestCase, TestCaseModule, TestSuite
 
 
 class CharInFilter(BaseInFilter, CharFilter):
-    """支持逗号分隔的多值文本过滤器"""
+    """支持逗号分隔的多值文本过滤器。"""
 
 
 class NumberInFilter(BaseInFilter, NumberFilter):
-    """支持逗号分隔的多值数字过滤器"""
+    """支持逗号分隔的多值数字过滤器。"""
 
 
 class TestCaseFilter(django_filters.FilterSet):
-    """
-    自定义测试用例过滤器，支持模块、等级、审核状态、测试类型、执行人筛选。
-    """
+    """测试用例过滤器。"""
 
     module_id = django_filters.NumberFilter(method="filter_by_module_and_descendants")
     level = django_filters.CharFilter(field_name="level", lookup_expr="exact")
@@ -43,9 +41,7 @@ class TestCaseFilter(django_filters.FilterSet):
         ]
 
     def filter_by_module_and_descendants(self, queryset, name, value):
-        """
-        过滤指定模块及其所有子模块的用例。
-        """
+        """过滤指定模块及其所有子模块的用例。"""
         if value is None:
             return queryset
 
@@ -111,14 +107,9 @@ class TestBugFilter(django_filters.FilterSet):
 
         normalized = TestBug.normalize_status_value(value)
         if normalized == TestBug.STATUS_EXPIRED:
-            return queryset.exclude(status=TestBug.STATUS_CLOSED).filter(deadline__lt=timezone.localdate())
-
-        if normalized == TestBug.STATUS_UNASSIGNED:
-            return queryset.filter(status__in=["active", TestBug.STATUS_UNASSIGNED], assigned_users__isnull=True)
-        if normalized == TestBug.STATUS_ASSIGNED:
-            return queryset.filter(status__in=[TestBug.STATUS_ASSIGNED, "active"], assigned_users__isnull=False).distinct()
-        if normalized == TestBug.STATUS_PENDING_RETEST:
-            return queryset.filter(status__in=[TestBug.STATUS_PENDING_RETEST, "resolved"])
+            return queryset.exclude(status__in=[TestBug.STATUS_CLOSED, "closed"]).filter(
+                deadline__lt=timezone.localdate()
+            )
         return queryset.filter(status=normalized)
 
     def filter_by_assigned_to(self, queryset, name, value):

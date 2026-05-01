@@ -24,6 +24,9 @@
               <div class="bug-subtitle">
                 {{ selectedSuiteDetail?.description || '当前套件中的 BUG 列表与处理流转' }}
               </div>
+              <div v-if="isDevelopment" class="bug-debug-line">
+                调试：project={{ currentProjectId || '-' }} | suite={{ selectedSuiteId || '-' }}
+              </div>
             </div>
           </div>
 
@@ -63,6 +66,8 @@ const suitePanelShellStyle = computed(() => ({
   width: `${suitePanelWidth.value}px`,
 }));
 
+const isDevelopment = import.meta.env.DEV;
+
 const fetchSelectedSuiteDetail = async () => {
   if (!currentProjectId.value || !selectedSuiteId.value) {
     selectedSuiteDetail.value = null;
@@ -73,12 +78,22 @@ const fetchSelectedSuiteDetail = async () => {
   selectedSuiteDetail.value = response.success && response.data ? response.data : null;
 };
 
+const syncSelectedSuiteFromPanel = async () => {
+  const suiteId = suitePanelRef.value?.getSelectedSuiteId?.() ?? null;
+  if (!suiteId || suiteId === selectedSuiteId.value) {
+    return;
+  }
+  selectedSuiteId.value = suiteId;
+  await fetchSelectedSuiteDetail();
+};
+
 const handleSuiteSelected = async (suiteId: number | null) => {
   selectedSuiteId.value = suiteId;
   await fetchSelectedSuiteDetail();
 };
 
 const handleSuiteUpdated = async () => {
+  await syncSelectedSuiteFromPanel();
   await fetchSelectedSuiteDetail();
 };
 
@@ -117,7 +132,9 @@ watch(currentProjectId, async () => {
 onMounted(async () => {
   if (currentProjectId.value && selectedSuiteId.value) {
     await fetchSelectedSuiteDetail();
+    return;
   }
+  await syncSelectedSuiteFromPanel();
 });
 
 onUnmounted(() => {
@@ -204,6 +221,12 @@ onUnmounted(() => {
   margin-top: 6px;
   color: var(--color-text-3);
   word-break: break-word;
+}
+
+.bug-debug-line {
+  margin-top: 6px;
+  color: var(--color-text-3);
+  font-size: 12px;
 }
 
 .bug-panel-shell {

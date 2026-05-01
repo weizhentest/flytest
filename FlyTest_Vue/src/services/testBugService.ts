@@ -30,6 +30,18 @@ export type TestBugResolution =
   | 'bydesign';
 export type TestBugAttachmentSection = 'steps' | 'expected_result' | 'actual_result';
 export type TestBugAttachmentType = 'image' | 'video' | 'file';
+export type TestBugActivityAction =
+  | 'create'
+  | 'update'
+  | 'assign'
+  | 'confirm'
+  | 'fix'
+  | 'resolve'
+  | 'activate'
+  | 'close'
+  | 'status_change'
+  | 'upload_attachment'
+  | 'delete_attachment';
 
 export interface BugUserDetail {
   id: number;
@@ -46,6 +58,8 @@ export interface TestBug {
   suite_name?: string;
   testcase?: number | null;
   testcase_name?: string;
+  testcase_ids?: number[];
+  testcase_names?: string[];
   title: string;
   steps?: string;
   expected_result?: string;
@@ -84,6 +98,7 @@ export interface TestBug {
   activated_count?: number;
   solution?: string;
   attachments?: TestBugAttachment[];
+  activity_logs?: TestBugActivity[];
   created_at?: string;
   updated_at?: string;
 }
@@ -100,6 +115,18 @@ export interface TestBugAttachment {
   file_size?: number;
   uploaded_by?: number | null;
   uploaded_by_name?: string;
+  created_at: string;
+}
+
+export interface TestBugActivity {
+  id: number;
+  bug: number;
+  action: TestBugActivityAction;
+  action_display?: string;
+  content?: string;
+  metadata?: Record<string, any>;
+  operator?: number | null;
+  operator_name?: string;
   created_at: string;
 }
 
@@ -120,6 +147,7 @@ export interface OperationResponse {
   success: boolean;
   message?: string;
   error?: string;
+  updated_ids?: number[];
 }
 
 export interface TestBugAttachmentUploadResponse {
@@ -127,6 +155,8 @@ export interface TestBugAttachmentUploadResponse {
   data?: TestBugAttachment[];
   error?: string;
 }
+
+const SESSION_EXPIRED_MESSAGE = '未登录或会话已过期';
 
 const getHeaders = () => {
   const authStore = useAuthStore();
@@ -163,7 +193,6 @@ const normalizeErrorMessage = (message?: string, fallback?: string) => {
   if (!raw) {
     return fallback || '操作失败，请稍后重试';
   }
-
   const lower = raw.toLowerCase();
   if (lower.includes('network error')) {
     return '网络异常，请检查服务是否正常启动';
@@ -185,7 +214,6 @@ const normalizeErrorMessage = (message?: string, fallback?: string) => {
   }
   return raw;
 };
-
 const getErrorMessage = (error: any, fallback: string) =>
   normalizeErrorMessage(
     error.response?.data?.error || error.response?.data?.message || error.message,
@@ -197,7 +225,7 @@ export const getTestBugList = async (
   params?: Record<string, any>
 ): Promise<TestBugListResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/test-bugs/`, {
@@ -213,7 +241,7 @@ export const getTestBugList = async (
 
 export const getTestBugDetail = async (projectId: number, bugId: number): Promise<TestBugResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/test-bugs/${bugId}/`, {
@@ -227,7 +255,7 @@ export const getTestBugDetail = async (projectId: number, bugId: number): Promis
 
 export const createTestBug = async (projectId: number, payload: Partial<TestBug>): Promise<TestBugResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const response = await axios.post(`${API_BASE_URL}/projects/${projectId}/test-bugs/`, payload, { headers });
@@ -243,7 +271,7 @@ export const updateTestBug = async (
   payload: Partial<TestBug>
 ): Promise<TestBugResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const response = await axios.patch(`${API_BASE_URL}/projects/${projectId}/test-bugs/${bugId}/`, payload, { headers });
@@ -255,7 +283,7 @@ export const updateTestBug = async (
 
 export const deleteTestBug = async (projectId: number, bugId: number): Promise<OperationResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     await axios.delete(`${API_BASE_URL}/projects/${projectId}/test-bugs/${bugId}/`, { headers });
@@ -272,7 +300,7 @@ const postAction = async (
   payload?: Record<string, any>
 ): Promise<TestBugResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const response = await axios.post(
@@ -281,6 +309,31 @@ const postAction = async (
       { headers }
     );
     return { success: true, data: unwrapPayload(response.data) };
+  } catch (error: any) {
+    return { success: false, error: getErrorMessage(error, `${action} 操作失败`) };
+  }
+};
+
+const postBatchAction = async (
+  projectId: number,
+  action: string,
+  payload?: Record<string, any>
+): Promise<OperationResponse> => {
+  const headers = getHeaders();
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-bugs/${action}/`,
+      payload || {},
+      { headers }
+    );
+    const data = unwrapPayload(response.data);
+    return {
+      success: true,
+      message: data?.message,
+      updated_ids: data?.updated_ids,
+    };
   } catch (error: any) {
     return { success: false, error: getErrorMessage(error, `${action} 操作失败`) };
   }
@@ -309,14 +362,65 @@ export const resolveTestBug = async (
 export const activateTestBug = async (projectId: number, bugId: number) =>
   postAction(projectId, bugId, 'activate');
 
-export const closeTestBug = async (projectId: number, bugId: number, solution?: string) =>
-  postAction(projectId, bugId, 'close', { solution });
+export const closeTestBug = async (
+  projectId: number,
+  bugId: number,
+  resolution?: TestBugResolution,
+  solution?: string
+) => postAction(projectId, bugId, 'close', { resolution, solution });
 
 export const changeTestBugStatus = async (
   projectId: number,
   bugId: number,
   status: Exclude<TestBugStatus, 'expired'>
 ) => postAction(projectId, bugId, 'change-status', { status });
+
+export const batchAssignTestBugs = async (
+  projectId: number,
+  ids: number[],
+  assignedToIds: number[]
+) => postBatchAction(projectId, 'batch-assign', { ids, assigned_to_ids: assignedToIds });
+
+export const batchChangeTestBugStatus = async (
+  projectId: number,
+  ids: number[],
+  status: Exclude<TestBugStatus, 'expired'>
+) => postBatchAction(projectId, 'batch-change-status', { ids, status });
+
+export const batchUpdateTestBugPriority = async (
+  projectId: number,
+  ids: number[],
+  priority: string
+) => postBatchAction(projectId, 'batch-update-priority', { ids, priority });
+
+export const batchUpdateTestBugSeverity = async (
+  projectId: number,
+  ids: number[],
+  severity: string
+) => postBatchAction(projectId, 'batch-update-severity', { ids, severity });
+
+export const batchUpdateTestBugType = async (
+  projectId: number,
+  ids: number[],
+  bugType: string
+) => postBatchAction(projectId, 'batch-update-bug-type', { ids, bug_type: bugType });
+
+export const batchUpdateTestBugResolution = async (
+  projectId: number,
+  ids: number[],
+  resolution: string,
+  solution?: string
+) =>
+  postBatchAction(projectId, 'batch-update-resolution', {
+    ids,
+    resolution,
+    ...(solution ? { solution } : {}),
+  });
+
+export const batchDeleteTestBugs = async (
+  projectId: number,
+  ids: number[]
+) => postBatchAction(projectId, 'batch-delete', { ids });
 
 export const uploadTestBugAttachments = async (
   projectId: number,
@@ -326,7 +430,7 @@ export const uploadTestBugAttachments = async (
 ): Promise<TestBugAttachmentUploadResponse> => {
   const authStore = useAuthStore();
   const accessToken = authStore.getAccessToken;
-  if (!accessToken) return { success: false, error: '未登录或会话已过期' };
+  if (!accessToken) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     const formData = new FormData();
@@ -356,7 +460,7 @@ export const deleteTestBugAttachment = async (
   attachmentId: number
 ): Promise<OperationResponse> => {
   const headers = getHeaders();
-  if (!headers) return { success: false, error: '未登录或会话已过期' };
+  if (!headers) return { success: false, error: SESSION_EXPIRED_MESSAGE };
 
   try {
     await axios.delete(
@@ -379,7 +483,6 @@ export const TEST_BUG_TYPE_OPTIONS = [
   { label: '安全相关', value: 'security' },
   { label: '其他', value: 'others' },
 ];
-
 export const TEST_BUG_STATUS_OPTIONS = [
   { label: '未指派', value: 'unassigned' },
   { label: '未确认', value: 'assigned' },
@@ -389,7 +492,6 @@ export const TEST_BUG_STATUS_OPTIONS = [
   { label: '已关闭', value: 'closed' },
   { label: '已过期', value: 'expired' },
 ];
-
 export const TEST_BUG_RESOLUTION_OPTIONS = [
   { label: '已修复', value: 'fixed' },
   { label: '延期处理', value: 'postponed' },

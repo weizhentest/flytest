@@ -1,4 +1,7 @@
+from io import StringIO
+
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -495,7 +498,9 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(TestBug.objects.count(), 1)
         bug = TestBug.objects.first()
         self.assertEqual(bug.title, "登录按钮点击后报错")
-        self.assertEqual(bug.status, "active")
+        self.assertEqual(bug.status, TestBug.STATUS_UNASSIGNED)
+        self.assertEqual(response.data["status"], TestBug.STATUS_UNASSIGNED)
+        self.assertEqual(response.data["status_display"], "未指派")
 
     def test_can_resolve_suite_bug(self):
         admin_user = User.objects.create_superuser(
@@ -503,7 +508,9 @@ class TestSuiteExecutionTests(TestCase):
             email="bugresolveadmin@example.com",
             password="password",
         )
+        assignee = User.objects.create_user(username="bugresolver", password="password")
         ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
         self.suite.testcases.add(self.testcase)
         bug = TestBug.objects.create(
             project=self.project,
@@ -511,7 +518,10 @@ class TestSuiteExecutionTests(TestCase):
             testcase=self.testcase,
             title="测试Bug",
             opened_by=admin_user,
+            assigned_to=assignee,
+            status=TestBug.STATUS_CONFIRMED,
         )
+        bug.assigned_users.set([assignee])
         self.api_client.force_authenticate(user=admin_user)
 
         response = self.api_client.post(
@@ -525,6 +535,115 @@ class TestSuiteExecutionTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         bug.refresh_from_db()
-        self.assertEqual(bug.status, "resolved")
+        self.assertEqual(bug.status, TestBug.STATUS_PENDING_RETEST)
         self.assertEqual(bug.resolution, "fixed")
         self.assertIsNotNone(bug.resolved_at)
+        self.assertEqual(response.data["status"], TestBug.STATUS_PENDING_RETEST)
+        self.assertEqual(response.data["status_display"], "待复测")
+
+    def test_bug_workflow_actions_update_status_and_timestamps(self):
+        admin_user = User.objects.create_superuser(
+            username="bugworkflowadmin",
+            email="bugworkflowadmin@example.com",
+            password="password",
+        )
+        assignee = User.objects.create_user(username="bugworkflowmember", password="password")
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="状态流转测试",
+            opened_by=admin_user,
+        )
+        self.api_client.force_authenticate(user=admin_user)
+
+        assign_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/assign/",
+            {"assigned_to_ids": [assignee.id]},
+            format="json",
+        )
+        self.assertEqual(assign_response.status_code, 200, assign_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_ASSIGNED)
+        self.assertEqual(bug.assigned_to_id, assignee.id)
+        self.assertIsNotNone(bug.assigned_at)
+
+        confirm_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/confirm/",
+            {},
+            format="json",
+        )
+        self.assertEqual(confirm_response.status_code, 200, confirm_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CONFIRMED)
+
+        fix_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/fix/",
+            {"resolution": "fixed", "solution": "已完成修复"},
+            format="json",
+        )
+        self.assertEqual(fix_response.status_code, 200, fix_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_FIXED)
+        self.assertEqual(bug.resolution, "fixed")
+        self.assertIsNotNone(bug.resolved_at)
+
+        close_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/close/",
+            {"solution": "验证通过后关闭"},
+            format="json",
+        )
+        self.assertEqual(close_response.status_code, 200, close_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CLOSED)
+        self.assertIsNotNone(bug.closed_at)
+
+        activate_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/activate/",
+            {},
+            format="json",
+        )
+        self.assertEqual(activate_response.status_code, 200, activate_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CONFIRMED)
+        self.assertEqual(bug.activated_count, 1)
+        self.assertIsNone(bug.closed_at)
+        self.assertIsNone(bug.resolved_at)
+
+    def test_repair_test_bug_workflow_command_normalizes_legacy_data(self):
+        admin_user = User.objects.create_superuser(
+            username="bugcommandadmin",
+            email="bugcommandadmin@example.com",
+            password="password",
+        )
+        member = User.objects.create_user(username="bugcommandmember", password="password")
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=member, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="历史Bug",
+            opened_by=admin_user,
+            assigned_to=member,
+            status="active",
+        )
+        bug.assigned_users.clear()
+
+        dry_run_output = StringIO()
+        call_command("repair_test_bug_workflow", "--dry-run", stdout=dry_run_output)
+        bug.refresh_from_db()
+        self.assertEqual(bug.status, TestBug.STATUS_ASSIGNED)
+        self.assertIn("修复 1 条", dry_run_output.getvalue())
+
+        execute_output = StringIO()
+        call_command("repair_test_bug_workflow", stdout=execute_output)
+        bug.refresh_from_db()
+        self.assertEqual(bug.status, TestBug.STATUS_ASSIGNED)
+        self.assertEqual(list(bug.assigned_users.values_list("id", flat=True)), [member.id])
+        self.assertIsNotNone(bug.assigned_at)
+        self.assertIn("修复 1 条", execute_output.getvalue())

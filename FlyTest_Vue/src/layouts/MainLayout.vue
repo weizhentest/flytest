@@ -508,7 +508,7 @@
         </div>
       </a-layout-sider>
 
-      <!-- 鍙充晶鍐呭鍖哄煙 -->
+      <!-- 右侧内容区域 -->
       <a-layout-content class="content">
         <router-view v-slot="{ Component }">
           <keep-alive include="LangGraphChat">
@@ -774,7 +774,7 @@ const handleVisibilityChange = () => {
   }
 };
 
-// 鐢ㄦ埛淇℃伅
+// 用户信息
 const user = computed(() => authStore.currentUser);
 const isApproved = computed(() => authStore.isApproved);
 const username = computed(() => user.value?.username || '');
@@ -1263,7 +1263,7 @@ onUnmounted(() => {
 .left-section {
   display: flex;
   align-items: center;
-  margin-left: 0; /* 绉婚櫎宸﹁竟璺濓紝璁?logo 椤剁潃杈圭紭 */
+  margin-left: 0; /* 移除左边距，让 logo 紧贴边缘 */
 }
 
 .logo {
@@ -1369,7 +1369,7 @@ onUnmounted(() => {
   line-height: 1;
 }
 
-/* 鐗堟湰鍙锋牱寮?*/
+/* 版本号样式 */
 .version-badge {
   font-size: 13px;
   color: #86909c;
@@ -1413,7 +1413,7 @@ onUnmounted(() => {
   }
 }
 
-/* 鐗堟湰鏇存柊寮瑰嚭妗嗘牱寮?*/
+/* 版本更新弹出框样式 */
 .version-update-info {
   max-width: 320px;
   padding: 4px;
@@ -1613,7 +1613,7 @@ onUnmounted(() => {
   color: inherit;
 }
 
-/* 鏀惰捣鐘舵€佷笅鐨勮彍鍗曢」鏍峰紡 */
+/* 收起状态下的菜单项样式 */
 :deep(.arco-menu-collapsed .arco-menu-item) {
   padding-left: 0 !important;
   padding-right: 0 !important;
@@ -1749,7 +1749,7 @@ onUnmounted(() => {
   text-align: left;
 }
 
-/* 鏀惰捣鐘舵€佷笅鐨勫瓙鑿滃崟鍥炬爣鏍峰紡 */
+/* 收起状态下的子菜单图标样式 */
 :deep(.arco-menu-collapsed .arco-menu-inline-header .arco-icon) {
   margin-right: 0;
   margin-left: 0;
@@ -1826,7 +1826,7 @@ onUnmounted(() => {
   background-color: var(--theme-page-bg);
   height: calc(100vh - var(--dashboard-header-total-height) - 16px);
   margin: 0 10px 10px 10px;
-  overflow: hidden; /* 璁╁瓙缁勪欢鑷鎺у埗婊氬姩 */
+  overflow: hidden; /* 让子组件自行控制滚动 */
   border-radius: 8px;
   box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
 }
@@ -1855,7 +1855,7 @@ onUnmounted(() => {
   color: var(--theme-accent);
 }
 
-/* 鏀惰捣鐘舵€佷笅鐨勬寜閽牱寮?*/
+/* 收起状态下的按钮样式 */
 .sider-footer .arco-btn-icon-only {
   width: 32px;
   height: 32px;

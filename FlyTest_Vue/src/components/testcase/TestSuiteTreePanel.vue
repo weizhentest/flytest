@@ -238,6 +238,7 @@ const testCaseTransferColumns = [
 const fetchSuites = async () => {
   if (!props.currentProjectId) {
     suites.value = [];
+    setSelectedSuite(null);
     return;
   }
 
@@ -249,15 +250,18 @@ const fetchSuites = async () => {
 
     if (response.success && response.data) {
       suites.value = response.data;
+      syncSelectionAfterSuiteLoad();
       return;
     }
 
     Message.error(response.error || '获取测试套件失败');
     suites.value = [];
+    setSelectedSuite(null);
   } catch (error) {
     console.error('获取测试套件失败:', error);
     Message.error('获取测试套件失败');
     suites.value = [];
+    setSelectedSuite(null);
   } finally {
     loading.value = false;
   }
@@ -361,6 +365,39 @@ const setSelectedSuite = (suiteId: number | null) => {
   selectedSuiteKey.value = suiteId;
   selectedSuiteKeys.value = suiteId ? [suiteId] : [];
   emit('suiteSelected', suiteId);
+};
+
+const getFirstSuiteId = (nodes: TreeNodeData[]): number | null => {
+  for (const node of nodes) {
+    const suiteId = Number((node as any).id ?? node.key);
+    if (Number.isFinite(suiteId) && suiteId > 0) {
+      return suiteId;
+    }
+    if (Array.isArray(node.children) && node.children.length > 0) {
+      const childSuiteId = getFirstSuiteId(node.children as TreeNodeData[]);
+      if (childSuiteId) {
+        return childSuiteId;
+      }
+    }
+  }
+  return null;
+};
+
+const syncSelectionAfterSuiteLoad = () => {
+  const availableSuiteIds = new Set(suites.value.map((suite) => suite.id));
+
+  if (selectedSuiteKey.value && availableSuiteIds.has(selectedSuiteKey.value)) {
+    selectedSuiteKeys.value = [selectedSuiteKey.value];
+    return;
+  }
+
+  const defaultSuiteId = getFirstSuiteId(treeData.value);
+  if (defaultSuiteId) {
+    setSelectedSuite(defaultSuiteId);
+    return;
+  }
+
+  setSelectedSuite(null);
 };
 
 const fetchSuiteTestCasesForTransfer = async () => {
@@ -630,6 +667,7 @@ onMounted(async () => {
 
 defineExpose({
   refreshSuites: fetchSuites,
+  getSelectedSuiteId: () => selectedSuiteKey.value,
 });
 </script>
 
