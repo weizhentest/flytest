@@ -123,4 +123,6 @@ class TestBugFilter(django_filters.FilterSet):
     def filter_by_assigned_to(self, queryset, name, value):
         if value in (None, ""):
             return queryset
-        return queryset.filter(assigned_users__id=value).distinct()
+        return queryset.filter(
+            Q(assigned_to_id=value) | Q(assigned_users__id=value)
+        ).distinct()
