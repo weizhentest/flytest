@@ -1,504 +1,1274 @@
 <template>
-  <div class="test-execution-history-view">
-    <div v-if="!currentProjectId" class="no-project-selected">
-      <a-empty description="请在顶部选择一个项目">
-        <template #image>
-          <icon-folder style="font-size: 48px; color: #c2c7d0;" />
-        </template>
-      </a-empty>
+  <div class="test-report-view">
+    <div v-if="!currentProjectId" class="empty-state">
+      <a-empty description="请先选择项目" />
     </div>
 
-    <div v-else>
-      <!-- 搜索和筛选区域 -->
-      <div class="filter-section">
-        <div class="filter-row">
-          <a-input
-            v-model="searchKeyword"
-            placeholder="搜索套件名称"
-            allow-clear
-            style="width: 300px;"
-            @change="handleSearch"
-          >
-            <template #prefix>
-              <icon-search />
-            </template>
-          </a-input>
-          
-          <a-select
-            v-model="statusFilter"
-            placeholder="筛选状态"
-            style="width: 150px;"
-            allow-clear
-            @change="handleSearch"
-          >
-            <a-option value="">全部状态</a-option>
-            <a-option value="pending">等待中</a-option>
-            <a-option value="running">执行中</a-option>
-            <a-option value="completed">已完成</a-option>
-            <a-option value="failed">失败</a-option>
-            <a-option value="cancelled">已取消</a-option>
-          </a-select>
-
-          <a-button @click="handleRefresh" style="margin-left: 12px">
-            <template #icon>
-              <icon-refresh />
-            </template>
-            刷新
-          </a-button>
+    <div v-else class="report-layout">
+      <section class="report-sidebar">
+        <div class="sidebar-header">
+          <div>
+            <div class="sidebar-title">测试报告</div>
+            <div class="sidebar-subtitle">
+              勾选一个或多个根套件、子套件，基于测试用例与 BUG 数据生成本轮迭代测试报告。
+            </div>
+          </div>
+          <a-button size="small" @click="fetchSuites">刷新</a-button>
         </div>
-      </div>
 
-      <!-- 表格区域 -->
-      <div class="content-section">
-        <a-table
-          :data="executionData"
-          :loading="loading"
-          :pagination="paginationConfig"
-          @page-change="handlePageChange"
-          @page-size-change="handlePageSizeChange"
-          :columns="columns"
-          :bordered="{ cell: true }"
-          row-key="id"
-          stripe
-        >
-        <!-- 套件名称 -->
-        <template #suite="{ record }">
-          <a-tooltip :content="record.suite_detail?.description || '无描述'">
-            <span class="suite-name">{{ record.suite_detail?.name || '-' }}</span>
-          </a-tooltip>
-        </template>
+        <a-input-search
+          v-model="searchKeyword"
+          placeholder="搜索套件名称"
+          allow-clear
+          @search="fetchSuites"
+          @clear="fetchSuites"
+        />
 
-        <!-- 状态 -->
-        <template #status="{ record }">
-          <a-tag :color="getStatusColor(record.status)">
-            {{ getStatusText(record.status) }}
-          </a-tag>
-        </template>
-
-        <!-- 统计 -->
-        <template #statistics="{ record }">
-          <div class="statistics">
-            <a-tag color="blue">总数: {{ record.total_count }}</a-tag>
-            <a-tag color="green">通过: {{ record.passed_count }}</a-tag>
-            <a-tag v-if="record.failed_count > 0" color="red">失败: {{ record.failed_count }}</a-tag>
-            <a-tag v-if="record.error_count > 0" color="orange">错误: {{ record.error_count }}</a-tag>
-          </div>
-        </template>
-
-        <!-- 通过率 -->
-        <template #pass-rate="{ record }">
-          <div class="pass-rate">
-            <a-progress
-              :percent="record.pass_rate"
-              :color="getPassRateColor(record.pass_rate)"
-              :show-text="false"
-              size="small"
-            />
-            <span class="rate-text">{{ record.pass_rate.toFixed(1) }}%</span>
-          </div>
-        </template>
-
-        <!-- 执行时长 -->
-        <template #duration="{ record }">
-          <span v-if="record.duration">{{ formatDuration(record.duration) }}</span>
-          <span v-else>-</span>
-        </template>
-
-        <!-- 操作 -->
-        <template #actions="{ record }">
+        <div class="sidebar-toolbar">
           <a-space>
-            <a-button
-              type="primary"
-              size="small"
-              @click="handleViewReport(record)"
-            >
-              <template #icon>
-                <icon-file />
-              </template>
-              查看报告
-            </a-button>
-            
-            <a-button
-              v-if="record.status === 'running'"
-              type="outline"
-              status="warning"
-              size="small"
-              @click="handleCancel(record)"
-            >
-              <template #icon>
-                <icon-close />
-              </template>
-              取消
-            </a-button>
-
-            <a-button
-              type="text"
-              size="small"
-              @click="handleDelete(record)"
-              status="danger"
-            >
-              删除
-            </a-button>
+            <a-button size="mini" @click="checkAllSuites">全选</a-button>
+            <a-button size="mini" @click="clearCheckedSuites">清空</a-button>
+            <a-button size="mini" @click="expandAllSuites">展开</a-button>
           </a-space>
-        </template>
-        </a-table>
-      </div>
-    </div>
+          <span class="checked-summary">已选 {{ checkedSuiteIds.length }} 个</span>
+        </div>
 
-    <!-- 报告查看模态框 -->
-    <TestExecutionReportModal
-      v-model:visible="showReport"
-      :current-project-id="currentProjectId"
-      :execution-id="selectedExecutionId"
-    />
+        <div class="suite-tree-panel">
+          <a-spin :loading="suiteLoading" style="width: 100%">
+            <a-tree
+              v-if="treeData.length > 0"
+              checkable
+              block-node
+              show-line
+              :data="treeData"
+              :field-names="{ key: 'id', title: 'name' }"
+              v-model:checked-keys="checkedKeys"
+              v-model:expanded-keys="expandedKeys"
+            >
+              <template #title="nodeData">
+                <div class="suite-node">
+                  <span class="suite-node-name">{{ nodeData.name }}</span>
+                  <span class="suite-node-count">{{ nodeData.testcase_count || 0 }}</span>
+                </div>
+              </template>
+            </a-tree>
+            <a-empty v-else description="暂无套件数据" />
+          </a-spin>
+        </div>
+
+        <div class="sidebar-actions">
+          <a-button
+            type="primary"
+            long
+            :loading="reportLoading"
+            :disabled="checkedSuiteIds.length === 0"
+            @click="handleGenerateReport"
+          >
+            AI生成测试报告
+          </a-button>
+          <div class="sidebar-note">
+            生成时会带入所选套件及其子套件下的测试用例、BUG 列表和执行状态数据。
+          </div>
+        </div>
+
+        <div class="snapshot-panel">
+          <div class="snapshot-header">
+            <span class="snapshot-title">报告快照</span>
+            <a-space>
+              <a-button size="mini" :disabled="!reportData" @click="handleSaveSnapshot">保存</a-button>
+              <a-button size="mini" @click="loadReportSnapshots">刷新</a-button>
+              <a-button
+                size="mini"
+                status="danger"
+                :disabled="reportSnapshots.length === 0"
+                @click="clearReportSnapshots"
+              >
+                清空
+              </a-button>
+            </a-space>
+          </div>
+
+          <a-input-search
+            v-model="snapshotKeyword"
+            class="snapshot-search"
+            placeholder="搜索快照标题或创建人"
+            allow-clear
+          />
+
+          <div class="snapshot-summary">
+            <span>共 {{ reportSnapshots.length }} 条</span>
+            <span v-if="snapshotKeyword.trim()">筛选后 {{ filteredReportSnapshots.length }} 条</span>
+          </div>
+
+          <a-empty v-if="filteredReportSnapshots.length === 0" description="暂无报告快照" />
+          <div v-else class="snapshot-list">
+            <div
+              v-for="item in filteredReportSnapshots"
+              :key="item.id"
+              class="snapshot-item"
+              :class="{ active: activeSnapshotId === item.id, pinned: item.isPinned }"
+            >
+              <div class="snapshot-main" @click="applyReportSnapshot(item)">
+                <div class="snapshot-name-row">
+                  <template v-if="editingSnapshotId === item.id">
+                    <a-input
+                      v-model="editingSnapshotTitle"
+                      size="small"
+                      class="snapshot-title-input"
+                      placeholder="请输入快照名称"
+                      @click.stop
+                      @press-enter="submitRenameSnapshot(item)"
+                    />
+                  </template>
+                  <template v-else>
+                    <div class="snapshot-name">{{ item.title }}</div>
+                    <a-tag v-if="item.isPinned" size="small" color="gold">置顶</a-tag>
+                  </template>
+                </div>
+                <div class="snapshot-meta">
+                  <span>{{ item.generatedAtText }}</span>
+                  <span>创建人：{{ item.creatorName }}</span>
+                </div>
+              </div>
+
+              <div class="snapshot-actions">
+                <template v-if="editingSnapshotId === item.id">
+                  <a-button size="mini" type="primary" @click.stop="submitRenameSnapshot(item)">保存</a-button>
+                  <a-button size="mini" @click.stop="cancelRenameSnapshot">取消</a-button>
+                </template>
+                <template v-else>
+                  <a-button size="mini" @click.stop="startRenameSnapshot(item)">重命名</a-button>
+                  <a-button size="mini" @click.stop="handleTogglePinSnapshot(item)">
+                    {{ item.isPinned ? '取消置顶' : '置顶' }}
+                  </a-button>
+                  <a-button size="mini" status="danger" @click.stop="removeReportSnapshot(item.id)">删除</a-button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="report-content">
+        <div v-if="reportData" class="report-body">
+          <div class="report-header-card">
+            <div>
+              <div class="report-title">本轮测试报告</div>
+              <div class="report-meta">
+                生成时间：{{ formatDateTime(reportData.generated_at) }}
+                <span v-if="reportData.model_name"> / 模型：{{ reportData.model_name }}</span>
+              </div>
+            </div>
+            <a-space>
+              <a-tag color="arcoblue">已选套件 {{ checkedSuiteIds.length }}</a-tag>
+              <a-tag :color="reportData.used_ai ? 'arcoblue' : 'gold'">
+                {{ reportData.used_ai ? 'AI生成' : '统计生成' }}
+              </a-tag>
+            </a-space>
+          </div>
+
+          <div class="report-toolbar">
+            <a-space>
+              <a-button size="small" :disabled="!reportData || !activeSnapshotId" @click="handleOverwriteSnapshot">
+                覆盖当前快照
+              </a-button>
+              <a-button size="small" @click="handleCopyReportSummary">复制摘要</a-button>
+              <a-button size="small" @click="handleExportReport">导出报告</a-button>
+              <a-button size="small" :loading="reportLoading" @click="handleGenerateReport">重新生成</a-button>
+            </a-space>
+          </div>
+
+          <div class="report-summary-grid">
+            <div class="summary-card">
+              <div class="summary-label">覆盖套件</div>
+              <div class="summary-value">{{ reportData.suite_count }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">测试用例</div>
+              <div class="summary-value">{{ reportData.testcase_count }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">BUG数量</div>
+              <div class="summary-value">{{ reportData.bug_count }}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label">本次选择</div>
+              <div class="summary-value">{{ reportData.selected_suite_count }}</div>
+            </div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-title">总体结论</div>
+            <p class="section-text">{{ reportData.summary }}</p>
+            <p class="section-note">{{ reportData.note }}</p>
+          </div>
+
+          <div class="report-two-column">
+            <div class="report-section">
+              <div class="section-title">质量概览</div>
+              <p class="section-text">{{ reportData.quality_overview }}</p>
+            </div>
+            <div class="report-section">
+              <div class="section-title">风险概览</div>
+              <p class="section-text">{{ reportData.risk_overview }}</p>
+            </div>
+          </div>
+
+          <div class="report-two-column">
+            <div class="report-section">
+              <div class="section-title">执行状态分布</div>
+              <div class="tag-flow">
+                <a-tag v-for="item in executionStatusList" :key="item.key" :color="item.color">
+                  {{ item.label }} {{ item.value }}
+                </a-tag>
+              </div>
+            </div>
+            <div class="report-section">
+              <div class="section-title">BUG状态分布</div>
+              <div class="tag-flow">
+                <a-tag v-for="item in bugStatusList" :key="item.key" :color="item.color">
+                  {{ item.label }} {{ item.value }}
+                </a-tag>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-title">关键发现</div>
+            <a-empty v-if="reportData.findings.length === 0" description="暂无关键发现" />
+            <div v-else class="item-list">
+              <div
+                v-for="item in reportData.findings"
+                :key="`${item.title}-${item.detail}`"
+                class="item-card"
+              >
+                <div class="item-header">
+                  <span class="item-title">{{ item.title }}</span>
+                  <a-tag :color="getSeverityColor(item.severity)">{{ getSeverityLabel(item.severity) }}</a-tag>
+                </div>
+                <div class="item-detail">{{ item.detail }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-title">改进建议</div>
+            <a-empty v-if="reportData.recommendations.length === 0" description="暂无改进建议" />
+            <div v-else class="item-list">
+              <div
+                v-for="item in reportData.recommendations"
+                :key="`${item.title}-${item.detail}`"
+                class="item-card"
+              >
+                <div class="item-header">
+                  <span class="item-title">{{ item.title }}</span>
+                  <a-tag :color="getPriorityColor(item.priority)">{{ getPriorityLabel(item.priority) }}</a-tag>
+                </div>
+                <div class="item-detail">{{ item.detail }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-section">
+            <div class="section-title">套件明细</div>
+            <a-table
+              :columns="suiteColumns"
+              :data="reportData.suite_breakdown"
+              :pagination="false"
+              row-key="id"
+              :bordered="{ cell: true }"
+            />
+          </div>
+
+          <div class="report-section">
+            <div class="section-title">支撑证据</div>
+            <a-empty v-if="reportData.evidence.length === 0" description="暂无支撑证据" />
+            <div v-else class="item-list">
+              <div
+                v-for="item in reportData.evidence"
+                :key="`${item.label}-${item.detail}`"
+                class="item-card"
+              >
+                <div class="item-title">{{ item.label }}</div>
+                <div class="item-detail">{{ item.detail }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="report-placeholder">
+          <a-empty description="请选择套件后生成测试报告" />
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
-import { Message, Modal } from '@arco-design/web-vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { Message, Modal, type TableColumnData, type TreeNodeData } from '@arco-design/web-vue';
+import { useRoute } from 'vue-router';
 import {
-  IconSearch,
-  IconRefresh,
-  IconFile,
-  IconClose,
-  IconFolder,
-} from '@arco-design/web-vue/es/icon';
-import { useProjectStore } from '@/store/projectStore';
-import {
-  getTestExecutionList,
-  cancelTestExecution,
-  deleteTestExecution,
-  type TestExecution,
+  createTestReportSnapshot,
+  deleteTestReportSnapshot,
+  generateAiIterationTestReport,
+  getTestReportSnapshots,
+  updateTestReportSnapshot,
+  type AiIterationTestReport,
 } from '@/services/testExecutionService';
-import { formatDate } from '@/utils/formatters';
-import TestExecutionReportModal from '@/components/testcase/TestExecutionReportModal.vue';
+import { getTestSuiteList, type TestSuite } from '@/services/testSuiteService';
+import { useProjectStore } from '@/store/projectStore';
+
+type SuiteTreeNode = TreeNodeData & {
+  id: number;
+  name: string;
+  testcase_count: number;
+  children?: SuiteTreeNode[];
+};
+
+type ReportSnapshot = {
+  id: number;
+  title: string;
+  projectId: number;
+  suiteIds: number[];
+  creatorName: string;
+  isPinned: boolean;
+  generatedAt: string;
+  generatedAtText: string;
+  report: AiIterationTestReport;
+};
 
 const projectStore = useProjectStore();
-const currentProjectId = computed(() => projectStore.currentProjectId);
+const route = useRoute();
+const currentProjectId = computed(() => projectStore.currentProjectId || null);
 
-// 响应式数据
-const loading = ref(false);
+const suiteLoading = ref(false);
+const reportLoading = ref(false);
 const searchKeyword = ref('');
-const statusFilter = ref('');
-const executionData = ref<TestExecution[]>([]);
-const showReport = ref(false);
-const selectedExecutionId = ref<number | null>(null);
-let refreshInterval: number | undefined;
+const snapshotKeyword = ref('');
+const suites = ref<TestSuite[]>([]);
+const checkedKeys = ref<(number | string)[]>([]);
+const expandedKeys = ref<(number | string)[]>([]);
+const reportData = ref<AiIterationTestReport | null>(null);
+const reportSnapshots = ref<ReportSnapshot[]>([]);
+const activeSnapshotId = ref<number | null>(null);
+const editingSnapshotId = ref<number | null>(null);
+const editingSnapshotTitle = ref('');
 
-// 分页配置
-const paginationConfig = reactive({
-  total: 0,
-  current: 1,
-  pageSize: 10,
-  showTotal: true,
-  showPageSize: true,
+const checkedSuiteIds = computed(() =>
+  checkedKeys.value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+);
+
+const filteredReportSnapshots = computed(() => {
+  const keyword = snapshotKeyword.value.trim().toLowerCase();
+  if (!keyword) {
+    return reportSnapshots.value;
+  }
+  return reportSnapshots.value.filter((item) => {
+    return (
+      item.title.toLowerCase().includes(keyword) ||
+      item.generatedAtText.toLowerCase().includes(keyword) ||
+      item.creatorName.toLowerCase().includes(keyword)
+    );
+  });
 });
 
-// 表格列定义
-const columns = [
-  { title: 'ID', dataIndex: 'id', width: 50, align: 'center' as const },
-  { title: '测试套件', slotName: 'suite', width: 200, align: 'center' as const },
-  { title: '状态', slotName: 'status', width: 50, align: 'center' as const },
-  { title: '统计', slotName: 'statistics', width: 210, align: 'center' as const },
-  { title: '通过率', slotName: 'pass-rate', width: 80, align: 'center' as const },
-  { title: '执行时长', slotName: 'duration', width: 100, align: 'center' as const },
-  {
-    title: '执行人',
-    dataIndex: 'executor_detail',
-    render: ({ record }: { record: TestExecution }) => record.executor_detail?.username || '-',
-    width: 80,
-    align: 'center' as const,
-  },
-  {
-    title: '创建时间',
-    dataIndex: 'created_at',
-    render: ({ record }: { record: TestExecution }) => formatDate(record.created_at),
-    width: 180,
-    align: 'center' as const,
-  },
-  { title: '操作', slotName: 'actions', width: 200, fixed: 'right' as const, align: 'center' as const },
+const normalizeSnapshots = (items: ReportSnapshot[]) =>
+  [...items].sort((left, right) => {
+    if (left.isPinned !== right.isPinned) {
+      return left.isPinned ? -1 : 1;
+    }
+    return new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime();
+  });
+
+const toSnapshot = (item: {
+  id: number;
+  title: string;
+  project: number;
+  suite_ids?: number[];
+  creator_name?: string;
+  is_pinned?: boolean;
+  report_data: AiIterationTestReport;
+  created_at: string;
+}) => ({
+  id: item.id,
+  title: item.title,
+  projectId: item.project,
+  suiteIds: item.suite_ids || [],
+  creatorName: item.creator_name || '-',
+  isPinned: Boolean(item.is_pinned),
+  generatedAt: item.report_data?.generated_at || item.created_at,
+  generatedAtText: formatDateTime(item.report_data?.generated_at || item.created_at),
+  report: item.report_data,
+});
+
+const buildTree = (parentId: number | null = null): SuiteTreeNode[] =>
+  suites.value
+    .filter((suite) => (suite.parent ?? suite.parent_id ?? null) === parentId)
+    .map((suite) => ({
+      id: suite.id,
+      key: suite.id,
+      name: suite.name,
+      testcase_count: suite.testcase_count || 0,
+      children: buildTree(suite.id),
+    }));
+
+const treeData = computed(() => buildTree());
+
+const suiteColumns: TableColumnData[] = [
+  { title: '套件', dataIndex: 'path', ellipsis: true, tooltip: true },
+  { title: '测试用例', dataIndex: 'testcase_count', width: 96, align: 'center' },
+  { title: '已审核', dataIndex: 'approved_testcase_count', width: 96, align: 'center' },
+  { title: '失败用例', dataIndex: 'failed_testcase_count', width: 96, align: 'center' },
+  { title: '未执行', dataIndex: 'not_executed_testcase_count', width: 96, align: 'center' },
+  { title: 'BUG数', dataIndex: 'bug_count', width: 88, align: 'center' },
+  { title: '待复测', dataIndex: 'pending_retest_bug_count', width: 96, align: 'center' },
+  { title: '未关闭BUG', dataIndex: 'open_bug_count', width: 112, align: 'center' },
 ];
 
-// 获取执行列表
-const fetchExecutions = async () => {
-  if (!currentProjectId.value) return;
+const executionStatusLabelMap: Record<string, string> = {
+  not_executed: '未执行',
+  passed: '通过',
+  failed: '失败',
+  not_applicable: '无需执行',
+};
 
-  loading.value = true;
-  try {
-    const response = await getTestExecutionList(currentProjectId.value, {
-      search: searchKeyword.value,
-      ordering: '-created_at',
-    });
+const bugStatusLabelMap: Record<string, string> = {
+  unassigned: '未指派',
+  assigned: '未确认',
+  confirmed: '已确认',
+  fixed: '已修复',
+  pending_retest: '待复测',
+  closed: '已关闭',
+  expired: '已过期',
+};
 
-    if (response.success && response.data) {
-      // 筛选状态
-      const filteredData = statusFilter.value
-        ? response.data.filter(item => item.status === statusFilter.value)
-        : response.data;
-      
-      executionData.value = filteredData;
-      paginationConfig.total = filteredData.length;
-    } else {
-      Message.error(response.error || '获取执行历史失败');
-      executionData.value = [];
-    }
-  } catch (error) {
-    console.error('获取执行历史出错:', error);
-    Message.error('获取执行历史时发生错误');
-    executionData.value = [];
-  } finally {
-    loading.value = false;
+const executionStatusList = computed(() => {
+  const distribution = reportData.value?.execution_status_distribution || {};
+  return Object.entries(distribution).map(([key, value]) => ({
+    key,
+    value,
+    label: executionStatusLabelMap[key] || key,
+    color: key === 'passed' ? 'green' : key === 'failed' ? 'red' : key === 'not_executed' ? 'gray' : 'arcoblue',
+  }));
+});
+
+const bugStatusList = computed(() => {
+  const distribution = reportData.value?.bug_status_distribution || {};
+  return Object.entries(distribution).map(([key, value]) => ({
+    key,
+    value,
+    label: bugStatusLabelMap[key] || key,
+    color: key === 'closed' ? 'green' : key === 'pending_retest' ? 'orange' : key === 'expired' ? 'red' : 'arcoblue',
+  }));
+});
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '-';
   }
-};
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
 
-// 搜索处理
-const handleSearch = () => {
-  paginationConfig.current = 1;
-  fetchExecutions();
-};
+async function loadReportSnapshots() {
+  if (!currentProjectId.value) {
+    reportSnapshots.value = [];
+    activeSnapshotId.value = null;
+    return;
+  }
 
-// 分页处理
-const handlePageChange = (page: number) => {
-  paginationConfig.current = page;
-};
+  const response = await getTestReportSnapshots(currentProjectId.value);
+  if (!response.success) {
+    Message.error(response.error || '加载报告快照失败');
+    reportSnapshots.value = [];
+    return;
+  }
 
-const handlePageSizeChange = (pageSize: number) => {
-  paginationConfig.pageSize = pageSize;
-  paginationConfig.current = 1;
-};
+  reportSnapshots.value = normalizeSnapshots((response.data || []).map((item) => toSnapshot(item)));
 
-// 刷新
-const handleRefresh = () => {
-  fetchExecutions();
-};
+  if (activeSnapshotId.value) {
+    const matched = reportSnapshots.value.find((item) => item.id === activeSnapshotId.value);
+    if (matched) {
+      reportData.value = matched.report;
+      return;
+    }
+    activeSnapshotId.value = null;
+  }
 
-// 查看报告
-const handleViewReport = (execution: TestExecution) => {
-  selectedExecutionId.value = execution.id;
-  showReport.value = true;
-};
+  if (!reportData.value && reportSnapshots.value.length > 0) {
+    applyReportSnapshot(reportSnapshots.value[0], false);
+  }
+}
 
-// 取消执行
-const handleCancel = (execution: TestExecution) => {
-  if (!currentProjectId.value) return;
+async function createReportSnapshot(report: AiIterationTestReport, useCurrentTitle = true) {
+  if (!currentProjectId.value) {
+    return null;
+  }
 
-  Modal.confirm({
-    title: '确认取消',
-    content: `确定要取消 "${execution.suite_detail?.name}" 的执行吗?`,
-    okText: '确认',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        const response = await cancelTestExecution(currentProjectId.value!, execution.id);
-        if (response.success) {
-          Message.success('取消请求已发送');
-          fetchExecutions();
-        } else {
-          Message.error(response.error || '取消执行失败');
-        }
-      } catch (error) {
-        Message.error('取消执行时发生错误');
-      }
-    },
+  const timestamp = new Date();
+  const title = useCurrentTitle
+    ? `测试报告 ${timestamp.toLocaleString('zh-CN', { hour12: false })}`
+    : `手动保存 ${timestamp.toLocaleString('zh-CN', { hour12: false })}`;
+
+  const response = await createTestReportSnapshot(currentProjectId.value, {
+    title,
+    suite_ids: [...checkedSuiteIds.value],
+    report_data: JSON.parse(JSON.stringify(report)),
   });
-};
 
-// 删除执行记录
-const handleDelete = (execution: TestExecution) => {
-  if (!currentProjectId.value) return;
+  if (!response.success || !response.data) {
+    Message.error(response.error || '保存报告快照失败');
+    return null;
+  }
 
-  // 检查执行状态
-  if (execution.status === 'running' || execution.status === 'pending') {
-    Message.warning(`无法删除状态为"${getStatusText(execution.status)}"的执行记录，请先取消执行`);
+  const snapshot = toSnapshot(response.data);
+  reportSnapshots.value = normalizeSnapshots(
+    [snapshot, ...reportSnapshots.value.filter((item) => item.id !== snapshot.id)].slice(0, 20)
+  );
+  activeSnapshotId.value = snapshot.id;
+  return snapshot;
+}
+
+function applyReportSnapshot(snapshot: ReportSnapshot, showMessage = true) {
+  cancelRenameSnapshot();
+  reportData.value = snapshot.report;
+  checkedKeys.value = [...snapshot.suiteIds];
+  expandedKeys.value = Array.from(new Set([...expandedKeys.value, ...snapshot.suiteIds]));
+  activeSnapshotId.value = snapshot.id;
+  if (showMessage) {
+    Message.success('报告快照已加载');
+  }
+}
+
+async function patchSnapshot(
+  snapshotId: number,
+  payload: {
+    title?: string;
+    is_pinned?: boolean;
+    suite_ids?: number[];
+    report_data?: AiIterationTestReport;
+  }
+) {
+  if (!currentProjectId.value) {
+    return null;
+  }
+
+  const response = await updateTestReportSnapshot(currentProjectId.value, snapshotId, payload);
+  if (!response.success || !response.data) {
+    Message.error(response.error || '更新报告快照失败');
+    return null;
+  }
+
+  const nextItem = toSnapshot(response.data);
+  reportSnapshots.value = normalizeSnapshots(
+    reportSnapshots.value.map((item) => (item.id === snapshotId ? nextItem : item))
+  );
+
+  if (activeSnapshotId.value === snapshotId) {
+    reportData.value = nextItem.report;
+  }
+
+  return nextItem;
+}
+
+function startRenameSnapshot(snapshot: ReportSnapshot) {
+  editingSnapshotId.value = snapshot.id;
+  editingSnapshotTitle.value = snapshot.title;
+}
+
+function cancelRenameSnapshot() {
+  editingSnapshotId.value = null;
+  editingSnapshotTitle.value = '';
+}
+
+async function submitRenameSnapshot(snapshot: ReportSnapshot) {
+  const nextTitle = editingSnapshotTitle.value.trim();
+  if (!nextTitle) {
+    Message.warning('快照标题不能为空');
+    return;
+  }
+
+  const updated = await patchSnapshot(snapshot.id, { title: nextTitle });
+  if (!updated) {
+    return;
+  }
+
+  cancelRenameSnapshot();
+  Message.success('快照名称已更新');
+}
+
+async function handleTogglePinSnapshot(snapshot: ReportSnapshot) {
+  const updated = await patchSnapshot(snapshot.id, { is_pinned: !snapshot.isPinned });
+  if (updated) {
+    Message.success(updated.isPinned ? '快照已置顶' : '快照已取消置顶');
+  }
+}
+
+async function removeReportSnapshot(snapshotId: number) {
+  if (!currentProjectId.value) {
     return;
   }
 
   Modal.confirm({
     title: '确认删除',
-    content: `确定要删除测试套件"${execution.suite_detail?.name}"的执行记录吗？此操作不可恢复。`,
-    okText: '确认删除',
-    cancelText: '取消',
-    okButtonProps: {
-      status: 'danger',
-    },
+    content: '删除后不可恢复，确定删除这条报告快照吗？',
+    okButtonProps: { status: 'danger' },
     onOk: async () => {
-      try {
-        const response = await deleteTestExecution(currentProjectId.value!, execution.id);
-        if (response.success) {
-          Message.success(response.message || '执行记录已删除');
-          fetchExecutions();
-        } else {
-          Message.error(response.error || '删除执行记录失败');
-        }
-      } catch (error) {
-        console.error('删除执行记录出错:', error);
-        Message.error('删除执行记录时发生错误');
+      const response = await deleteTestReportSnapshot(currentProjectId.value!, snapshotId);
+      if (!response.success) {
+        Message.error(response.error || '删除报告快照失败');
+        return;
       }
+
+      reportSnapshots.value = reportSnapshots.value.filter((item) => item.id !== snapshotId);
+      if (activeSnapshotId.value === snapshotId) {
+        activeSnapshotId.value = null;
+        reportData.value = null;
+        if (reportSnapshots.value.length > 0) {
+          applyReportSnapshot(reportSnapshots.value[0], false);
+        }
+      }
+      Message.success('报告快照已删除');
     },
   });
-};
+}
 
-// 获取状态颜色
-const getStatusColor = (status: string) => {
-  const colors: Record<string, string> = {
-    pending: 'gray',
-    running: 'blue',
-    completed: 'green',
-    failed: 'red',
-    cancelled: 'orange',
-  };
-  return colors[status] || 'gray';
-};
-
-// 获取状态文本
-const getStatusText = (status: string) => {
-  const texts: Record<string, string> = {
-    pending: '等待中',
-    running: '执行中',
-    completed: '已完成',
-    failed: '失败',
-    cancelled: '已取消',
-  };
-  return texts[status] || status;
-};
-
-// 获取通过率颜色
-const getPassRateColor = (rate: number) => {
-  if (rate >= 90) return '#00b42a';
-  if (rate >= 70) return '#ff7d00';
-  return '#f53f3f';
-};
-
-// 格式化时长
-const formatDuration = (seconds: number) => {
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}秒`;
+async function clearReportSnapshots() {
+  if (!currentProjectId.value || reportSnapshots.value.length === 0) {
+    return;
   }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}分${remainingSeconds.toFixed(0)}秒`;
-};
 
-// 启动定时刷新
-const startRefresh = () => {
-  // 如果已经有定时器，先清除
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
+  Modal.confirm({
+    title: '确认清空',
+    content: '将清空当前项目下最近保存的报告快照，确定继续吗？',
+    okButtonProps: { status: 'danger' },
+    onOk: async () => {
+      const snapshotIds = reportSnapshots.value.map((item) => item.id);
+      for (const snapshotId of snapshotIds) {
+        const response = await deleteTestReportSnapshot(currentProjectId.value!, snapshotId);
+        if (!response.success) {
+          Message.error(response.error || '清空报告快照失败');
+          return;
+        }
+      }
+
+      reportSnapshots.value = [];
+      reportData.value = null;
+      activeSnapshotId.value = null;
+      cancelRenameSnapshot();
+      Message.success('报告快照已清空');
+    },
+  });
+}
+
+async function handleSaveSnapshot() {
+  if (!reportData.value) {
+    Message.warning('当前没有可保存的测试报告');
+    return;
   }
-  // 每10秒刷新一次
-  refreshInterval = window.setInterval(() => {
-    // 只有当有任务在执行中时才刷新
-    const hasRunningTasks = executionData.value.some(e => e.status === 'running');
-    if (hasRunningTasks) {
-      fetchExecutions();
-    } else {
-      // 如果没有运行中的任务，停止刷新
-      stopRefresh();
-    }
-  }, 10000);
-};
 
-// 停止定时刷新
-const stopRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = undefined;
+  const snapshot = await createReportSnapshot(reportData.value, false);
+  if (snapshot) {
+    Message.success('报告快照已保存');
   }
-};
+}
 
-watch(currentProjectId, () => {
-  searchKeyword.value = '';
-  statusFilter.value = '';
-  paginationConfig.current = 1;
-  if (currentProjectId.value) {
-    fetchExecutions().then(() => {
-      startRefresh();
+async function handleOverwriteSnapshot() {
+  if (!reportData.value || !activeSnapshotId.value) {
+    Message.warning('请先加载一个可覆盖的报告快照');
+    return;
+  }
+
+  Modal.confirm({
+    title: '确认覆盖',
+    content: '将用当前报告内容覆盖这条快照，原内容会被更新，确定继续吗？',
+    onOk: async () => {
+      const updated = await patchSnapshot(activeSnapshotId.value!, {
+        suite_ids: [...checkedSuiteIds.value],
+        report_data: JSON.parse(JSON.stringify(reportData.value)),
+      });
+      if (!updated) {
+        return;
+      }
+      activeSnapshotId.value = updated.id;
+      reportData.value = updated.report;
+      Message.success('当前快照已覆盖保存');
+    },
+  });
+}
+
+function applySuiteSelectionFromRoute() {
+  const suiteId = Number(route.query.suiteId);
+  if (!suiteId || !Number.isFinite(suiteId)) {
+    return;
+  }
+  if (!suites.value.some((suite) => suite.id === suiteId)) {
+    return;
+  }
+  checkedKeys.value = Array.from(new Set([suiteId, ...checkedSuiteIds.value]));
+  expandedKeys.value = Array.from(new Set([suiteId, ...expandedKeys.value.map((item) => Number(item))]));
+}
+
+async function fetchSuites() {
+  if (!currentProjectId.value) {
+    suites.value = [];
+    checkedKeys.value = [];
+    expandedKeys.value = [];
+    return;
+  }
+
+  suiteLoading.value = true;
+  try {
+    const response = await getTestSuiteList(currentProjectId.value, {
+      search: searchKeyword.value.trim() || undefined,
     });
-  } else {
-    stopRefresh();
+    if (response.success && response.data) {
+      suites.value = response.data;
+      expandedKeys.value = response.data.map((item) => item.id);
+      checkedKeys.value = checkedKeys.value.filter((item) => response.data?.some((suite) => suite.id === Number(item)));
+      applySuiteSelectionFromRoute();
+      return;
+    }
+    Message.error(response.error || '获取套件列表失败');
+    suites.value = [];
+  } catch (error) {
+    console.error('获取套件列表失败:', error);
+    Message.error('获取套件列表失败');
+    suites.value = [];
+  } finally {
+    suiteLoading.value = false;
   }
-});
+}
+
+function checkAllSuites() {
+  checkedKeys.value = suites.value.map((item) => item.id);
+}
+
+function clearCheckedSuites() {
+  checkedKeys.value = [];
+}
+
+function expandAllSuites() {
+  expandedKeys.value = suites.value.map((item) => item.id);
+}
+
+async function handleGenerateReport() {
+  if (!currentProjectId.value) {
+    Message.warning('请先选择项目');
+    return;
+  }
+
+  if (checkedSuiteIds.value.length === 0) {
+    Message.warning('请至少选择一个测试套件');
+    return;
+  }
+
+  reportLoading.value = true;
+  try {
+    const response = await generateAiIterationTestReport(currentProjectId.value, checkedSuiteIds.value);
+    if (response.success && response.data) {
+      reportData.value = response.data;
+      await createReportSnapshot(response.data);
+      Message.success(response.data.used_ai ? '测试报告生成完成' : '测试报告已生成（统计版）');
+      return;
+    }
+    Message.error(response.error || '生成测试报告失败');
+  } catch (error) {
+    console.error('生成测试报告失败:', error);
+    Message.error('生成测试报告失败');
+  } finally {
+    reportLoading.value = false;
+  }
+}
+
+function getSeverityColor(value: string) {
+  if (value === 'high') return 'red';
+  if (value === 'low') return 'green';
+  return 'orange';
+}
+
+function getSeverityLabel(value: string) {
+  if (value === 'high') return '高';
+  if (value === 'low') return '低';
+  return '中';
+}
+
+function getPriorityColor(value: string) {
+  if (value === 'high') return 'red';
+  if (value === 'low') return 'green';
+  return 'orange';
+}
+
+function getPriorityLabel(value: string) {
+  if (value === 'high') return '高优先级';
+  if (value === 'low') return '低优先级';
+  return '中优先级';
+}
+
+function buildReportMarkdown(report: AiIterationTestReport) {
+  const lines: string[] = [
+    '# 测试报告',
+    '',
+    `- 生成时间：${formatDateTime(report.generated_at)}`,
+    `- 生成方式：${report.used_ai ? 'AI生成' : '统计生成'}`,
+    `- 覆盖套件：${report.suite_count}`,
+    `- 测试用例：${report.testcase_count}`,
+    `- BUG数量：${report.bug_count}`,
+    `- 本次选择：${report.selected_suite_count}`,
+    '',
+    '## 总体结论',
+    report.summary,
+    '',
+    '## 质量概览',
+    report.quality_overview,
+    '',
+    '## 风险概览',
+    report.risk_overview,
+    '',
+    '## 关键发现',
+  ];
+
+  if (report.findings.length === 0) {
+    lines.push('- 暂无');
+  } else {
+    report.findings.forEach((item) => {
+      lines.push(`- [${getSeverityLabel(item.severity)}] ${item.title}：${item.detail}`);
+    });
+  }
+
+  lines.push('', '## 改进建议');
+  if (report.recommendations.length === 0) {
+    lines.push('- 暂无');
+  } else {
+    report.recommendations.forEach((item) => {
+      lines.push(`- [${getPriorityLabel(item.priority)}] ${item.title}：${item.detail}`);
+    });
+  }
+
+  lines.push('', '## 套件明细');
+  report.suite_breakdown.forEach((item) => {
+    lines.push(
+      `- ${item.path}：测试用例 ${item.testcase_count}，已审核 ${item.approved_testcase_count}，失败 ${item.failed_testcase_count}，未执行 ${item.not_executed_testcase_count}，BUG ${item.bug_count}，待复测 ${item.pending_retest_bug_count}`
+    );
+  });
+
+  lines.push('', '## 支撑证据');
+  if (report.evidence.length === 0) {
+    lines.push('- 暂无');
+  } else {
+    report.evidence.forEach((item) => {
+      lines.push(`- ${item.label}：${item.detail}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+async function handleCopyReportSummary() {
+  if (!reportData.value) {
+    Message.warning('当前没有可复制的测试报告');
+    return;
+  }
+
+  const summaryText = buildReportMarkdown(reportData.value);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(summaryText);
+    } else {
+      const textArea = document.createElement('textarea');
+      textArea.value = summaryText;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+    Message.success('测试报告摘要已复制');
+  } catch (error) {
+    console.error('复制测试报告失败:', error);
+    Message.error('复制测试报告失败');
+  }
+}
+
+function handleExportReport() {
+  if (!reportData.value) {
+    Message.warning('当前没有可导出的测试报告');
+    return;
+  }
+
+  const blob = new Blob([buildReportMarkdown(reportData.value)], {
+    type: 'text/markdown;charset=utf-8',
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const date = new Date();
+  const fileName = `测试报告_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(
+    date.getDate()
+  ).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.md`;
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+  Message.success('测试报告已导出');
+}
 
 onMounted(() => {
-  if (currentProjectId.value) {
-    fetchExecutions().then(() => {
-      startRefresh();
-    });
-  }
+  fetchSuites();
+  void loadReportSnapshots();
 });
 
-onUnmounted(() => {
-  stopRefresh();
-});
+watch(
+  () => currentProjectId.value,
+  (projectId) => {
+    if (!projectId) {
+      suites.value = [];
+      checkedKeys.value = [];
+      expandedKeys.value = [];
+      reportData.value = null;
+      reportSnapshots.value = [];
+      activeSnapshotId.value = null;
+      cancelRenameSnapshot();
+      return;
+    }
+    fetchSuites();
+    void loadReportSnapshots();
+  }
+);
+
+watch(
+  () => route.query.suiteId,
+  () => {
+    applySuiteSelectionFromRoute();
+  }
+);
 </script>
 
 <style scoped>
-.test-execution-history-view {
-  padding: 24px;
-  background: transparent;
-  min-height: 100%;
+.test-report-view {
+  height: 100%;
 }
 
-.no-project-selected {
+.empty-state,
+.report-placeholder {
   display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: center;
-  min-height: 400px;
-  background: white;
+  min-height: 420px;
+  background: #fff;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.filter-section {
-  margin-bottom: 16px;
-  padding: 16px 24px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.report-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  min-height: calc(100vh - 180px);
 }
 
-.filter-row {
+.report-sidebar,
+.report-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.report-sidebar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
 }
 
-.content-section {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.suite-name {
-  color: #1890ff;
-  cursor: pointer;
-  font-weight: 500;
-  transition: color 0.2s;
-}
-
-.suite-name:hover {
-  color: #40a9ff;
-  text-decoration: underline;
-}
-
-.statistics {
+.sidebar-header,
+.report-header-card,
+.item-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.pass-rate {
+.report-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sidebar-title,
+.report-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.sidebar-subtitle,
+.report-meta,
+.sidebar-note,
+.section-note,
+.checked-summary {
+  font-size: 12px;
+  color: #86909c;
+  line-height: 1.6;
+}
+
+.sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.suite-tree-panel {
+  flex: 1;
+  min-height: 260px;
+  overflow: auto;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.suite-node {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.suite-node-name,
+.item-title {
+  color: #1d2129;
+  font-weight: 500;
+}
+
+.suite-node-count {
+  min-width: 28px;
+  text-align: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #f2f3f5;
+  color: #4e5969;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.sidebar-actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
-.rate-text {
-  font-weight: 500;
+.snapshot-panel {
+  margin-top: 12px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.snapshot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.snapshot-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.snapshot-search {
+  margin-bottom: 8px;
+}
+
+.snapshot-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #86909c;
   font-size: 12px;
+}
+
+.snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #f2f3f5;
+  background: #f7f8fa;
+}
+
+.snapshot-item.active {
+  border-color: #165dff;
+  background: #eff4ff;
+}
+
+.snapshot-item.pinned {
+  border-color: #f7c244;
+}
+
+.snapshot-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.snapshot-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.snapshot-name {
+  color: #1d2129;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.snapshot-title-input {
+  width: 220px;
+}
+
+.snapshot-meta {
+  margin-top: 4px;
+  color: #86909c;
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.snapshot-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report-content {
+  overflow: auto;
+}
+
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-card,
+.report-section,
+.item-card,
+.report-header-card {
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.summary-card {
+  padding: 16px;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: #86909c;
+}
+
+.summary-value {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 600;
+  color: #1d2129;
+  line-height: 1;
+}
+
+.report-header-card,
+.report-section,
+.item-card {
+  padding: 16px;
+}
+
+.report-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.section-title {
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.section-text,
+.item-detail {
+  margin: 0;
   color: #4e5969;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+}
+
+.tag-flow,
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tag-flow {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1200px) {
+  .report-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .report-summary-grid,
+  .report-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .snapshot-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .snapshot-actions {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .snapshot-title-input {
+    width: 100%;
+  }
 }
 </style>

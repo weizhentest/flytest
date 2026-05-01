@@ -564,3 +564,286 @@ export const deleteTestExecution = async (
     };
   }
 };
+
+export interface AiIterationTestReport {
+  suite_ids: number[];
+  suite_count: number;
+  selected_suite_count: number;
+  testcase_count: number;
+  bug_count: number;
+  generated_at: string;
+  used_ai: boolean;
+  note: string;
+  model_name?: string | null;
+  summary: string;
+  quality_overview: string;
+  risk_overview: string;
+  findings: Array<{
+    title: string;
+    detail: string;
+    severity: 'high' | 'medium' | 'low';
+  }>;
+  recommendations: Array<{
+    title: string;
+    detail: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  evidence: Array<{
+    label: string;
+    detail: string;
+  }>;
+  suite_breakdown: Array<{
+    id: number;
+    name: string;
+    level: number;
+    parent_id?: number | null;
+    path: string;
+    testcase_count: number;
+    approved_testcase_count: number;
+    failed_testcase_count: number;
+    not_executed_testcase_count: number;
+    bug_count: number;
+    pending_retest_bug_count: number;
+    open_bug_count: number;
+  }>;
+  execution_status_distribution: Record<string, number>;
+  bug_status_distribution: Record<string, number>;
+  review_status_distribution: Record<string, number>;
+}
+
+export interface AiIterationTestReportResponse {
+  success: boolean;
+  data?: AiIterationTestReport;
+  error?: string;
+  statusCode?: number;
+}
+
+export interface TestReportSnapshot {
+  id: number;
+  project: number;
+  title: string;
+  is_pinned?: boolean;
+  suite_ids: number[];
+  report_data: AiIterationTestReport;
+  creator?: number | null;
+  creator_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestReportSnapshotListResponse {
+  success: boolean;
+  data?: TestReportSnapshot[];
+  error?: string;
+  statusCode?: number;
+}
+
+export interface TestReportSnapshotResponse {
+  success: boolean;
+  data?: TestReportSnapshot;
+  error?: string;
+  statusCode?: number;
+}
+
+export interface UpdateTestReportSnapshotPayload {
+  title?: string;
+  is_pinned?: boolean;
+  suite_ids?: number[];
+  report_data?: AiIterationTestReport;
+}
+
+export const generateAiIterationTestReport = async (
+  projectId: number,
+  suiteIds: number[]
+): Promise<AiIterationTestReportResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return {
+      success: false,
+      error: '未登录或会话已过期',
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-executions/ai-report/`,
+      { suite_ids: suiteIds },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      data: response.data?.data || response.data,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error:
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        error.message ||
+        '生成测试报告失败',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const getTestReportSnapshots = async (
+  projectId: number
+): Promise<TestReportSnapshotListResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return { success: false, error: '未登录或会话已过期' };
+  }
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/projects/${projectId}/test-executions/report-snapshots/`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    });
+
+    return {
+      success: true,
+      data: response.data?.data || [],
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '获取报告快照失败',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const createTestReportSnapshot = async (
+  projectId: number,
+  payload: {
+    title: string;
+    is_pinned?: boolean;
+    suite_ids: number[];
+    report_data: AiIterationTestReport;
+  }
+): Promise<TestReportSnapshotResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return { success: false, error: '未登录或会话已过期' };
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/projects/${projectId}/test-executions/report-snapshots/`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      data: response.data?.data,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '保存报告快照失败',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const updateTestReportSnapshot = async (
+  projectId: number,
+  snapshotId: number,
+  payload: UpdateTestReportSnapshotPayload
+): Promise<TestReportSnapshotResponse> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return { success: false, error: '未登录或会话已过期' };
+  }
+
+  try {
+    const response = await axios.patch(
+      `${API_BASE_URL}/projects/${projectId}/test-executions/report-snapshots/${snapshotId}/update/`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      data: response.data?.data,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '更新报告快照失败',
+      statusCode: error.response?.status,
+    };
+  }
+};
+
+export const deleteTestReportSnapshot = async (
+  projectId: number,
+  snapshotId: number
+): Promise<{ success: boolean; error?: string; statusCode?: number }> => {
+  const authStore = useAuthStore();
+  const accessToken = authStore.getAccessToken;
+
+  if (!accessToken) {
+    return { success: false, error: '未登录或会话已过期' };
+  }
+
+  try {
+    const response = await axios.delete(
+      `${API_BASE_URL}/projects/${projectId}/test-executions/report-snapshots/${snapshotId}/`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }
+    );
+
+    return {
+      success: true,
+      statusCode: response.status,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.response?.data?.message || error.message || '删除报告快照失败',
+      statusCode: error.response?.status,
+    };
+  }
+};

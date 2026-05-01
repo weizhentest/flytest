@@ -34,6 +34,7 @@ from .models import (
     TestExecution,
     TestCaseResult,
     TestCaseAssignment,
+    TestReportSnapshot,
     TestBug,
     TestBugAttachment,
     TestBugActivity,
@@ -47,6 +48,7 @@ from .serializers import (
     TestBugListSerializer,
     TestBugAttachmentSerializer,
     TestBugActivitySerializer,
+    TestReportSnapshotSerializer,
 )
 from .permissions import IsProjectMemberForTestCase, IsProjectMemberForTestCaseModule
 from .filters import TestBugFilter, TestCaseFilter  # 导入自定义过滤器
@@ -63,6 +65,7 @@ from langgraph_integration.views import (
 from prompts.models import UserPrompt
 from requirements.models import RequirementDocument, RequirementModule
 from projects.models import ProjectMember
+from .ai_test_report_generator import generate_iteration_test_report
 
 
 logger = logging.getLogger(__name__)
@@ -4111,6 +4114,9 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "started_at", "completed_at", "status"]
     ordering = ["-created_at"]
 
+    def _get_snapshot_queryset(self, project):
+        return TestReportSnapshot.objects.filter(project=project).select_related("creator")
+
     def get_permissions(self):
         """返回当前视图所需的权限实例列表。"""
         from .permissions import IsProjectMemberForTestExecution
@@ -4299,6 +4305,367 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             )
 
         return Response(report_data)
+
+    @action(detail=False, methods=["post"], url_path="ai-report")
+    def ai_report(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        suite_ids = request.data.get("suite_ids") or []
+
+        if not isinstance(suite_ids, list) or not suite_ids:
+            return Response(
+                {"error": "请至少选择一个测试套件"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            selected_suite_ids = [int(item) for item in suite_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "测试套件参数格式错误"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        selected_suites = list(
+            TestSuite.objects.filter(project=project, id__in=selected_suite_ids)
+            .select_related("parent", "creator")
+            .prefetch_related("children")
+        )
+        if not selected_suites:
+            return Response(
+                {"error": "未找到可生成报告的测试套件"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        found_suite_ids = {suite.id for suite in selected_suites}
+        missing_ids = [item for item in selected_suite_ids if item not in found_suite_ids]
+        if missing_ids:
+            return Response(
+                {"error": f"以下测试套件不存在或不属于当前项目: {missing_ids}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        expanded_suite_ids = set()
+        for suite in selected_suites:
+            expanded_suite_ids.update(suite.get_all_descendant_ids())
+
+        suites = list(
+            TestSuite.objects.filter(project=project, id__in=expanded_suite_ids)
+            .select_related("parent", "creator")
+            .prefetch_related("testcases")
+        )
+        suites_by_id = {suite.id: suite for suite in suites}
+
+        testcase_queryset = (
+            TestCase.objects.filter(test_suites__id__in=expanded_suite_ids)
+            .select_related("module", "creator")
+            .prefetch_related("steps")
+            .distinct()
+        )
+        testcases = list(testcase_queryset)
+        testcase_ids = [testcase.id for testcase in testcases]
+
+        assignment_map = {
+            assignment.testcase_id: assignment
+            for assignment in TestCaseAssignment.objects.filter(
+                testcase_id__in=testcase_ids,
+                suite_id__in=expanded_suite_ids,
+            ).select_related("assignee", "suite")
+        }
+
+        bug_queryset = (
+            TestBug.objects.filter(project=project, suite_id__in=expanded_suite_ids)
+            .select_related("suite", "testcase", "assigned_to", "opened_by", "resolved_by", "closed_by")
+            .prefetch_related("related_testcases", "assigned_users")
+            .distinct()
+        )
+        bugs = list(bug_queryset)
+
+        execution_status_distribution = {}
+        review_status_distribution = {}
+        bug_status_distribution = {}
+        bug_priority_distribution = {}
+
+        suite_case_map: dict[int, list[TestCase]] = {suite.id: [] for suite in suites}
+        for testcase in testcases:
+            linked_suite_ids = list(
+                testcase.test_suites.filter(id__in=expanded_suite_ids).values_list("id", flat=True)
+            )
+            for suite_id in linked_suite_ids:
+                suite_case_map.setdefault(suite_id, []).append(testcase)
+
+            execution_status_distribution[testcase.execution_status] = (
+                execution_status_distribution.get(testcase.execution_status, 0) + 1
+            )
+            review_status_distribution[testcase.review_status or ""] = (
+                review_status_distribution.get(testcase.review_status or "", 0) + 1
+            )
+
+        for bug in bugs:
+            effective_status = bug.get_effective_status()
+            bug_status_distribution[effective_status] = bug_status_distribution.get(effective_status, 0) + 1
+            bug_priority_distribution[bug.priority] = bug_priority_distribution.get(bug.priority, 0) + 1
+
+        testcase_payload = []
+        for testcase in testcases:
+            assignment = assignment_map.get(testcase.id)
+            steps_payload = [
+                {
+                    "step_number": getattr(step, "step_number", index + 1),
+                    "description": step.description,
+                    "expected_result": step.expected_result,
+                }
+                for index, step in enumerate(testcase.steps.all())
+            ]
+            testcase_payload.append(
+                {
+                    "id": testcase.id,
+                    "name": testcase.name,
+                    "module": testcase.module.name if testcase.module else "",
+                    "precondition": testcase.precondition or "",
+                    "priority": testcase.level,
+                    "test_type": testcase.get_test_type_display() if hasattr(testcase, "get_test_type_display") else testcase.test_type,
+                    "review_status": testcase.review_status,
+                    "execution_status": testcase.execution_status,
+                    "executed_at": testcase.executed_at.isoformat() if testcase.executed_at else None,
+                    "creator": testcase.creator.username if testcase.creator else "",
+                    "assignee": assignment.assignee.username if assignment and assignment.assignee else "",
+                    "assigned_at": assignment.created_at.isoformat() if assignment and assignment.created_at else None,
+                    "steps": steps_payload,
+                    "notes": testcase.notes or "",
+                    "related_bug_count": getattr(testcase, "related_bug_count", None),
+                }
+            )
+
+        bug_payload = []
+        for bug in bugs:
+            related_testcases = []
+            if bug.testcase_id and bug.testcase:
+                related_testcases.append({"id": bug.testcase.id, "name": bug.testcase.name})
+            related_testcases.extend(
+                [
+                    {"id": item.id, "name": item.name}
+                    for item in bug.related_testcases.exclude(id=bug.testcase_id).order_by("id")
+                ]
+            )
+            bug_payload.append(
+                {
+                    "id": bug.id,
+                    "title": bug.title,
+                    "suite": bug.suite.name if bug.suite else "",
+                    "bug_type": bug.get_bug_type_display(),
+                    "severity": bug.get_severity_display(),
+                    "priority": f"P{bug.priority}",
+                    "status": bug.get_effective_status_display(),
+                    "resolution": bug.get_resolution_display() if bug.resolution else "-",
+                    "assigned_to": [user.username for user in bug.assigned_users.order_by("id")] or ([bug.assigned_to.username] if bug.assigned_to else []),
+                    "opened_by": bug.opened_by.username if bug.opened_by else "",
+                    "opened_at": bug.opened_at.isoformat() if bug.opened_at else None,
+                    "assigned_at": bug.assigned_at.isoformat() if bug.assigned_at else None,
+                    "resolved_at": bug.resolved_at.isoformat() if bug.resolved_at else None,
+                    "closed_at": bug.closed_at.isoformat() if bug.closed_at else None,
+                    "deadline": bug.deadline.isoformat() if bug.deadline else None,
+                    "keywords": bug.keywords or "",
+                    "solution": bug.solution or "",
+                    "steps": bug.steps or "",
+                    "expected_result": bug.expected_result or "",
+                    "actual_result": bug.actual_result or "",
+                    "related_testcases": related_testcases,
+                }
+            )
+
+        suite_breakdown = []
+        for suite in sorted(suites, key=lambda item: (item.level, item.id)):
+            related_cases = suite_case_map.get(suite.id, [])
+            suite_bug_list = [bug for bug in bugs if bug.suite_id == suite.id]
+            suite_breakdown.append(
+                {
+                    "id": suite.id,
+                    "name": suite.name,
+                    "level": suite.level,
+                    "parent_id": suite.parent_id,
+                    "path": self._build_suite_path(suite, suites_by_id),
+                    "testcase_count": len(related_cases),
+                    "approved_testcase_count": sum(1 for case in related_cases if case.review_status == "approved"),
+                    "failed_testcase_count": sum(1 for case in related_cases if case.execution_status == "failed"),
+                    "not_executed_testcase_count": sum(
+                        1 for case in related_cases if case.execution_status == "not_executed"
+                    ),
+                    "bug_count": len(suite_bug_list),
+                    "pending_retest_bug_count": sum(
+                        1 for bug in suite_bug_list if bug.get_effective_status() == TestBug.STATUS_PENDING_RETEST
+                    ),
+                    "open_bug_count": sum(
+                        1
+                        for bug in suite_bug_list
+                        if bug.get_effective_status()
+                        in {
+                            TestBug.STATUS_UNASSIGNED,
+                            TestBug.STATUS_ASSIGNED,
+                            TestBug.STATUS_CONFIRMED,
+                            TestBug.STATUS_FIXED,
+                            TestBug.STATUS_PENDING_RETEST,
+                            TestBug.STATUS_EXPIRED,
+                        }
+                    ),
+                }
+            )
+
+        report_context = {
+            "project": {
+                "id": project.id,
+                "name": project.name,
+            },
+            "selected_suite_ids": selected_suite_ids,
+            "selected_suite_names": [suite.name for suite in selected_suites],
+            "generated_at": timezone.now().isoformat(),
+            "totals": {
+                "suite_count": len(suites),
+                "selected_suite_count": len(selected_suites),
+                "testcase_count": len(testcases),
+                "approved_testcase_count": sum(1 for case in testcases if case.review_status == "approved"),
+                "bug_count": len(bugs),
+            },
+            "execution_status_distribution": execution_status_distribution,
+            "review_status_distribution": review_status_distribution,
+            "bug_status_distribution": bug_status_distribution,
+            "bug_priority_distribution": bug_priority_distribution,
+            "suite_breakdown": suite_breakdown,
+            "testcases": testcase_payload,
+            "bugs": bug_payload,
+        }
+
+        report_result = generate_iteration_test_report(user=request.user, report_context=report_context)
+
+        return Response(
+            {
+                "success": True,
+                "data": {
+                    "suite_ids": selected_suite_ids,
+                    "suite_count": len(suites),
+                    "selected_suite_count": len(selected_suites),
+                    "testcase_count": len(testcases),
+                    "bug_count": len(bugs),
+                    "generated_at": report_context["generated_at"],
+                    "used_ai": report_result.used_ai,
+                    "note": report_result.note,
+                    "model_name": report_result.model_name,
+                    "summary": report_result.summary,
+                    "quality_overview": report_result.quality_overview,
+                    "risk_overview": report_result.risk_overview,
+                    "findings": report_result.findings,
+                    "recommendations": report_result.recommendations,
+                    "evidence": report_result.evidence,
+                    "suite_breakdown": suite_breakdown,
+                    "execution_status_distribution": execution_status_distribution,
+                    "bug_status_distribution": bug_status_distribution,
+                    "review_status_distribution": review_status_distribution,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get", "post"], url_path="report-snapshots")
+    def report_snapshots(self, request, project_pk=None):
+        project = get_object_or_404(Project, pk=project_pk)
+
+        if request.method.lower() == "get":
+            snapshots = self._get_snapshot_queryset(project)[:20]
+            serializer = TestReportSnapshotSerializer(snapshots, many=True)
+            return Response({"success": True, "data": serializer.data}, status=status.HTTP_200_OK)
+
+        title = str(request.data.get("title") or "").strip()
+        suite_ids = request.data.get("suite_ids") or []
+        report_data = request.data.get("report_data") or {}
+
+        if not title:
+            return Response({"error": "快照标题不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(suite_ids, list):
+            return Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(report_data, dict):
+            return Response({"error": "报告数据格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            normalized_suite_ids = [int(item) for item in suite_ids]
+        except (TypeError, ValueError):
+            return Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        snapshot = TestReportSnapshot.objects.create(
+            project=project,
+            title=title,
+            is_pinned=bool(request.data.get("is_pinned", False)),
+            suite_ids=normalized_suite_ids,
+            report_data=report_data,
+            creator=request.user,
+        )
+
+        snapshots_to_keep = list(self._get_snapshot_queryset(project).values_list("id", flat=True)[:20])
+        self._get_snapshot_queryset(project).exclude(id__in=snapshots_to_keep).delete()
+
+        serializer = TestReportSnapshotSerializer(snapshot)
+        return Response({"success": True, "data": serializer.data}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["delete"], url_path=r"report-snapshots/(?P<snapshot_id>[^/.]+)")
+    def delete_report_snapshot(self, request, project_pk=None, snapshot_id=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        snapshot = get_object_or_404(self._get_snapshot_queryset(project), pk=snapshot_id)
+        snapshot.delete()
+        return Response({"success": True, "message": "报告快照已删除"}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["patch"], url_path=r"report-snapshots/(?P<snapshot_id>[^/.]+)/update")
+    def update_report_snapshot(self, request, project_pk=None, snapshot_id=None):
+        project = get_object_or_404(Project, pk=project_pk)
+        snapshot = get_object_or_404(self._get_snapshot_queryset(project), pk=snapshot_id)
+
+        updated_fields = []
+        title = request.data.get("title")
+        if title is not None:
+            title = str(title).strip()
+            if not title:
+                return Response({"error": "快照标题不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+            snapshot.title = title
+            updated_fields.append("title")
+
+        if "is_pinned" in request.data:
+            snapshot.is_pinned = bool(request.data.get("is_pinned"))
+            updated_fields.append("is_pinned")
+
+        if "suite_ids" in request.data:
+            suite_ids = request.data.get("suite_ids") or []
+            if not isinstance(suite_ids, list):
+                return Response({"error": "suite_ids 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                normalized_suite_ids = [int(item) for item in suite_ids]
+            except (TypeError, ValueError):
+                return Response({"error": "suite_ids 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+            snapshot.suite_ids = normalized_suite_ids
+            updated_fields.append("suite_ids")
+
+        if "report_data" in request.data:
+            report_data = request.data.get("report_data") or {}
+            if not isinstance(report_data, dict):
+                return Response({"error": "report_data 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+            snapshot.report_data = report_data
+            updated_fields.append("report_data")
+
+        if not updated_fields:
+            return Response({"error": "没有可更新的内容"}, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_fields.append("updated_at")
+        snapshot.save(update_fields=updated_fields)
+        serializer = TestReportSnapshotSerializer(snapshot)
+        return Response({"success": True, "data": serializer.data}, status=status.HTTP_200_OK)
+
+    def _build_suite_path(self, suite, suites_by_id):
+        names = [suite.name]
+        parent_id = suite.parent_id
+        while parent_id:
+            parent_suite = suites_by_id.get(parent_id)
+            if parent_suite is None:
+                break
+            names.append(parent_suite.name)
+            parent_id = parent_suite.parent_id
+        names.reverse()
+        return " / ".join(names)
 
     def destroy(self, request, *args, **kwargs):
         """

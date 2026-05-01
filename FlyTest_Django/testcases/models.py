@@ -484,6 +484,39 @@ class TestExecution(models.Model):
         return 0.0
 
 
+class TestReportSnapshot(models.Model):
+    """测试报告快照。"""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="test_report_snapshots",
+        verbose_name=_("所属项目"),
+    )
+    title = models.CharField(_("快照标题"), max_length=255)
+    is_pinned = models.BooleanField(_("是否置顶"), default=False)
+    suite_ids = models.JSONField(_("测试套件ID列表"), default=list, blank=True)
+    report_data = models.JSONField(_("报告数据"), default=dict, blank=True)
+    creator = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_test_report_snapshots",
+        verbose_name=_("创建人"),
+    )
+    created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
+    updated_at = models.DateTimeField(_("更新时间"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("测试报告快照")
+        verbose_name_plural = _("测试报告快照")
+        ordering = ["-is_pinned", "-created_at"]
+
+    def __str__(self):
+        return f"{self.project_id}-{self.title}"
+
+
 class TestCaseResult(models.Model):
     """
     测试用例执行结果模型 - 记录单个用例的执行结果

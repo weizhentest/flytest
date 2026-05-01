@@ -26,7 +26,7 @@
               </div>
             </div>
             <div class="suite-toolbar-actions">
-              <a-button @click="showExecutionList = true">执行历史</a-button>
+              <a-button @click="goToTestReport">测试报告</a-button>
               <a-button @click="showDetailModal = true">套件详情</a-button>
               <a-button
                 type="primary"
@@ -111,11 +111,6 @@
       @success="handleExecutionSuccess"
     />
 
-    <TestExecutionListModal
-      v-if="showExecutionList"
-      v-model:visible="showExecutionList"
-      :current-project-id="currentProjectId"
-    />
   </div>
 </template>
 
@@ -126,7 +121,6 @@ import { Message, Notification } from '@arco-design/web-vue';
 import type { TreeNodeData } from '@arco-design/web-vue';
 import TestCaseList from '@/components/testcase/TestCaseList.vue';
 import TestExecutionConfirmModal from '@/components/testcase/TestExecutionConfirmModal.vue';
-import TestExecutionListModal from '@/components/testcase/TestExecutionListModal.vue';
 import TestSuiteDetailModal from '@/components/testcase/TestSuiteDetailModal.vue';
 import TestSuiteTreePanel from '@/components/testcase/TestSuiteTreePanel.vue';
 import { sendChatMessageStream } from '@/features/langgraph/services/chatService';
@@ -153,7 +147,6 @@ const selectedSuiteDetail = ref<TestSuite | null>(null);
 const selectedModuleId = ref<number | null>(null);
 
 const showExecutionConfirm = ref(false);
-const showExecutionList = ref(false);
 const showDetailModal = ref(false);
 
 const allModules = ref<TestCaseModule[]>([]);
@@ -211,6 +204,20 @@ const fetchSelectedSuiteDetail = async () => {
 
   const response = await getTestSuiteDetail(currentProjectId.value, selectedSuiteId.value);
   selectedSuiteDetail.value = response.success && response.data ? response.data : null;
+};
+
+const goToTestReport = () => {
+  if (!selectedSuiteId.value) {
+    router.push('/test-executions');
+    return;
+  }
+
+  router.push({
+    path: '/test-executions',
+    query: {
+      suiteId: String(selectedSuiteId.value),
+    },
+  });
 };
 
 const handleSuiteSelected = async (suiteId: number | null) => {
@@ -385,7 +392,6 @@ ${data.suggestion || '请根据测试最佳实践进行全面优化'}
 
 const handleExecutionSuccess = () => {
   Message.success('测试执行已启动');
-  showExecutionList.value = true;
 };
 
 const stopSuitePanelResize = () => {

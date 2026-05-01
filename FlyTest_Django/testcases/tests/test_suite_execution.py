@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from projects.models import Project, ProjectMember
 from testcases.models import TestBug, TestCase as TestCaseModel
-from testcases.models import TestCaseAssignment, TestCaseModule, TestSuite
+from testcases.models import TestCaseAssignment, TestCaseModule, TestReportSnapshot, TestSuite
 from testcases.serializers import TestExecutionCreateSerializer, TestSuiteSerializer
 
 
@@ -319,6 +319,212 @@ class TestSuiteExecutionTests(TestCase):
         self.assertNotIn(sibling_case.name, result_names)
         child_case_payload = next(item for item in payload if item["name"] == child_case.name)
         self.assertIsNotNone(child_case_payload.get("assignment_created_at"))
+
+    def test_ai_report_returns_rule_based_report_for_selected_suite_tree(self):
+        admin_user = User.objects.create_superuser(
+            username="reportadmin",
+            email="reportadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        child_suite = TestSuite.objects.create(
+            project=self.project,
+            name="Child Suite",
+            parent=self.suite,
+            creator=self.user,
+        )
+        child_case = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name="Child Report Case",
+            creator=self.user,
+            review_status="approved",
+            execution_status="failed",
+        )
+        self.suite.testcases.add(self.testcase)
+        child_suite.testcases.add(child_case)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=child_suite,
+            testcase=child_case,
+            title="Report Bug",
+            status=TestBug.STATUS_PENDING_RETEST,
+            opened_by=admin_user,
+        )
+        bug.related_testcases.add(child_case)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        self.assertFalse(payload["used_ai"])
+        self.assertEqual(payload["selected_suite_count"], 1)
+        self.assertEqual(payload["suite_count"], 2)
+        self.assertEqual(payload["testcase_count"], 2)
+        self.assertEqual(payload["bug_count"], 1)
+        self.assertTrue(payload["summary"])
+        self.assertTrue(payload["suite_breakdown"])
+
+    def test_ai_report_requires_suite_selection(self):
+        admin_user = User.objects.create_superuser(
+            username="reportemptyadmin",
+            email="reportemptyadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data["error"], "请至少选择一个测试套件")
+
+    def test_report_snapshot_can_be_created_and_listed(self):
+        admin_user = User.objects.create_superuser(
+            username="snapshotadmin",
+            email="snapshotadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        payload = {
+            "title": "测试报告 2026-05-01 13:00:00",
+            "suite_ids": [self.suite.id],
+            "report_data": {
+                "generated_at": "2026-05-01T13:00:00+08:00",
+                "summary": "报告摘要",
+                "suite_count": 1,
+                "selected_suite_count": 1,
+                "testcase_count": 1,
+                "bug_count": 0,
+                "used_ai": False,
+            },
+        }
+        create_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        self.assertTrue(TestReportSnapshot.objects.filter(project=self.project, title=payload["title"]).exists())
+
+        list_response = self.api_client.get(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/"
+        )
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertTrue(list_response.data["success"])
+        self.assertEqual(len(list_response.data["data"]), 1)
+        self.assertEqual(list_response.data["data"][0]["title"], payload["title"])
+
+    def test_report_snapshot_can_be_renamed_and_pinned(self):
+        admin_user = User.objects.create_superuser(
+            username="snapshoteditor",
+            email="snapshoteditor@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        first_snapshot = TestReportSnapshot.objects.create(
+            project=self.project,
+            title="First Snapshot",
+            suite_ids=[self.suite.id],
+            report_data={"summary": "first"},
+            creator=admin_user,
+        )
+        second_snapshot = TestReportSnapshot.objects.create(
+            project=self.project,
+            title="Second Snapshot",
+            suite_ids=[self.suite.id],
+            report_data={"summary": "second"},
+            creator=admin_user,
+        )
+
+        update_response = self.api_client.patch(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/{first_snapshot.id}/update/",
+            {"title": "Pinned Snapshot", "is_pinned": True},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 200, update_response.data)
+        self.assertTrue(update_response.data["success"])
+        self.assertEqual(update_response.data["data"]["title"], "Pinned Snapshot")
+        self.assertTrue(update_response.data["data"]["is_pinned"])
+
+        first_snapshot.refresh_from_db()
+        second_snapshot.refresh_from_db()
+        self.assertEqual(first_snapshot.title, "Pinned Snapshot")
+        self.assertTrue(first_snapshot.is_pinned)
+        self.assertFalse(second_snapshot.is_pinned)
+
+        list_response = self.api_client.get(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/"
+        )
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(len(list_response.data["data"]), 2)
+        self.assertEqual(list_response.data["data"][0]["id"], first_snapshot.id)
+        self.assertTrue(list_response.data["data"][0]["is_pinned"])
+        self.assertEqual(list_response.data["data"][1]["id"], second_snapshot.id)
+
+    def test_report_snapshot_can_be_overwritten_with_new_report_content(self):
+        admin_user = User.objects.create_superuser(
+            username="snapshotwriter",
+            email="snapshotwriter@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        snapshot = TestReportSnapshot.objects.create(
+            project=self.project,
+            title="Iteration Report",
+            suite_ids=[self.suite.id],
+            report_data={
+                "generated_at": "2026-05-01T13:00:00+08:00",
+                "summary": "old summary",
+                "suite_count": 1,
+            },
+            creator=admin_user,
+        )
+
+        update_response = self.api_client.patch(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/{snapshot.id}/update/",
+            {
+                "suite_ids": [self.suite.id, 999],
+                "report_data": {
+                    "generated_at": "2026-05-01T14:00:00+08:00",
+                    "summary": "new summary",
+                    "suite_count": 2,
+                    "selected_suite_count": 2,
+                    "testcase_count": 3,
+                    "bug_count": 1,
+                    "used_ai": False,
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 200, update_response.data)
+        self.assertTrue(update_response.data["success"])
+        self.assertEqual(update_response.data["data"]["suite_ids"], [self.suite.id, 999])
+        self.assertEqual(update_response.data["data"]["report_data"]["summary"], "new summary")
+
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.suite_ids, [self.suite.id, 999])
+        self.assertEqual(snapshot.report_data["summary"], "new summary")
+        self.assertEqual(snapshot.report_data["suite_count"], 2)
 
     def test_suite_can_move_testcases_to_another_suite(self):
         admin_user = User.objects.create_superuser(

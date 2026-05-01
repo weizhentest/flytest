@@ -14,6 +14,7 @@ from .models import (
     TestBugActivity,
     TestExecution,
     TestCaseResult,
+    TestReportSnapshot,
 )
 from projects.models import Project  # 确保导入Project模型以便进行校验
 from accounts.serializers import UserDetailSerializer  # 用于显示创建者信息
@@ -1187,3 +1188,23 @@ class TestExecutionCreateSerializer(serializers.Serializer):
             return value
         except TestSuite.DoesNotExist:
             raise serializers.ValidationError("测试套件不存在")
+
+
+class TestReportSnapshotSerializer(serializers.ModelSerializer):
+    creator_name = serializers.CharField(source="creator.username", read_only=True)
+
+    class Meta:
+        model = TestReportSnapshot
+        fields = [
+            "id",
+            "project",
+            "title",
+            "is_pinned",
+            "suite_ids",
+            "report_data",
+            "creator",
+            "creator_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "project", "creator", "creator_name", "created_at", "updated_at"]

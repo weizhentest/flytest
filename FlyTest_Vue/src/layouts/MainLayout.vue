@@ -219,7 +219,7 @@
             </a-menu-item>
             <a-menu-item key="test-executions" v-if="hasTestExecutionsPermission">
               <template #icon><icon-history /></template>
-              <span class="menu-link" title="执行历史">执行历史</span>
+              <span class="menu-link" title="测试报告">测试报告</span>
             </a-menu-item>
           </a-sub-menu>
 
