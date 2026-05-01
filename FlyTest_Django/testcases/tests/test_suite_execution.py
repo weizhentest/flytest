@@ -1101,6 +1101,74 @@ class TestSuiteExecutionTests(TestCase):
                 self.assertEqual(detail_response.data["activity_logs"][0]["action"], "upload_attachment")
                 self.assertEqual(detail_response.data["activity_logs"][1]["action"], "create")
 
+    def test_bug_attachment_upload_rejects_invalid_section(self):
+        admin_user = User.objects.create_superuser(
+            username="buginvalidsectionadmin",
+            email="buginvalidsectionadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="非法附件区域BUG",
+            opened_by=admin_user,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/upload-attachments/",
+                    {
+                        "section": "invalid_section",
+                        "files": [
+                            SimpleUploadedFile(
+                                "bad.txt",
+                                b"bad attachment",
+                                content_type="text/plain",
+                            )
+                        ],
+                    },
+                    format="multipart",
+                )
+
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIn("请选择有效的附件区域", str(response.data))
+                bug.refresh_from_db()
+                self.assertEqual(bug.attachments.count(), 0)
+
+    def test_change_status_rejects_manual_expired_status(self):
+        admin_user = User.objects.create_superuser(
+            username="bugexpiredadmin",
+            email="bugexpiredadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="禁止手动过期BUG",
+            opened_by=admin_user,
+            status=TestBug.STATUS_UNASSIGNED,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/change-status/",
+            {"status": TestBug.STATUS_EXPIRED},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("已过期状态由系统自动判断", str(response.data))
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_UNASSIGNED)
+
     def test_repair_test_bug_workflow_command_normalizes_legacy_data(self):
         admin_user = User.objects.create_superuser(
             username="bugcommandadmin",
