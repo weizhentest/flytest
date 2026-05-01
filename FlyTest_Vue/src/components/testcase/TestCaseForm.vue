@@ -718,12 +718,6 @@ const handleSubmit = async () => {
         return;
       }
       
-      // 开发环境下输出变更信息（便于调试）
-      if (import.meta.env.DEV) {
-        console.log('📝 PATCH 请求 - 只发送变更字段:', updatePayload);
-        console.log('🔍 变更字段数量:', Object.keys(updatePayload).length);
-      }
-      
       response = await updateTestCase(currentProjectId.value, formState.id, updatePayload as UpdateTestCaseRequest);
     } else {
       const createPayload: CreateTestCaseRequest = {
@@ -985,8 +979,7 @@ const updatePreviewFromIndex = () => {
 };
 
 const handleImageLoad = (event: Event) => {
-  const img = event.target as HTMLImageElement;
-  console.log('图片加载成功:', img.naturalWidth, 'x', img.naturalHeight);
+  void (event.target as HTMLImageElement);
 };
 
 const handleImageError = (_event: Event) => {

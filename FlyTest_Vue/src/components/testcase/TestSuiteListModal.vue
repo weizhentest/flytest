@@ -231,13 +231,11 @@ const handleCreate = () => {
 // 编辑测试套件
 const handleEdit = (suite: TestSuite) => {
   editingSuiteId.value = suite.id;
-  // TODO: 加载套件详情获取test case IDs
   showSuiteForm.value = true;
 };
 
 // 查看详情
 const handleViewDetail = (_suite: TestSuite) => {
-  // TODO: 实现详情查看
   Message.info('详情查看功能开发中');
 };
 

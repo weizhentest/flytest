@@ -378,7 +378,6 @@ const showEditTestCaseForm = (testCaseOrId: TestCase | number) => {
   // 先获取当前筛选后的用例ID列表用于导航（在切换视图之前获取）
   const ids = testCaseListRef.value?.getTestCaseIds();
   testCaseIdsForNavigation.value = ids || [];
-  console.log('获取到的用例ID列表:', testCaseIdsForNavigation.value);
 
   currentEditingTestCaseId.value = typeof testCaseOrId === 'number' ? testCaseOrId : testCaseOrId.id;
   viewMode.value = 'edit';
