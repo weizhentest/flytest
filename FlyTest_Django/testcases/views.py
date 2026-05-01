@@ -2906,9 +2906,33 @@ class TestBugViewSet(viewsets.ModelViewSet):
     ordering_fields = ["id", "severity", "priority", "opened_at", "assigned_at", "resolved_at", "closed_at"]
     ordering = ["-id"]
     _attachment_sections = {"steps", "expected_result", "actual_result"}
+    _workflow_actions = {
+        "upload_attachments",
+        "delete_attachment",
+        "assign",
+        "change_status",
+        "confirm",
+        "fix",
+        "resolve",
+        "activate",
+        "close",
+        "batch_assign",
+        "batch_change_status",
+        "batch_update_priority",
+        "batch_update_severity",
+        "batch_update_bug_type",
+        "batch_update_resolution",
+        "batch_delete",
+    }
 
     def get_permissions(self):
         from .permissions import IsProjectMemberForTestSuite
+
+        if self.action in self._workflow_actions:
+            return [
+                permissions.IsAuthenticated(),
+                IsProjectMemberForTestSuite(),
+            ]
 
         return [
             permissions.IsAuthenticated(),
@@ -3494,6 +3518,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return "file"
 
     @action(detail=True, methods=["post"], url_path="upload-attachments")
+    @permission_required("testcases.change_testbug")
     def upload_attachments(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         section = str(request.data.get("section") or "").strip()
@@ -3550,6 +3575,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response({"data": serializer.data}, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["delete"], url_path=r"attachments/(?P<attachment_id>[^/.]+)")
+    @permission_required("testcases.change_testbug")
     def delete_attachment(self, request, project_pk=None, pk=None, attachment_id=None):
         bug = self.get_object()
         attachment = get_object_or_404(TestBugAttachment, pk=attachment_id, bug=bug)
@@ -3570,6 +3596,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="assign")
+    @permission_required("testcases.change_testbug")
     def assign(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3598,6 +3625,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="change-status")
+    @permission_required("testcases.change_testbug")
     def change_status(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3638,6 +3666,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
+    @permission_required("testcases.change_testbug")
     def confirm(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3659,6 +3688,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="fix")
+    @permission_required("testcases.change_testbug")
     def fix(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3692,6 +3722,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="resolve")
+    @permission_required("testcases.change_testbug")
     def resolve(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3722,6 +3753,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="activate")
+    @permission_required("testcases.change_testbug")
     def activate(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3746,6 +3778,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"], url_path="close")
+    @permission_required("testcases.change_testbug")
     def close(self, request, project_pk=None, pk=None):
         bug = self.get_object()
         self._ensure_can_manage_bug_status(bug)
@@ -3774,6 +3807,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         return Response(TestBugSerializer(bug, context=self.get_serializer_context()).data)
 
     @action(detail=False, methods=["post"], url_path="batch-assign")
+    @permission_required("testcases.change_testbug")
     def batch_assign(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -3816,6 +3850,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-change-status")
+    @permission_required("testcases.change_testbug")
     def batch_change_status(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -3865,6 +3900,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-update-priority")
+    @permission_required("testcases.change_testbug")
     def batch_update_priority(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -3902,6 +3938,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-update-severity")
+    @permission_required("testcases.change_testbug")
     def batch_update_severity(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -3939,6 +3976,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-update-bug-type")
+    @permission_required("testcases.change_testbug")
     def batch_update_bug_type(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -3979,6 +4017,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-update-resolution")
+    @permission_required("testcases.change_testbug")
     def batch_update_resolution(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:
@@ -4034,6 +4073,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=["post"], url_path="batch-delete")
+    @permission_required("testcases.delete_testbug")
     def batch_delete(self, request, project_pk=None):
         bug_ids, queryset, error_response = self._get_batch_bug_queryset(request)
         if error_response is not None:

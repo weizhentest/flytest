@@ -775,6 +775,113 @@ class TestSuiteExecutionTests(TestCase):
         self.assertIsNone(bug.closed_at)
         self.assertIsNone(bug.resolved_at)
 
+    def test_multiple_assignees_can_be_saved_and_secondary_assignee_can_confirm(self):
+        admin_user = User.objects.create_superuser(
+            username="bugmultiassignadmin",
+            email="bugmultiassignadmin@example.com",
+            password="password",
+        )
+        first_assignee = User.objects.create_user(username="bugassignee1", password="password")
+        second_assignee = User.objects.create_user(username="bugassignee2", password="password")
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=first_assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=second_assignee, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="多指派流转",
+            opened_by=admin_user,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        assign_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/assign/",
+            {"assigned_to_ids": [first_assignee.id, second_assignee.id]},
+            format="json",
+        )
+
+        self.assertEqual(assign_response.status_code, 200, assign_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.assigned_to_id, first_assignee.id)
+        self.assertEqual(
+            list(bug.assigned_users.order_by("id").values_list("id", flat=True)),
+            [first_assignee.id, second_assignee.id],
+        )
+        self.assertEqual(assign_response.data["assigned_to_ids"], [first_assignee.id, second_assignee.id])
+        self.assertEqual(assign_response.data["status"], TestBug.STATUS_ASSIGNED)
+
+        self.api_client.force_authenticate(user=second_assignee)
+        confirm_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/confirm/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(confirm_response.status_code, 200, confirm_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CONFIRMED)
+
+    def test_bug_creator_can_change_status_without_admin_role(self):
+        creator = User.objects.create_user(username="bugcreator", password="password")
+        assignee = User.objects.create_user(username="bugcreatorassignee", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="创建人可流转",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+        )
+        bug.assigned_users.set([assignee])
+
+        self.api_client.force_authenticate(user=creator)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/close/",
+            {"solution": "创建人验证后关闭"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CLOSED)
+        self.assertIsNotNone(bug.closed_at)
+
+    def test_unrelated_member_cannot_change_bug_status(self):
+        creator = User.objects.create_user(username="bugowner", password="password")
+        assignee = User.objects.create_user(username="bugworker", password="password")
+        outsider = User.objects.create_user(username="bugoutsider", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=outsider, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="无权限流转",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+        )
+        bug.assigned_users.set([assignee])
+
+        self.api_client.force_authenticate(user=outsider)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/confirm/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_ASSIGNED)
+
     def test_repair_test_bug_workflow_command_normalizes_legacy_data(self):
         admin_user = User.objects.create_superuser(
             username="bugcommandadmin",
