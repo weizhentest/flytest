@@ -105,7 +105,12 @@
                     <span>选择列表字段</span>
                     <a-button type="text" size="mini" @click="resetVisibleColumns">恢复默认</a-button>
                   </div>
-                  <a-checkbox-group v-model="visibleColumns" direction="vertical" class="bug-column-checkbox-group">
+                  <a-checkbox-group
+                    v-model="visibleColumns"
+                    direction="vertical"
+                    class="bug-column-checkbox-group"
+                    @change="handleVisibleColumnsChange"
+                  >
                     <a-checkbox v-for="column in tableColumnOptions" :key="column.key" :value="column.key">
                       {{ column.label }}
                     </a-checkbox>
@@ -935,7 +940,6 @@ const props = defineProps<{
   selectedSuiteId: number | null;
 }>();
 
-const isDevelopment = import.meta.env.DEV;
 const BUG_COLUMN_STORAGE_KEY_PREFIX = 'flytest_bug_management_visible_columns';
 const BUG_FILTER_STORAGE_KEY_PREFIX = 'flytest_bug_management_filters';
 const BUG_FILTER_VIEWS_STORAGE_KEY_PREFIX = 'flytest_bug_management_filter_views';
@@ -1094,6 +1098,8 @@ const statusCards = computed(() => [
   { key: 'all' as const, label: '全部', count: bugList.value.length },
   { key: 'unassigned' as const, label: '未指派', count: bugList.value.filter((item) => item.status === 'unassigned').length },
   { key: 'assigned' as const, label: '未确认', count: bugList.value.filter((item) => item.status === 'assigned').length },
+  { key: 'confirmed' as const, label: '已确认', count: bugList.value.filter((item) => item.status === 'confirmed').length },
+  { key: 'fixed' as const, label: '已修复', count: bugList.value.filter((item) => item.status === 'fixed').length },
   { key: 'pending_retest' as const, label: '待复测', count: bugList.value.filter((item) => item.status === 'pending_retest').length },
   { key: 'closed' as const, label: '已关闭', count: bugList.value.filter((item) => item.status === 'closed').length },
   { key: 'expired' as const, label: '已过期', count: bugList.value.filter((item) => item.status === 'expired').length },
@@ -1990,7 +1996,21 @@ const setUpdateSummary = (text: string) => {
   }, 5000);
 };
 
-const isColumnVisible = (key: BugTableColumnKey) => visibleColumns.value.includes(key);
+const effectiveVisibleColumns = computed<BugTableColumnKey[]>(() =>
+  visibleColumns.value.length ? visibleColumns.value : DEFAULT_VISIBLE_COLUMNS.slice()
+);
+
+const isColumnVisible = (key: BugTableColumnKey) => effectiveVisibleColumns.value.includes(key);
+
+const handleVisibleColumnsChange = (values: Array<string | number>) => {
+  const nextValues = values.map((item) => String(item) as BugTableColumnKey);
+  if (!nextValues.length) {
+    visibleColumns.value = DEFAULT_VISIBLE_COLUMNS.slice();
+    Message.warning('至少保留一列显示，已恢复默认列');
+    return;
+  }
+  visibleColumns.value = nextValues;
+};
 
 const resetVisibleColumns = () => {
   visibleColumns.value = DEFAULT_VISIBLE_COLUMNS.slice();

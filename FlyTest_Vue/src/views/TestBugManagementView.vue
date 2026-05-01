@@ -24,9 +24,6 @@
               <div class="bug-subtitle">
                 {{ selectedSuiteDetail?.description || '当前套件中的 BUG 列表与处理流转' }}
               </div>
-              <div v-if="isDevelopment" class="bug-debug-line">
-                调试：project={{ currentProjectId || '-' }} | suite={{ selectedSuiteId || '-' }}
-              </div>
             </div>
           </div>
 
@@ -65,8 +62,6 @@ const isResizingSuitePanel = ref(false);
 const suitePanelShellStyle = computed(() => ({
   width: `${suitePanelWidth.value}px`,
 }));
-
-const isDevelopment = import.meta.env.DEV;
 
 const fetchSelectedSuiteDetail = async () => {
   if (!currentProjectId.value || !selectedSuiteId.value) {
@@ -221,12 +216,6 @@ onUnmounted(() => {
   margin-top: 6px;
   color: var(--color-text-3);
   word-break: break-word;
-}
-
-.bug-debug-line {
-  margin-top: 6px;
-  color: var(--color-text-3);
-  font-size: 12px;
 }
 
 .bug-panel-shell {
