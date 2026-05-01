@@ -595,6 +595,54 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(response.data["testcase_ids"], [third_testcase.id, second_testcase.id])
         self.assertEqual(response.data["testcase_names"], ["Test Case 3", "Test Case 2"])
 
+    def test_bug_list_can_filter_by_related_testcase(self):
+        admin_user = User.objects.create_superuser(
+            username="bugfilteradmin",
+            email="bugfilteradmin@example.com",
+            password="password",
+        )
+        second_testcase = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name="Test Case 2",
+            creator=self.user,
+        )
+        third_testcase = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name="Test Case 3",
+            creator=self.user,
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.suite.testcases.add(self.testcase, second_testcase, third_testcase)
+        matched_bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Bug linked to multiple cases",
+            opened_by=admin_user,
+        )
+        matched_bug.related_testcases.set([self.testcase, second_testcase])
+        unmatched_bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=third_testcase,
+            title="Bug linked elsewhere",
+            opened_by=admin_user,
+        )
+        unmatched_bug.related_testcases.set([third_testcase])
+        self.api_client.force_authenticate(user=admin_user)
+
+        response = self.api_client.get(
+            f"/api/projects/{self.project.id}/test-bugs/",
+            {"testcase_id": second_testcase.id},
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload_items = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        returned_ids = [item["id"] for item in payload_items]
+        self.assertEqual(returned_ids, [matched_bug.id])
+
     def test_create_bug_rejects_related_testcases_outside_suite(self):
         admin_user = User.objects.create_superuser(
             username="buginvalidadmin",

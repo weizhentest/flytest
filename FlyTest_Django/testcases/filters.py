@@ -1,5 +1,6 @@
 import django_filters
 from django_filters import BaseInFilter, CharFilter, NumberFilter
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import TestBug, TestCase, TestCaseModule, TestSuite
@@ -68,7 +69,7 @@ class TestCaseFilter(django_filters.FilterSet):
 
 class TestBugFilter(django_filters.FilterSet):
     suite_id = django_filters.NumberFilter(method="filter_by_suite_and_descendants")
-    testcase_id = django_filters.NumberFilter(field_name="testcase_id", lookup_expr="exact")
+    testcase_id = django_filters.NumberFilter(method="filter_by_testcase")
     status = django_filters.CharFilter(method="filter_by_status")
     severity = django_filters.CharFilter(field_name="severity", lookup_expr="exact")
     priority = django_filters.CharFilter(field_name="priority", lookup_expr="exact")
@@ -111,6 +112,13 @@ class TestBugFilter(django_filters.FilterSet):
                 deadline__lt=timezone.localdate()
             )
         return queryset.filter(status=normalized)
+
+    def filter_by_testcase(self, queryset, name, value):
+        if value in (None, ""):
+            return queryset
+        return queryset.filter(
+            Q(testcase_id=value) | Q(related_testcases__id=value)
+        ).distinct()
 
     def filter_by_assigned_to(self, queryset, name, value):
         if value in (None, ""):
