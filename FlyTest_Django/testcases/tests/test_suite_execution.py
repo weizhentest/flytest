@@ -1,8 +1,11 @@
 from io import StringIO
+import tempfile
 
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.test.utils import override_settings
 from rest_framework.test import APIClient
 
 from projects.models import Project, ProjectMember
@@ -989,6 +992,114 @@ class TestSuiteExecutionTests(TestCase):
             self.assertEqual(bug.solution, "批量完成修复")
             self.assertEqual(bug.get_effective_status(), TestBug.STATUS_FIXED)
             self.assertIsNotNone(bug.resolved_at)
+
+    def test_bug_attachment_upload_and_delete_records_activity(self):
+        admin_user = User.objects.create_superuser(
+            username="bugattachmentadmin",
+            email="bugattachmentadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="附件管理BUG",
+            opened_by=admin_user,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                upload_response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/upload-attachments/",
+                    {
+                        "section": "steps",
+                        "files": [
+                            SimpleUploadedFile(
+                                "reproduce.png",
+                                b"fake-image-content",
+                                content_type="image/png",
+                            )
+                        ],
+                    },
+                    format="multipart",
+                )
+
+                self.assertEqual(upload_response.status_code, 201, upload_response.data)
+                attachments = upload_response.data["data"]
+                self.assertEqual(len(attachments), 1)
+                attachment_id = attachments[0]["id"]
+                self.assertEqual(attachments[0]["original_name"], "reproduce.png")
+                self.assertEqual(attachments[0]["file_type"], "image")
+
+                bug.refresh_from_db()
+                self.assertEqual(bug.attachments.count(), 1)
+                self.assertEqual(bug.activities.first().action, "upload_attachment")
+
+                delete_response = self.api_client.delete(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/attachments/{attachment_id}/"
+                )
+                self.assertEqual(delete_response.status_code, 200, delete_response.data)
+
+                bug.refresh_from_db()
+                self.assertEqual(bug.attachments.count(), 0)
+                latest_activity = bug.activities.first()
+                self.assertEqual(latest_activity.action, "delete_attachment")
+                self.assertIn("reproduce.png", latest_activity.content)
+
+    def test_bug_detail_returns_activity_logs_after_attachment_upload(self):
+        admin_user = User.objects.create_superuser(
+            username="bugactivityadmin",
+            email="bugactivityadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.suite.testcases.add(self.testcase)
+        self.api_client.force_authenticate(user=admin_user)
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                create_response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/",
+                    {
+                        "suite": self.suite.id,
+                        "testcase": self.testcase.id,
+                        "title": "活动日志BUG",
+                        "bug_type": "codeerror",
+                        "severity": "3",
+                        "priority": "3",
+                    },
+                    format="json",
+                )
+                self.assertEqual(create_response.status_code, 201, create_response.data)
+                bug_id = create_response.data["id"]
+
+                upload_response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug_id}/upload-attachments/",
+                    {
+                        "section": "actual_result",
+                        "files": [
+                            SimpleUploadedFile(
+                                "result.txt",
+                                b"actual result attachment",
+                                content_type="text/plain",
+                            )
+                        ],
+                    },
+                    format="multipart",
+                )
+                self.assertEqual(upload_response.status_code, 201, upload_response.data)
+
+                detail_response = self.api_client.get(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug_id}/"
+                )
+
+                self.assertEqual(detail_response.status_code, 200, detail_response.data)
+                self.assertEqual(len(detail_response.data["attachments"]), 1)
+                self.assertGreaterEqual(len(detail_response.data["activity_logs"]), 2)
+                self.assertEqual(detail_response.data["activity_logs"][0]["action"], "upload_attachment")
+                self.assertEqual(detail_response.data["activity_logs"][1]["action"], "create")
 
     def test_repair_test_bug_workflow_command_normalizes_legacy_data(self):
         admin_user = User.objects.create_superuser(
