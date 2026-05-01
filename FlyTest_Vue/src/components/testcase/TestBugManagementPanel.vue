@@ -1721,7 +1721,7 @@ const exportSavedFilterViews = () => {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(objectUrl);
-  Message.success('å¸¸ç¨è§å¾å·²å¯¼åº');
+  Message.success('常用视图已导出');
 };
 
 const triggerImportFilterViews = () => {
@@ -1874,7 +1874,7 @@ const submitSaveFilterView = () => {
 const removeSavedFilterView = (id: string) => {
   savedFilterViews.value = savedFilterViews.value.filter((item) => item.id !== id);
   persistSavedFilterViews();
-  Message.success('å¸¸ç¨è§å¾å·²å é¤');
+  Message.success('常用视图已删除');
 };
 
 const sortSavedFilterViews = () => {
