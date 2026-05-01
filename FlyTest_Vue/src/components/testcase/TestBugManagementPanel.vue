@@ -171,6 +171,20 @@
         </button>
       </div>
 
+      <div v-if="filteredBugList.length > 0" class="bug-current-view-summary">
+        <span class="bug-current-view-summary-count">当前视图共 {{ filteredBugList.length }} 条 BUG</span>
+        <div class="bug-current-view-summary-tags">
+          <a-tag
+            v-for="bug in filteredBugList.slice(0, 5)"
+            :key="`summary-bug-${bug.id}`"
+            color="arcoblue"
+            class="bug-current-view-summary-tag"
+          >
+            #{{ bug.id }} {{ bug.title }}
+          </a-tag>
+        </div>
+      </div>
+
       <div v-if="updateSummary" class="bug-update-summary">
         <div class="bug-update-summary-content">
           <span class="bug-update-summary-title">{{ updateSummary.text }}</span>
@@ -185,6 +199,9 @@
       <div v-if="filteredBugList.length > 0" class="bug-batch-toolbar">
         <div class="bug-batch-toolbar-left">
           <span class="bug-batch-toolbar-count">已选 {{ selectedBugCount }} 条 BUG</span>
+          <span v-if="selectedBugCount > 0 && !canManageAllSelectedBugs" class="bug-batch-toolbar-hint">
+            其中 {{ selectedManageableBugCount }} 条可处理
+          </span>
           <a-button type="text" size="small" @click="toggleSelectCurrentPage">
             {{ isCurrentPageSelected ? '取消本页选择' : '选择本页' }}
           </a-button>
@@ -197,160 +214,148 @@
           <a-dropdown trigger="click" :popup-visible="selectedBugCount === 0 ? false : undefined">
             <a-button type="primary" size="small" :disabled="selectedBugCount === 0">批量操作</a-button>
             <template #content>
-              <a-doption @click="openBatchModal('assign')">批量指派</a-doption>
-              <a-doption @click="openBatchModal('status')">批量修改状态</a-doption>
-              <a-doption @click="openBatchModal('priority')">批量修改优先级</a-doption>
-              <a-doption @click="openBatchModal('severity')">批量修改严重程度</a-doption>
-              <a-doption @click="openBatchModal('bug_type')">批量修改BUG类型</a-doption>
-              <a-doption @click="openBatchModal('resolution')">批量修改解决方案</a-doption>
-              <a-doption class="bug-batch-toolbar-danger-option" @click="openBatchModal('delete')">批量删除</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('assign')">批量指派</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('status')">批量修改状态</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('priority')">批量修改优先级</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('severity')">批量修改严重程度</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('bug_type')">批量修改BUG类型</a-doption>
+              <a-doption :disabled="!canManageAllSelectedBugs" @click="openBatchModal('resolution')">批量修改解决方案</a-doption>
+              <a-doption class="bug-batch-toolbar-danger-option" :disabled="!canManageAllSelectedBugs" @click="openBatchModal('delete')">批量删除</a-doption>
             </template>
           </a-dropdown>
         </div>
       </div>
 
-      <a-table
-        v-if="filteredBugList.length > 0"
-        :data="pagedBugList"
-        :loading="loading"
-        :pagination="false"
-        row-key="id"
-        class="bug-table"
-        :scroll="{ x: 1560, y: 420 }"
-        :row-class="getBugRowClass"
-        :row-selection="rowSelection"
-        column-resizable
-      >
-        <a-table-column v-if="isColumnVisible('id')" title="ID" data-index="id" :width="72" align="center" />
-
-        <a-table-column v-if="isColumnVisible('title')" title="BUG标题" :width="280">
-          <template #cell="{ record }">
-            <a-link @click="openDetail(record)">{{ record.title }}</a-link>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('status')" title="状态" :width="120" align="center">
-          <template #cell="{ record }">
-            <a-dropdown trigger="click" @select="(value) => handleStatusQuickSelect(record, String(value))">
-              <a-tag :color="getStatusColor(record.status)" class="bug-selectable-tag">
-                {{ record.status_display || record.status }}
-                <icon-down class="bug-selectable-tag-icon" />
-              </a-tag>
-              <template #content>
-                <a-doption v-for="item in getStatusActionOptions(record)" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('related_testcases')" title="关联用例" :width="220">
-          <template #cell="{ record }">
-            <div class="bug-related-cell" :title="getRelatedTestcaseSummary(record)">
-              <template v-if="getRelatedTestcaseNames(record).length">
-                <a-tag v-for="name in getRelatedTestcaseNames(record).slice(0, 2)" :key="name" size="small">
-                  {{ name }}
+      <div v-if="filteredBugList.length > 0" :key="tableRenderKey" class="bug-stable-list">
+        <div
+          v-for="record in pagedBugList"
+          :key="record.id"
+          class="bug-stable-row"
+          :class="getBugRowClass(record)"
+        >
+          <div class="bug-stable-row-main">
+            <div class="bug-stable-row-title">
+              <a-checkbox
+                class="bug-stable-row-checkbox"
+                :model-value="selectedBugIds.includes(record.id)"
+                @change="value => toggleBugSelection(record.id, value)"
+              />
+              <span v-if="isColumnVisible('id')" class="bug-stable-row-id">#{{ record.id }}</span>
+              <a-link class="bug-stable-row-link" @click="openDetail(record)">{{ record.title }}</a-link>
+              <a-dropdown
+                v-if="isColumnVisible('status') && canManageBugStatus(record)"
+                trigger="click"
+                @select="(value) => handleStatusQuickSelect(record, String(value))"
+              >
+                <a-tag :color="getStatusColor(record.status)" class="bug-selectable-tag">
+                  {{ getStatusLabel(record.status, record.status_display) }}
+                  <icon-down class="bug-selectable-tag-icon" />
                 </a-tag>
-                <a-tag v-if="getRelatedTestcaseNames(record).length > 2" size="small" color="arcoblue">
-                  +{{ getRelatedTestcaseNames(record).length - 2 }}
-                </a-tag>
-              </template>
-              <span v-else>-</span>
-            </div>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('bug_type')" title="BUG类型" :width="120" align="center">
-          <template #cell="{ record }">
-            <a-dropdown trigger="click" @select="(value) => handleBugTypeChange(record, String(value) as TestBugType)">
-              <a-tag :color="getBugTypeColor(record.bug_type)" class="bug-selectable-tag">
-                {{ getBugTypeLabel(record.bug_type) }}
-                <icon-down class="bug-selectable-tag-icon" />
-              </a-tag>
-              <template #content>
-                <a-doption v-for="item in TEST_BUG_TYPE_OPTIONS" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </a-doption>
-              </template>
-            </a-dropdown>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('severity')" title="严重程度" :width="96" align="center">
-          <template #cell="{ record }">
-            <a-dropdown trigger="click" @select="(value) => handleSeverityChange(record, String(value))">
-              <a-tag :color="getSeverityColor(record.severity)" class="bug-selectable-tag">
-                S{{ record.severity }}
-                <icon-down class="bug-selectable-tag-icon" />
-              </a-tag>
-              <template #content>
-                <a-doption v-for="item in levelOptions" :key="item" :value="item">S{{ item }}</a-doption>
-              </template>
-            </a-dropdown>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('priority')" title="优先级" :width="96" align="center">
-          <template #cell="{ record }">
-            <a-dropdown trigger="click" @select="(value) => handlePriorityChange(record, String(value))">
-              <a-tag :color="getPriorityColor(record.priority)" class="bug-selectable-tag">
-                P{{ record.priority }}
-                <icon-down class="bug-selectable-tag-icon" />
-              </a-tag>
-              <template #content>
-                <a-doption v-for="item in levelOptions" :key="item" :value="item">P{{ item }}</a-doption>
-              </template>
-            </a-dropdown>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('resolution')" title="解决方案" :width="120" align="center">
-          <template #cell="{ record }">
-            <a-tag v-if="record.resolution" :color="getResolutionColor(record.resolution)">
-              {{ record.resolution_display || getResolutionLabel(record.resolution) }}
-            </a-tag>
-            <span v-else>-</span>
-          </template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('assigned_to')" title="指派给" :width="160" align="center">
-          <template #cell="{ record }">{{ getAssignedUserName(record) }}</template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('opened_by')" title="创建人" :width="120" align="center">
-          <template #cell="{ record }">{{ record.opened_by_name || record.opened_by || '-' }}</template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('opened_at')" title="创建时间" :width="166" align="center">
-          <template #cell="{ record }">{{ record.opened_at ? formatDate(record.opened_at) : '-' }}</template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('resolved_at')" title="解决时间" :width="166" align="center">
-          <template #cell="{ record }">{{ record.resolved_at ? formatDate(record.resolved_at) : '-' }}</template>
-        </a-table-column>
-
-        <a-table-column v-if="isColumnVisible('actions')" title="操作" :width="260" fixed="right" align="center">
-          <template #cell="{ record }">
-            <a-space>
-              <a-button size="mini" @click="openDetail(record)">查看</a-button>
-              <a-button size="mini" type="primary" @click="openDetail(record, true)">编辑</a-button>
-              <a-dropdown trigger="click">
-                <a-button size="mini" type="outline">更多</a-button>
                 <template #content>
-                  <a-doption @click="handleActionSelect(record, 'assign')">指派</a-doption>
-                  <a-doption v-if="record.status === 'assigned'" @click="handleActionSelect(record, 'confirm')">确认</a-doption>
-                  <a-doption v-if="record.status === 'confirmed'" @click="handleActionSelect(record, 'fix')">修复</a-doption>
-                  <a-doption v-if="record.status === 'fixed'" @click="handleActionSelect(record, 'resolve')">提交复测</a-doption>
-                  <a-doption v-if="['pending_retest', 'closed', 'expired'].includes(record.status)" @click="handleActionSelect(record, 'activate')">激活</a-doption>
-                  <a-doption :disabled="record.status === 'closed'" @click="handleActionSelect(record, 'close')">关闭</a-doption>
-                  <a-doption @click="handleActionSelect(record, 'delete')">删除</a-doption>
+                  <a-doption v-for="item in getStatusActionOptions(record)" :key="item.value" :value="item.value">
+                    {{ item.label }}
+                  </a-doption>
                 </template>
               </a-dropdown>
-            </a-space>
-          </template>
-        </a-table-column>
-      </a-table>
+              <a-tag v-else-if="isColumnVisible('status')" :color="getStatusColor(record.status)">
+                {{ getStatusLabel(record.status, record.status_display) }}
+              </a-tag>
+            </div>
+
+            <div class="bug-stable-row-meta">
+              <div v-if="isColumnVisible('bug_type')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">BUG类型</span>
+                <a-dropdown :disabled="!canEditBug(record)" trigger="click" @select="(value) => handleBugTypeChange(record, String(value) as TestBugType)">
+                  <a-tag :color="getBugTypeColor(record.bug_type)" class="bug-selectable-tag">
+                    {{ getBugTypeLabel(record.bug_type) }}
+                    <icon-down class="bug-selectable-tag-icon" />
+                  </a-tag>
+                </a-dropdown>
+              </div>
+
+              <div v-if="isColumnVisible('severity')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">严重程度</span>
+                <a-dropdown :disabled="!canEditBug(record)" trigger="click" @select="(value) => handleSeverityChange(record, String(value))">
+                  <a-tag :color="getSeverityColor(record.severity)" class="bug-selectable-tag">
+                    S{{ record.severity }}
+                    <icon-down class="bug-selectable-tag-icon" />
+                  </a-tag>
+                </a-dropdown>
+              </div>
+
+              <div v-if="isColumnVisible('priority')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">优先级</span>
+                <a-dropdown :disabled="!canEditBug(record)" trigger="click" @select="(value) => handlePriorityChange(record, String(value))">
+                  <a-tag :color="getPriorityColor(record.priority)" class="bug-selectable-tag">
+                    P{{ record.priority }}
+                    <icon-down class="bug-selectable-tag-icon" />
+                  </a-tag>
+                </a-dropdown>
+              </div>
+
+              <div v-if="isColumnVisible('resolution')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">解决方案</span>
+                <a-tag v-if="record.resolution" :color="getResolutionColor(record.resolution)">
+                  {{ record.resolution_display || getResolutionLabel(record.resolution) }}
+                </a-tag>
+                <span v-else>-</span>
+              </div>
+
+              <div v-if="isColumnVisible('assigned_to')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">指派给</span>
+                <span>{{ getAssignedUserName(record) }}</span>
+              </div>
+
+              <div v-if="isColumnVisible('opened_by')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">创建人</span>
+                <span>{{ getCreatorName(record) }}</span>
+              </div>
+
+              <div v-if="isColumnVisible('opened_at')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">创建时间</span>
+                <span>{{ record.opened_at ? formatDate(record.opened_at) : '-' }}</span>
+              </div>
+
+              <div v-if="isColumnVisible('resolved_at')" class="bug-stable-meta-item">
+                <span class="bug-stable-meta-label">解决时间</span>
+                <span>{{ record.resolved_at ? formatDate(record.resolved_at) : '-' }}</span>
+              </div>
+            </div>
+
+            <div v-if="isColumnVisible('related_testcases')" class="bug-stable-row-related">
+              <span class="bug-stable-meta-label">关联用例</span>
+              <div class="bug-related-cell" :title="getRelatedTestcaseSummary(record)">
+                <template v-if="getRelatedTestcaseNames(record).length">
+                  <a-tag v-for="name in getRelatedTestcaseNames(record).slice(0, 3)" :key="name" size="small">
+                    {{ name }}
+                  </a-tag>
+                  <a-tag v-if="getRelatedTestcaseNames(record).length > 3" size="small" color="arcoblue">
+                    +{{ getRelatedTestcaseNames(record).length - 3 }}
+                  </a-tag>
+                </template>
+                <span v-else>-</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="isColumnVisible('actions')" class="bug-stable-row-actions">
+            <a-button size="mini" @click="openDetail(record)">查看</a-button>
+            <a-button size="mini" type="primary" :disabled="!canEditBug(record)" @click="openDetail(record, true)">编辑</a-button>
+            <a-dropdown trigger="click">
+              <a-button size="mini" type="outline">更多</a-button>
+              <template #content>
+                <a-doption :disabled="!canManageBugStatus(record)" @click="handleActionSelect(record, 'assign')">指派</a-doption>
+                <a-doption v-if="record.status === 'assigned'" :disabled="!canManageBugStatus(record)" @click="handleActionSelect(record, 'confirm')">确认</a-doption>
+                <a-doption v-if="record.status === 'confirmed'" :disabled="!canManageBugStatus(record)" @click="handleActionSelect(record, 'fix')">修复</a-doption>
+                <a-doption v-if="record.status === 'fixed'" :disabled="!canManageBugStatus(record)" @click="handleActionSelect(record, 'resolve')">提交复测</a-doption>
+                <a-doption v-if="['pending_retest', 'closed', 'expired'].includes(record.status)" :disabled="!canManageBugStatus(record)" @click="handleActionSelect(record, 'activate')">激活</a-doption>
+                <a-doption :disabled="record.status === 'closed' || !canManageBugStatus(record)" @click="handleActionSelect(record, 'close')">关闭</a-doption>
+                <a-doption :disabled="!canEditBug(record)" @click="handleActionSelect(record, 'delete')">删除</a-doption>
+              </template>
+            </a-dropdown>
+          </div>
+        </div>
+      </div>
 
       <a-empty v-else-if="!loading" class="bug-empty-state">
         <div class="bug-empty-content">
@@ -389,68 +394,102 @@
               <a-button type="primary" :loading="detailSaving" @click="saveDetailEdit">保存</a-button>
             </template>
             <template v-else-if="detailBug">
-              <a-button type="primary" @click="startDetailEdit(detailBug)">编辑</a-button>
+              <a-button type="primary" :disabled="!canEditBug(detailBug)" @click="startDetailEdit(detailBug)">编辑</a-button>
               <a-button @click="openCopyDetail(detailBug)">复制</a-button>
             </template>
           </div>
         </div>
 
-        <div class="bug-detail-page-title">
-          <a-input
-            v-if="detailEditMode"
-            v-model="detailForm.title"
-            size="large"
-            placeholder="请输入 BUG 标题"
-          />
-          <template v-else>{{ detailBug?.title || '-' }}</template>
+        <div v-if="detailLoading" class="bug-detail-loading-panel">
+          <a-spin class="bug-detail-spin" tip="正在加载 BUG 详情..." />
         </div>
 
-        <div class="bug-detail-status-row">
-          <div class="bug-detail-status-main">
-            <span class="bug-detail-status-label">BUG状态</span>
-            <a-dropdown v-if="detailBug && !detailDraftType" trigger="click" @select="(value) => handleActionSelect(detailBug!, String(value))">
-              <a-tag :color="getStatusColor(detailBug?.status)" class="bug-selectable-tag">
-                {{ detailBug?.status_display || detailBug?.status || '未指派' }}
-                <icon-down class="bug-selectable-tag-icon" />
+        <template v-else>
+          <div class="bug-detail-page-hero">
+            <div class="bug-detail-page-title">
+              <a-input
+                v-if="detailEditMode"
+                v-model="detailForm.title"
+                size="large"
+                placeholder="请输入 BUG 标题"
+              />
+              <template v-else>{{ detailBug?.title || '-' }}</template>
+            </div>
+            <div class="bug-detail-page-meta">
+              <span class="bug-detail-page-meta-item">所属套件：{{ detailDraftType ? '-' : (detailBug?.suite_name || '-') }}</span>
+              <span class="bug-detail-page-meta-item">创建人：{{ detailDraftType ? '-' : (detailBug ? getCreatorName(detailBug) : '-') }}</span>
+              <span class="bug-detail-page-meta-item">创建时间：{{ detailDraftType ? '-' : (detailBug?.opened_at ? formatDate(detailBug.opened_at) : '-') }}</span>
+            </div>
+          </div>
+
+          <div class="bug-detail-status-row">
+            <div class="bug-detail-status-main">
+              <span class="bug-detail-status-label">BUG状态</span>
+              <a-dropdown
+                v-if="detailBug && !detailDraftType && canManageBugStatus(detailBug)"
+                trigger="click"
+                @select="(value) => handleActionSelect(detailBug!, String(value))"
+              >
+                <a-tag :color="getStatusColor(detailBug?.status)" class="bug-selectable-tag">
+                  {{ getStatusLabel(detailBug?.status, detailBug?.status_display) }}
+                  <icon-down class="bug-selectable-tag-icon" />
+                </a-tag>
+                <template #content>
+                  <a-doption v-for="item in getStatusActionOptions(detailBug)" :key="item.value" :value="item.value">
+                    {{ item.label }}
+                  </a-doption>
+                </template>
+              </a-dropdown>
+              <a-tag v-else-if="detailBug && !detailDraftType" :color="getStatusColor(detailBug?.status)">
+                {{ getStatusLabel(detailBug?.status, detailBug?.status_display) }}
               </a-tag>
-              <template #content>
-                <a-doption v-for="item in getStatusActionOptions(detailBug)" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </a-doption>
-              </template>
-            </a-dropdown>
-            <a-tag v-else color="gray">未指派</a-tag>
-          </div>
-          <div v-if="detailBug && !detailDraftType && !detailEditMode" class="bug-detail-toolbar">
-            <a-button type="outline" class="bug-detail-toolbar-button" @click="handleActionSelect(detailBug, 'assign')">
-              <template #icon><icon-user /></template>
-              指派给
-            </a-button>
-            <a-dropdown trigger="click" @select="(value) => handleActionSelect(detailBug, String(value))">
-              <a-button type="outline" class="bug-detail-toolbar-button">
-                <template #icon><icon-check-circle /></template>
-                处理状态
+              <a-tag v-else color="gray">未指派</a-tag>
+            </div>
+            <div v-if="detailBug && !detailDraftType && !detailEditMode" class="bug-detail-toolbar">
+              <a-button
+                type="outline"
+                class="bug-detail-toolbar-button"
+                :disabled="!canManageBugStatus(detailBug)"
+                @click="handleActionSelect(detailBug, 'assign')"
+              >
+                <template #icon><icon-user /></template>
+                指派给
               </a-button>
-              <template #content>
-                <a-doption v-for="item in getStatusActionOptions(detailBug)" :key="item.value" :value="item.value">
-                  {{ item.label }}
-                </a-doption>
-              </template>
-            </a-dropdown>
-            <a-button type="outline" class="bug-detail-toolbar-button" @click="openCopyDetail(detailBug)">
-              <template #icon><icon-copy /></template>
-              复制
-            </a-button>
-            <a-button type="outline" status="danger" class="bug-detail-toolbar-button" @click="handleActionSelect(detailBug, 'delete')">
-              <template #icon><icon-delete /></template>
-              删除
-            </a-button>
+              <a-dropdown
+                trigger="click"
+                :disabled="!canManageBugStatus(detailBug)"
+                @select="(value) => handleActionSelect(detailBug, String(value))"
+              >
+                <a-button type="outline" class="bug-detail-toolbar-button">
+                  <template #icon><icon-check-circle /></template>
+                  处理状态
+                </a-button>
+                <template #content>
+                  <a-doption v-for="item in getStatusActionOptions(detailBug)" :key="item.value" :value="item.value">
+                    {{ item.label }}
+                  </a-doption>
+                </template>
+              </a-dropdown>
+              <a-button type="outline" class="bug-detail-toolbar-button" @click="openCopyDetail(detailBug)">
+                <template #icon><icon-copy /></template>
+                复制
+              </a-button>
+              <a-button
+                type="outline"
+                status="danger"
+                class="bug-detail-toolbar-button"
+                :disabled="!canEditBug(detailBug)"
+                @click="handleActionSelect(detailBug, 'delete')"
+              >
+                <template #icon><icon-delete /></template>
+                删除
+              </a-button>
+            </div>
           </div>
-        </div>
 
-        <div class="bug-detail-section">
-          <div class="bug-detail-section-title">基础信息</div>
-          <div class="bug-detail-grid">
+          <div class="bug-detail-section">
+            <div class="bug-detail-section-title">基础信息</div>
+            <div class="bug-detail-grid">
             <div class="bug-detail-field">
               <div class="bug-detail-field-label">所属套件</div>
               <div class="bug-detail-field-value">{{ detailDraftType ? '-' : (detailBug?.suite_name || '-') }}</div>
@@ -488,7 +527,7 @@
             </div>
             <div class="bug-detail-field">
               <div class="bug-detail-field-label">创建人</div>
-              <div class="bug-detail-field-value">{{ detailDraftType ? '-' : (detailBug?.opened_by_name || detailBug?.opened_by || '-') }}</div>
+              <div class="bug-detail-field-value">{{ detailDraftType ? '-' : (detailBug ? getCreatorName(detailBug) : '-') }}</div>
             </div>
             <div class="bug-detail-field">
               <div class="bug-detail-field-label">BUG类型</div>
@@ -559,7 +598,7 @@
                     </template>
                   </a-dropdown>
                 </template>
-                <template v-else>{{ detailDraftType ? '-' : (detailBug?.resolution_display || '-') }}</template>
+                <template v-else>{{ detailDraftType ? '-' : getResolutionDisplay(detailBug) }}</template>
               </div>
             </div>
             <div class="bug-detail-field">
@@ -597,99 +636,127 @@
               <div class="bug-detail-field-value">{{ detailDraftType ? '-' : (detailBug?.closed_at ? formatDate(detailBug.closed_at) : '-') }}</div>
             </div>
           </div>
-        </div>
+          </div>
 
-        <div class="bug-detail-section">
-          <div class="bug-detail-section-title">重现步骤</div>
-          <BugRichTextEditor
-            v-if="detailEditMode"
-            v-model="detailForm.steps"
-            placeholder="请输入重现步骤"
-            :attachments="getSectionAttachments('steps')"
-            :pending-files="pendingAttachmentFiles.steps"
-            @upload-files="(files) => handleDetailAttachmentUpload('steps', files)"
-            @remove-attachment="(attachment) => removeDetailAttachment('steps', attachment)"
-            @remove-pending-file="(id) => removePendingAttachment('steps', id)"
-          />
-          <template v-else>
-            <div class="bug-detail-content" v-html="renderBugContent(detailBug?.steps)"></div>
-            <div v-if="getSectionAttachments('steps').length" class="bug-detail-attachment-list">
-              <div v-for="attachment in getSectionAttachments('steps')" :key="attachment.id" class="bug-detail-attachment-item">
-                <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
-                  <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
-                </a>
-                <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
-                <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
-                  {{ attachment.original_name }}
-                </a>
+          <div class="bug-detail-section bug-detail-section--rich">
+            <div class="bug-detail-section-title">重现步骤</div>
+            <BugRichTextEditor
+              v-if="detailEditMode"
+              v-model="detailForm.steps"
+              placeholder="请输入重现步骤"
+              :attachments="getSectionAttachments('steps')"
+              :pending-files="pendingAttachmentFiles.steps"
+              @upload-files="(files) => handleDetailAttachmentUpload('steps', files)"
+              @remove-attachment="(attachment) => removeDetailAttachment('steps', attachment)"
+              @remove-pending-file="(id) => removePendingAttachment('steps', id)"
+            />
+            <template v-else>
+              <div class="bug-detail-content" v-html="renderBugContent(detailBug?.steps)"></div>
+              <div v-if="getSectionAttachments('steps').length" class="bug-detail-attachment-list">
+                <div v-for="attachment in getSectionAttachments('steps')" :key="attachment.id" class="bug-detail-attachment-item">
+                  <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
+                    <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
+                  </a>
+                  <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
+                  <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
+                    {{ attachment.original_name }}
+                  </a>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="bug-detail-section bug-detail-section--rich">
+            <div class="bug-detail-section-title">期望结果</div>
+            <BugRichTextEditor
+              v-if="detailEditMode"
+              v-model="detailForm.expected_result"
+              placeholder="请输入期望结果"
+              :attachments="getSectionAttachments('expected_result')"
+              :pending-files="pendingAttachmentFiles.expected_result"
+              @upload-files="(files) => handleDetailAttachmentUpload('expected_result', files)"
+              @remove-attachment="(attachment) => removeDetailAttachment('expected_result', attachment)"
+              @remove-pending-file="(id) => removePendingAttachment('expected_result', id)"
+            />
+            <template v-else>
+              <div class="bug-detail-content" v-html="renderBugContent(detailBug?.expected_result)"></div>
+              <div v-if="getSectionAttachments('expected_result').length" class="bug-detail-attachment-list">
+                <div v-for="attachment in getSectionAttachments('expected_result')" :key="attachment.id" class="bug-detail-attachment-item">
+                  <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
+                    <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
+                  </a>
+                  <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
+                  <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
+                    {{ attachment.original_name }}
+                  </a>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="bug-detail-section bug-detail-section--rich">
+            <div class="bug-detail-section-title">实际结果</div>
+            <BugRichTextEditor
+              v-if="detailEditMode"
+              v-model="detailForm.actual_result"
+              placeholder="请输入实际结果"
+              :attachments="getSectionAttachments('actual_result')"
+              :pending-files="pendingAttachmentFiles.actual_result"
+              @upload-files="(files) => handleDetailAttachmentUpload('actual_result', files)"
+              @remove-attachment="(attachment) => removeDetailAttachment('actual_result', attachment)"
+              @remove-pending-file="(id) => removePendingAttachment('actual_result', id)"
+            />
+            <template v-else>
+              <div class="bug-detail-content" v-html="renderBugContent(detailBug?.actual_result)"></div>
+              <div v-if="getSectionAttachments('actual_result').length" class="bug-detail-attachment-list">
+                <div v-for="attachment in getSectionAttachments('actual_result')" :key="attachment.id" class="bug-detail-attachment-item">
+                  <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
+                    <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
+                  </a>
+                  <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
+                  <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
+                    {{ attachment.original_name }}
+                  </a>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div class="bug-detail-section bug-detail-section--rich">
+            <div class="bug-detail-section-title">处理备注</div>
+            <template v-if="detailEditMode">
+              <BugRichTextEditor
+                v-model="detailForm.solution"
+                placeholder="请输入处理备注"
+                :allow-attachments="false"
+              />
+            </template>
+            <div v-else class="bug-detail-content" v-html="renderBugContent(detailDraftType ? '' : detailBug?.solution)"></div>
+          </div>
+
+          <div v-if="!detailDraftType" class="bug-detail-section">
+            <div class="bug-detail-section-title">流转记录</div>
+            <div v-if="detailBug?.activity_logs?.length" class="bug-activity-list">
+              <div v-for="activity in detailBug.activity_logs" :key="activity.id" class="bug-activity-item">
+                <span class="bug-activity-dot"></span>
+                <div class="bug-activity-main">
+                  <div class="bug-activity-header">
+                    <span class="bug-activity-action">{{ activity.action_display || getBugActivityActionLabel(activity.action) }}</span>
+                    <span class="bug-activity-meta">
+                      {{ activity.operator_name || '系统' }} · {{ formatDate(activity.created_at) }}
+                    </span>
+                  </div>
+                  <div
+                    v-if="activity.content"
+                    class="bug-activity-content"
+                    v-html="renderBugContent(activity.content)"
+                  ></div>
+                </div>
               </div>
             </div>
-          </template>
-        </div>
-
-        <div class="bug-detail-section">
-          <div class="bug-detail-section-title">期望结果</div>
-          <BugRichTextEditor
-            v-if="detailEditMode"
-            v-model="detailForm.expected_result"
-            placeholder="请输入期望结果"
-            :attachments="getSectionAttachments('expected_result')"
-            :pending-files="pendingAttachmentFiles.expected_result"
-            @upload-files="(files) => handleDetailAttachmentUpload('expected_result', files)"
-            @remove-attachment="(attachment) => removeDetailAttachment('expected_result', attachment)"
-            @remove-pending-file="(id) => removePendingAttachment('expected_result', id)"
-          />
-          <template v-else>
-            <div class="bug-detail-content" v-html="renderBugContent(detailBug?.expected_result)"></div>
-            <div v-if="getSectionAttachments('expected_result').length" class="bug-detail-attachment-list">
-              <div v-for="attachment in getSectionAttachments('expected_result')" :key="attachment.id" class="bug-detail-attachment-item">
-                <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
-                  <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
-                </a>
-                <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
-                <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
-                  {{ attachment.original_name }}
-                </a>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <div class="bug-detail-section">
-          <div class="bug-detail-section-title">实际结果</div>
-          <BugRichTextEditor
-            v-if="detailEditMode"
-            v-model="detailForm.actual_result"
-            placeholder="请输入实际结果"
-            :attachments="getSectionAttachments('actual_result')"
-            :pending-files="pendingAttachmentFiles.actual_result"
-            @upload-files="(files) => handleDetailAttachmentUpload('actual_result', files)"
-            @remove-attachment="(attachment) => removeDetailAttachment('actual_result', attachment)"
-            @remove-pending-file="(id) => removePendingAttachment('actual_result', id)"
-          />
-          <template v-else>
-            <div class="bug-detail-content" v-html="renderBugContent(detailBug?.actual_result)"></div>
-            <div v-if="getSectionAttachments('actual_result').length" class="bug-detail-attachment-list">
-              <div v-for="attachment in getSectionAttachments('actual_result')" :key="attachment.id" class="bug-detail-attachment-item">
-                <a v-if="attachment.file_type === 'image'" :href="attachment.url" target="_blank" rel="noreferrer">
-                  <img :src="attachment.url" :alt="attachment.original_name" class="bug-detail-attachment-image" />
-                </a>
-                <video v-else-if="attachment.file_type === 'video'" class="bug-detail-attachment-video" controls :src="attachment.url" />
-                <a v-else :href="attachment.url" target="_blank" rel="noreferrer" class="bug-detail-attachment-file">
-                  {{ attachment.original_name }}
-                </a>
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <div class="bug-detail-section">
-          <div class="bug-detail-section-title">处理备注</div>
-          <template v-if="detailEditMode">
-            <a-textarea v-model="detailForm.solution" :auto-size="{ minRows: 4, maxRows: 8 }" placeholder="请输入处理备注" />
-          </template>
-          <div v-else class="bug-detail-content" v-html="renderBugContent(detailDraftType ? '' : detailBug?.solution)"></div>
-        </div>
+            <a-empty v-else description="暂无流转记录" />
+          </div>
+        </template>
       </div>
     </template>
 
@@ -720,10 +787,10 @@
             </a-select>
           </a-form-item>
           <a-form-item field="solution" label="处理备注">
-            <a-textarea
+            <BugRichTextEditor
               v-model="actionForm.solution"
-              :auto-size="{ minRows: 4, maxRows: 8 }"
               placeholder="请输入处理备注"
+              :allow-attachments="false"
             />
           </a-form-item>
         </template>
@@ -820,7 +887,11 @@
             </a-select>
           </a-form-item>
           <a-form-item field="solution" label="处理备注">
-            <a-textarea v-model="batchForm.solution" :auto-size="{ minRows: 4, maxRows: 8 }" placeholder="请输入处理备注" />
+            <BugRichTextEditor
+              v-model="batchForm.solution"
+              placeholder="请输入处理备注"
+              :allow-attachments="false"
+            />
           </a-form-item>
         </template>
         <template v-else-if="batchActionType === 'delete'">
@@ -1017,6 +1088,10 @@ const lastSelectionSnapshot = ref<number[]>([]);
 const levelOptions = ['1', '2', '3', '4'];
 let rowHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let updateSummaryTimer: ReturnType<typeof setTimeout> | null = null;
+let membersRequestId = 0;
+let suiteTestCasesRequestId = 0;
+let bugsRequestId = 0;
+let detailViewRequestId = 0;
 const hasActiveFilters = computed(
   () =>
     Boolean(
@@ -1093,6 +1168,31 @@ const createEmptyPendingAttachmentState = () => ({
 });
 
 const pendingAttachmentFiles = reactive(createEmptyPendingAttachmentState());
+
+const getCurrentProjectMemberRole = () => {
+  if (!currentUserId.value) {
+    return '';
+  }
+  return (
+    projectMembers.value.find((item) => Number(item.user) === Number(currentUserId.value))?.role || ''
+  );
+};
+
+const canManageBugStatus = (bug?: TestBug | null) => {
+  if (!bug || !currentUserId.value) {
+    return false;
+  }
+  const currentRole = getCurrentProjectMemberRole();
+  if (currentRole === 'owner' || currentRole === 'admin') {
+    return true;
+  }
+  if (Number(bug.opened_by) === Number(currentUserId.value)) {
+    return true;
+  }
+  return getAssignedUserIds(bug).includes(Number(currentUserId.value));
+};
+
+const canEditBug = (bug?: TestBug | null) => canManageBugStatus(bug);
 
 const statusCards = computed(() => [
   { key: 'all' as const, label: '全部', count: bugList.value.length },
@@ -1182,11 +1282,27 @@ const pagedBugList = computed(() => {
   return filteredBugList.value.slice(start, start + pageSize);
 });
 
+const tableRenderKey = computed(() =>
+  [
+    props.selectedSuiteId ?? 'no-suite',
+    visibleColumns.value.join('|'),
+    filteredBugList.value.map((bug) => bug.id).join('|'),
+    pagination.current,
+    pagination.pageSize,
+  ].join('::')
+);
+
 const filteredBugIds = computed(() => filteredBugList.value.map((bug) => bug.id));
 const pagedBugIds = computed(() => pagedBugList.value.map((bug) => bug.id));
 const selectedBugCount = computed(() => selectedBugIds.value.length);
 const selectedBugRecords = computed(() =>
   bugList.value.filter((bug) => selectedBugIds.value.includes(bug.id))
+);
+const selectedManageableBugCount = computed(
+  () => selectedBugRecords.value.filter((bug) => canManageBugStatus(bug)).length
+);
+const canManageAllSelectedBugs = computed(
+  () => selectedBugCount.value > 0 && selectedManageableBugCount.value === selectedBugCount.value
 );
 const isAllFilteredSelected = computed(
   () => filteredBugIds.value.length > 0 && filteredBugIds.value.every((id) => selectedBugIds.value.includes(id))
@@ -1279,9 +1395,10 @@ const batchAffectedDiffs = computed(() => {
     return [`BUG类型 -> ${getBugTypeLabel(batchForm.bug_type)}`];
   }
   if (batchActionType.value === 'resolution') {
+    const solutionPreview = getPlainTextPreview(batchForm.solution, 80);
     return [
       `解决方案 -> ${getResolutionLabel(batchForm.resolution)}`,
-      ...(batchForm.solution.trim() ? [`处理备注 -> ${batchForm.solution.trim()}`] : []),
+      ...(solutionPreview ? [`处理备注 -> ${solutionPreview}`] : []),
     ];
   }
   return ['删除所选 BUG'];
@@ -1451,6 +1568,10 @@ const resetPendingAttachments = () => {
   pendingAttachmentFiles.actual_result = [];
 };
 
+const invalidateDetailViewRequest = () => {
+  detailViewRequestId += 1;
+};
+
 const resetDetailForm = () => {
   detailForm.title = '';
   detailForm.testcase_ids = [];
@@ -1489,9 +1610,17 @@ const fillDetailForm = (bug: TestBug) => {
 };
 
 const startDetailEdit = async (bug: TestBug) => {
+  if (!canEditBug(bug)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
+  const requestId = ++detailViewRequestId;
   await fetchSuiteTestCases();
   if (detailBug.value?.id !== bug.id) {
     const detail = await fetchBugDetail(bug.id);
+    if (requestId !== detailViewRequestId) {
+      return;
+    }
     if (!detail) {
       return;
     }
@@ -1524,11 +1653,15 @@ const cancelDetailEdit = () => {
 };
 
 const openCopyDetail = async (bug: TestBug) => {
+  const requestId = ++detailViewRequestId;
   detailDraftType.value = 'copy';
   viewMode.value = 'detail';
   await fetchSuiteTestCases();
   if (detailBug.value?.id !== bug.id) {
     const detail = await fetchBugDetail(bug.id);
+    if (requestId !== detailViewRequestId) {
+      return;
+    }
     if (!detail) {
       return;
     }
@@ -1923,6 +2056,12 @@ const getStatusViewLabel = (value: StatusView) => {
   return TEST_BUG_STATUS_OPTIONS.find((item) => item.value === value)?.label || value;
 };
 
+const getStatusLabel = (value?: TestBugStatus | string | null, display?: string | null) => {
+  if (display) return display;
+  if (!value) return '未指派';
+  return TEST_BUG_STATUS_OPTIONS.find((item) => item.value === value)?.label || '-';
+};
+
 const getQuickViewLabel = (value: QuickView) => quickViews.find((item) => item.key === value)?.label || value;
 
 const getSortLabel = (value: BugSortValue) => bugSortOptions.find((item) => item.value === value)?.label || value;
@@ -2049,6 +2188,14 @@ const toggleSelectFiltered = () => {
   selectedBugIds.value = filteredBugIds.value.slice();
 };
 
+const toggleBugSelection = (bugId: number, checked: boolean | string | number) => {
+  if (Boolean(checked)) {
+    mergeSelectedBugIds([bugId]);
+    return;
+  }
+  removeSelectedBugIds([bugId]);
+};
+
 const rowSelection = computed(() => ({
   type: 'checkbox' as const,
   showCheckedAll: true,
@@ -2151,6 +2298,10 @@ const openBatchModal = (type: 'assign' | 'status' | 'priority' | 'severity' | 'b
     Message.warning('请先选择 BUG');
     return;
   }
+  if (!canManageAllSelectedBugs.value) {
+    Message.warning('当前选中的 BUG 中包含无权限处理的记录，请调整后再试');
+    return;
+  }
   presetBatchForm(type);
   batchActionType.value = type;
   batchVisible.value = true;
@@ -2227,6 +2378,10 @@ const submitBatchAction = async () => {
 
 const updateBugField = async (bug: TestBug, payload: Partial<TestBug>, successMessage: string) => {
   if (!props.currentProjectId) return;
+  if (!canEditBug(bug)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
   const response = await updateTestBug(props.currentProjectId, bug.id, payload);
   if (!response.success || !response.data) {
     Message.error(response.error || '更新 BUG 失败');
@@ -2299,7 +2454,12 @@ const fetchMembers = async () => {
     return;
   }
 
-  const response = await getProjectMembers(props.currentProjectId);
+  const projectId = props.currentProjectId;
+  const requestId = ++membersRequestId;
+  const response = await getProjectMembers(projectId);
+  if (requestId !== membersRequestId || props.currentProjectId !== projectId) {
+    return;
+  }
   projectMembers.value = response.success && response.data ? response.data : [];
 };
 
@@ -2309,12 +2469,22 @@ const fetchSuiteTestCases = async () => {
     return;
   }
 
-  const response = await getTestCaseList(props.currentProjectId, {
+  const projectId = props.currentProjectId;
+  const suiteId = props.selectedSuiteId;
+  const requestId = ++suiteTestCasesRequestId;
+  const response = await getTestCaseList(projectId, {
     page: 1,
     pageSize: 500,
-    suite_id: props.selectedSuiteId,
+    suite_id: suiteId,
   });
 
+  if (
+    requestId !== suiteTestCasesRequestId ||
+    props.currentProjectId !== projectId ||
+    props.selectedSuiteId !== suiteId
+  ) {
+    return;
+  }
   suiteTestCases.value = response.success && response.data ? response.data : [];
 };
 
@@ -2324,16 +2494,23 @@ const fetchBugs = async () => {
     return;
   }
 
+  const projectId = props.currentProjectId;
+  const suiteId = props.selectedSuiteId;
+  const requestId = ++bugsRequestId;
   loading.value = true;
   try {
-    const response = await getTestBugList(props.currentProjectId, {
-      suite_id: props.selectedSuiteId,
+    const response = await getTestBugList(projectId, {
+      suite_id: suiteId,
       search: filters.search || undefined,
       bug_type: filters.bug_type,
       severity: filters.severity,
       priority: filters.priority,
       assigned_to: filters.assigned_to,
     });
+
+    if (requestId !== bugsRequestId || props.currentProjectId !== projectId || props.selectedSuiteId !== suiteId) {
+      return;
+    }
 
     if (!response.success) {
       bugList.value = [];
@@ -2344,7 +2521,9 @@ const fetchBugs = async () => {
     bugList.value = response.data || [];
     normalizePaginationCurrent();
   } finally {
-    loading.value = false;
+    if (requestId === bugsRequestId) {
+      loading.value = false;
+    }
   }
 };
 
@@ -2370,6 +2549,10 @@ const handleDetailAttachmentUpload = async (section: TestBugAttachmentSection, f
     appendPendingAttachments(section, files);
     return;
   }
+  if (!canEditBug(detailBug.value)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
 
   const response = await uploadTestBugAttachments(props.currentProjectId, detailBug.value.id, section, files);
   if (!response.success) {
@@ -2389,20 +2572,32 @@ const removeDetailAttachment = async (section: TestBugAttachmentSection, attachm
   if (!props.currentProjectId || !detailBug.value?.id) {
     return;
   }
+  if (!canEditBug(detailBug.value)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
+  const bugId = detailBug.value.id;
   const response = await deleteTestBugAttachment(props.currentProjectId, detailBug.value.id, attachment.id);
   if (!response.success) {
     Message.error(response.error || '删除 BUG 附件失败');
     return;
   }
-  detailBug.value = {
-    ...detailBug.value,
-    attachments: (detailBug.value.attachments || []).filter((item) => item.id !== attachment.id),
-  };
-  syncBugRecord(detailBug.value);
+  const refreshedDetail = await fetchBugDetail(bugId);
+  if (refreshedDetail) {
+    detailBug.value = refreshedDetail;
+    syncBugRecord(refreshedDetail);
+  } else if (detailBug.value) {
+    detailBug.value = {
+      ...detailBug.value,
+      attachments: (detailBug.value.attachments || []).filter((item) => item.id !== attachment.id),
+    };
+    syncBugRecord(detailBug.value);
+  }
   Message.success(`${section === 'steps' ? '重现步骤' : section === 'expected_result' ? '期望结果' : '实际结果'}附件已删除`);
 };
 
 const openCreateDetail = async () => {
+  invalidateDetailViewRequest();
   detailBug.value = null;
   detailDraftType.value = 'create';
   detailEditMode.value = true;
@@ -2412,27 +2607,39 @@ const openCreateDetail = async () => {
 };
 
 const openDetail = async (bug: TestBug, startEdit = false) => {
+  const requestId = ++detailViewRequestId;
   detailLoading.value = true;
   detailDraftType.value = null;
   detailEditMode.value = false;
   viewMode.value = 'detail';
   resetPendingAttachments();
   try {
-    detailBug.value = await fetchBugDetail(bug.id);
-    if (detailBug.value) {
-      fillDetailForm(detailBug.value);
+    const nextDetail = await fetchBugDetail(bug.id);
+    if (requestId !== detailViewRequestId) {
+      return;
+    }
+    detailBug.value = nextDetail;
+    if (nextDetail) {
+      fillDetailForm(nextDetail);
     }
   } finally {
-    detailLoading.value = false;
+    if (requestId === detailViewRequestId) {
+      detailLoading.value = false;
+    }
   }
 
   if (startEdit && detailBug.value) {
+    if (!canEditBug(detailBug.value)) {
+      Message.warning('当前账号没有编辑该 BUG 的权限，已切换为只读查看');
+      return;
+    }
     detailEditMode.value = true;
     await fetchSuiteTestCases();
   }
 };
 
 const backToList = () => {
+  invalidateDetailViewRequest();
   detailDraftType.value = null;
   detailEditMode.value = false;
   viewMode.value = 'list';
@@ -2443,6 +2650,10 @@ const saveDetailEdit = async () => {
   if (!props.currentProjectId) return;
   if (!detailForm.title.trim()) {
     Message.warning('请填写 BUG 标题');
+    return;
+  }
+  if (!detailDraftType.value && detailBug.value && !canEditBug(detailBug.value)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
     return;
   }
 
@@ -2590,6 +2801,10 @@ const handleActionSelect = async (bug: TestBug, action: string) => {
   }
 
   if (action === 'delete') {
+    if (!canEditBug(bug)) {
+      Message.warning('当前账号没有删除该 BUG 的权限');
+      return;
+    }
     Modal.warning({
       title: '删除 BUG',
       content: '确定删除 BUG「' + bug.title + '」吗？',
@@ -2623,6 +2838,10 @@ const handleActionSelect = async (bug: TestBug, action: string) => {
     action === 'activate' ||
     action === 'close'
   ) {
+    if (!canManageBugStatus(bug)) {
+      Message.warning('当前账号没有处理该 BUG 的权限');
+      return;
+    }
     openActionModal(bug, action);
   }
 };
@@ -2660,6 +2879,19 @@ const getPriorityColor = (priority?: string) => {
 const escapeBugHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
 
+const getPlainTextPreview = (value?: string | null, maxLength = 120) => {
+  const plainText = String(value || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|ul|ol|blockquote|pre)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plainText) {
+    return '';
+  }
+  return plainText.length > maxLength ? `${plainText.slice(0, maxLength)}...` : plainText;
+};
+
 const renderBugContent = (value?: string | null) => {
   const content = String(value || '').trim();
   if (!content) {
@@ -2677,7 +2909,33 @@ const getBugTypeLabel = (bugType?: TestBugType | string) => {
 
 const getResolutionLabel = (resolution?: TestBugResolution | string) => {
   if (!resolution) return '-';
-  return TEST_BUG_RESOLUTION_OPTIONS.find((item) => item.value === resolution)?.label || String(resolution);
+  return TEST_BUG_RESOLUTION_OPTIONS.find((item) => item.value === resolution)?.label || '-';
+};
+
+const getResolutionDisplay = (bug?: TestBug | null) => {
+  if (!bug?.resolution) {
+    return '-';
+  }
+  return bug.resolution_display || getResolutionLabel(bug.resolution);
+};
+
+const BUG_ACTIVITY_ACTION_LABELS: Record<string, string> = {
+  create: '创建 BUG',
+  update: '更新 BUG',
+  assign: '指派',
+  confirm: '确认接收',
+  fix: '标记已修复',
+  resolve: '提交复测',
+  activate: '重新激活',
+  close: '关闭 BUG',
+  status_change: '状态变更',
+  upload_attachment: '上传附件',
+  delete_attachment: '删除附件',
+};
+
+const getBugActivityActionLabel = (action?: string | null) => {
+  if (!action) return '更新记录';
+  return BUG_ACTIVITY_ACTION_LABELS[action] || action;
 };
 
 const getBugTypeColor = (bugType?: TestBugType | string) => {
@@ -2688,6 +2946,7 @@ const getBugTypeColor = (bugType?: TestBugType | string) => {
   if (bugType === 'config') return 'lime';
   if (bugType === 'install') return 'cyan';
   if (bugType === 'security') return 'red';
+  if (bugType === 'others') return 'gray';
   return 'gray';
 };
 
@@ -2705,16 +2964,28 @@ const getResolutionColor = (resolution?: TestBugResolution | string) => {
 
 const handleBugTypeChange = async (bug: TestBug, bugType: TestBugType) => {
   if (bug.bug_type === bugType) return;
+  if (!canEditBug(bug)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
   await updateBugField(bug, { bug_type: bugType }, 'BUG 类型已更新');
 };
 
 const handleSeverityChange = async (bug: TestBug, severity: string) => {
   if (bug.severity === severity) return;
+  if (!canEditBug(bug)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
   await updateBugField(bug, { severity }, '严重程度已更新');
 };
 
 const handlePriorityChange = async (bug: TestBug, priority: string) => {
   if (bug.priority === priority) return;
+  if (!canEditBug(bug)) {
+    Message.warning('当前账号没有编辑该 BUG 的权限');
+    return;
+  }
   await updateBugField(bug, { priority }, '优先级已更新');
 };
 
@@ -2739,6 +3010,19 @@ watch(
 );
 
 watch(
+  () => bugList.value.map((bug) => bug.id).join(','),
+  () => {
+    selectedBugIds.value = selectedBugIds.value.filter((id) => bugList.value.some((bug) => bug.id === id));
+    if (detailBug.value && !bugList.value.some((bug) => bug.id === detailBug.value?.id)) {
+      detailBug.value = null;
+      detailEditMode.value = false;
+      detailDraftType.value = null;
+      viewMode.value = 'list';
+    }
+  }
+);
+
+watch(
   visibleColumns,
   (value) => {
     const nextColumns = tableColumnOptions
@@ -2756,11 +3040,18 @@ watch(
 watch(
   () => [props.currentProjectId, props.selectedSuiteId],
   async ([projectId, suiteId]) => {
+    invalidateDetailViewRequest();
+    selectedBugIds.value = [];
+    clearUpdateSummary();
+    detailEditMode.value = false;
+    detailDraftType.value = null;
+    detailBug.value = null;
+    viewMode.value = 'list';
+    resetPendingAttachments();
+
     if (!projectId || !suiteId) {
       bugList.value = [];
       suiteTestCases.value = [];
-      detailBug.value = null;
-      viewMode.value = 'list';
       pagination.current = 1;
       applySavedBugFilters(projectId);
       return;
@@ -2800,11 +3091,6 @@ onMounted(async () => {
     } catch (error) {
       localStorage.removeItem(getBugColumnStorageKey(props.currentProjectId));
     }
-  }
-  if (props.currentProjectId && props.selectedSuiteId) {
-    await fetchMembers();
-    await fetchSuiteTestCases();
-    await fetchBugs();
   }
 });
 
@@ -3159,6 +3445,35 @@ defineExpose({
   font-size: 11px;
 }
 
+.bug-current-view-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 8px;
+}
+
+.bug-current-view-summary-count {
+  color: var(--color-text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.bug-current-view-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bug-current-view-summary-tag {
+  max-width: 280px;
+}
+
 .bug-update-summary {
   display: flex;
   align-items: center;
@@ -3221,6 +3536,11 @@ defineExpose({
 .bug-batch-toolbar-count {
   color: var(--color-text-2);
   font-size: 13px;
+}
+
+.bug-batch-toolbar-hint {
+  color: rgb(var(--warning-6));
+  font-size: 12px;
 }
 
 .bug-batch-toolbar-trigger-icon {
@@ -3327,6 +3647,88 @@ defineExpose({
   flex: 1;
 }
 
+.bug-stable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bug-stable-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.bug-stable-row-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bug-stable-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-stable-row-checkbox {
+  flex: 0 0 auto;
+}
+
+.bug-stable-row-id {
+  color: var(--color-text-3);
+  font-size: 13px;
+}
+
+.bug-stable-row-link {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.bug-stable-row-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 14px;
+}
+
+.bug-stable-meta-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bug-stable-meta-label {
+  color: var(--color-text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.bug-stable-row-related {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bug-stable-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 180px;
+}
+
 .bug-related-cell,
 .bug-related-field {
   display: flex;
@@ -3351,6 +3753,7 @@ defineExpose({
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  gap: 16px;
 }
 
 .bug-detail-page-header {
@@ -3358,7 +3761,43 @@ defineExpose({
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+}
+
+.bug-detail-page-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bug-detail-page-title-wrap h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-1);
+  line-height: 1.4;
+}
+
+.bug-detail-loading-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  padding: 24px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 8px;
+}
+
+.bug-detail-page-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 8px;
 }
 
 .bug-detail-page-title {
@@ -3366,13 +3805,24 @@ defineExpose({
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  color: var(--color-text-1);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
-.bug-detail-page-title h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--color-text-1);
+.bug-detail-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.bug-detail-page-meta-item {
+  color: var(--color-text-3);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 .bug-detail-page-actions {
@@ -3434,21 +3884,19 @@ defineExpose({
   min-width: 108px;
 }
 
-.bug-detail-title {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.bug-detail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
 .bug-detail-section + .bug-detail-section {
-  margin-top: 18px;
+  margin-top: 0;
+}
+
+.bug-detail-section {
+  padding: 16px 18px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 8px;
+}
+
+.bug-detail-section--rich {
+  padding-bottom: 18px;
 }
 
 .bug-detail-grid {
@@ -3487,6 +3935,43 @@ defineExpose({
   line-height: 1.7;
   color: var(--color-text-2);
   text-align: left;
+  word-break: break-word;
+}
+
+.bug-detail-content > :first-child {
+  margin-top: 0;
+}
+
+.bug-detail-content > :last-child {
+  margin-bottom: 0;
+}
+
+.bug-detail-content p,
+.bug-detail-content ol,
+.bug-detail-content ul,
+.bug-detail-content blockquote,
+.bug-detail-content pre {
+  margin: 0 0 12px;
+}
+
+.bug-detail-content ol,
+.bug-detail-content ul {
+  padding-left: 20px;
+}
+
+.bug-detail-content li + li {
+  margin-top: 6px;
+}
+
+.bug-detail-content img,
+.bug-detail-content video,
+.bug-detail-content iframe,
+.bug-detail-content table {
+  max-width: 100%;
+}
+
+.bug-detail-content pre {
+  overflow-x: auto;
 }
 
 .bug-detail-attachment-list {
@@ -3590,21 +4075,39 @@ defineExpose({
   .bug-detail-page-header {
     flex-direction: column;
   }
+
+  .bug-detail-toolbar {
+    position: static;
+  }
+
+  .bug-detail-page-title {
+    font-size: 20px;
+  }
 }
 
 @media (max-width: 720px) {
   .bug-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .bug-detail-page-hero,
+  .bug-detail-section {
+    padding: 14px;
+  }
+
+  .bug-detail-toolbar-button,
+  .bug-detail-page-actions :deep(.arco-btn) {
+    width: 100%;
+  }
+
+  .bug-stable-row {
+    flex-direction: column;
+  }
+
+  .bug-stable-row-actions {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
 }
 </style>
-
-
-
-
-
-
-
-
-
-

@@ -3092,6 +3092,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         instance = serializer.instance
+        self._ensure_can_edit_bug(instance)
         before_snapshot = self._build_bug_snapshot(instance)
         status_explicit = "status" in serializer.validated_data
         resolution_explicit = "resolution" in serializer.validated_data
@@ -3140,6 +3141,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
         self._record_bug_update_activity(bug, before_snapshot)
 
     def perform_destroy(self, instance):
+        self._ensure_can_edit_bug(instance)
         instance.delete()
 
     def _record_bug_update_activity(self, bug, before_snapshot):
@@ -3366,6 +3368,11 @@ class TestBugViewSet(viewsets.ModelViewSet):
             return
         raise PermissionDenied("只有 BUG 指派人、创建人或管理员可以更改 BUG 状态")
 
+    def _ensure_can_edit_bug(self, bug):
+        if self._can_manage_bug_status(bug, self.request.user):
+            return
+        raise PermissionDenied("只有 BUG 指派人、创建人或管理员可以编辑 BUG")
+
     def _apply_bug_status_change(
         self,
         bug,
@@ -3521,6 +3528,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
     @permission_required("testcases.change_testbug")
     def upload_attachments(self, request, project_pk=None, pk=None):
         bug = self.get_object()
+        self._ensure_can_edit_bug(bug)
         section = str(request.data.get("section") or "").strip()
         if section not in self._attachment_sections:
             return Response({"error": "请选择有效的附件区域"}, status=status.HTTP_400_BAD_REQUEST)
@@ -3578,6 +3586,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
     @permission_required("testcases.change_testbug")
     def delete_attachment(self, request, project_pk=None, pk=None, attachment_id=None):
         bug = self.get_object()
+        self._ensure_can_edit_bug(bug)
         attachment = get_object_or_404(TestBugAttachment, pk=attachment_id, bug=bug)
         attachment_name = attachment.original_name or "未命名文件"
         section_label = self._get_bug_attachment_section_label(attachment.section)

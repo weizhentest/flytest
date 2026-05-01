@@ -12,7 +12,7 @@
 
       <div class="editor-toolbar-right">
         <slot name="toolbar-extra" />
-        <a-button size="mini" @click="triggerFileInput">上传附件</a-button>
+        <a-button v-if="props.allowAttachments" size="mini" @click="triggerFileInput">上传附件</a-button>
       </div>
     </div>
 
@@ -26,6 +26,7 @@
     />
 
     <input
+      v-if="props.allowAttachments"
       ref="fileInputRef"
       type="file"
       multiple
@@ -87,11 +88,13 @@ const props = withDefaults(
     placeholder?: string;
     attachments?: TestBugAttachment[];
     pendingFiles?: PendingBugAttachmentFile[];
+    allowAttachments?: boolean;
   }>(),
   {
     placeholder: '请输入内容',
     attachments: () => [],
     pendingFiles: () => [],
+    allowAttachments: true,
   }
 );
 

@@ -968,6 +968,46 @@ class TestSuiteExecutionTests(TestCase):
         bug.refresh_from_db()
         self.assertEqual(bug.get_effective_status(), TestBug.STATUS_CONFIRMED)
 
+    def test_bug_detail_patch_assigns_users_and_updates_status_and_timestamp(self):
+        admin_user = User.objects.create_superuser(
+            username="bugdetailpatchadmin",
+            email="bugdetailpatchadmin@example.com",
+            password="password",
+        )
+        first_assignee = User.objects.create_user(username="bugdetailpatch1", password="password")
+        second_assignee = User.objects.create_user(username="bugdetailpatch2", password="password")
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=first_assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=second_assignee, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="detail patch assignment",
+            opened_by=admin_user,
+            status=TestBug.STATUS_UNASSIGNED,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.patch(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/",
+            {"assigned_to_ids": [first_assignee.id, second_assignee.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.assigned_to_id, first_assignee.id)
+        self.assertEqual(
+            list(bug.assigned_users.order_by("id").values_list("id", flat=True)),
+            [first_assignee.id, second_assignee.id],
+        )
+        self.assertEqual(bug.get_effective_status(), TestBug.STATUS_ASSIGNED)
+        self.assertEqual(response.data["status"], TestBug.STATUS_ASSIGNED)
+        self.assertEqual(response.data["status_display"], "未确认")
+        self.assertIsNotNone(bug.assigned_at)
+
     def test_bug_creator_can_change_status_without_admin_role(self):
         creator = User.objects.create_user(username="bugcreator", password="password")
         assignee = User.objects.create_user(username="bugcreatorassignee", password="password")
@@ -1026,6 +1066,153 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(response.status_code, 403, response.data)
         bug.refresh_from_db()
         self.assertEqual(bug.get_effective_status(), TestBug.STATUS_ASSIGNED)
+
+    def test_unrelated_member_cannot_patch_bug_detail(self):
+        creator = User.objects.create_user(username="bugpatchowner", password="password")
+        assignee = User.objects.create_user(username="bugpatchworker", password="password")
+        outsider = User.objects.create_user(username="bugpatchoutsider", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=outsider, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Patch Permission Bug",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+            severity="3",
+        )
+        bug.assigned_users.set([assignee])
+
+        self.api_client.force_authenticate(user=outsider)
+        response = self.api_client.patch(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/",
+            {"severity": "1"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.severity, "3")
+
+    def test_unrelated_member_cannot_delete_bug(self):
+        creator = User.objects.create_user(username="bugdeleteowner", password="password")
+        assignee = User.objects.create_user(username="bugdeleteworker", password="password")
+        outsider = User.objects.create_user(username="bugdeleteoutsider", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=outsider, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Delete Permission Bug",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+        )
+        bug.assigned_users.set([assignee])
+
+        self.api_client.force_authenticate(user=outsider)
+        response = self.api_client.delete(
+            f"/api/projects/{self.project.id}/test-bugs/{bug.id}/"
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertTrue(TestBug.objects.filter(id=bug.id).exists())
+
+    def test_unrelated_member_cannot_manage_bug_attachments(self):
+        creator = User.objects.create_user(username="bugattachmentowner", password="password")
+        assignee = User.objects.create_user(username="bugattachmentworker", password="password")
+        outsider = User.objects.create_user(username="bugattachmentoutsider", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=outsider, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Attachment Permission Bug",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+        )
+        bug.assigned_users.set([assignee])
+
+        self.api_client.force_authenticate(user=outsider)
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                upload_response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/upload-attachments/",
+                    {
+                        "section": "steps",
+                        "files": [
+                            SimpleUploadedFile(
+                                "forbidden.txt",
+                                b"forbidden attachment",
+                                content_type="text/plain",
+                            )
+                        ],
+                    },
+                    format="multipart",
+                )
+
+        self.assertEqual(upload_response.status_code, 403, upload_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.attachments.count(), 0)
+
+    def test_unrelated_member_cannot_delete_bug_attachment(self):
+        creator = User.objects.create_user(username="bugdeleteattachmentowner", password="password")
+        assignee = User.objects.create_user(username="bugdeleteattachmentworker", password="password")
+        outsider = User.objects.create_user(username="bugdeleteattachmentoutsider", password="password")
+        ProjectMember.objects.create(project=self.project, user=creator, role="member")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+        ProjectMember.objects.create(project=self.project, user=outsider, role="member")
+        self.suite.testcases.add(self.testcase)
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Attachment Delete Permission Bug",
+            opened_by=creator,
+            assigned_to=assignee,
+            status=TestBug.STATUS_ASSIGNED,
+        )
+        bug.assigned_users.set([assignee])
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                self.api_client.force_authenticate(user=creator)
+                upload_response = self.api_client.post(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/upload-attachments/",
+                    {
+                        "section": "steps",
+                        "files": [
+                            SimpleUploadedFile(
+                                "owner.txt",
+                                b"owner attachment",
+                                content_type="text/plain",
+                            )
+                        ],
+                    },
+                    format="multipart",
+                )
+                self.assertEqual(upload_response.status_code, 201, upload_response.data)
+                attachment_id = upload_response.data["data"][0]["id"]
+
+                self.api_client.force_authenticate(user=outsider)
+                delete_response = self.api_client.delete(
+                    f"/api/projects/{self.project.id}/test-bugs/{bug.id}/attachments/{attachment_id}/"
+                )
+
+        self.assertEqual(delete_response.status_code, 403, delete_response.data)
+        bug.refresh_from_db()
+        self.assertEqual(bug.attachments.count(), 1)
 
     def test_batch_assign_bugs_supports_multiple_assignees(self):
         admin_user = User.objects.create_superuser(
