@@ -78,6 +78,7 @@
 
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
+import { Message } from '@arco-design/web-vue';
 import type { TestBugAttachment } from '@/services/testBugService';
 
 const props = withDefaults(
@@ -111,6 +112,7 @@ export interface PendingBugAttachmentFile {
 const editorRef = ref<HTMLDivElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const allAttachments = ref<(TestBugAttachment | PendingBugAttachmentFile)[]>([]);
+const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024;
 
 watch(
   () => [props.attachments, props.pendingFiles],
@@ -166,7 +168,21 @@ const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
   const files = Array.from(target.files || []);
   if (files.length) {
-    emit('upload-files', files);
+    const oversizedFiles = files.filter((file) => file.size > MAX_ATTACHMENT_SIZE);
+    const allowedFiles = files.filter((file) => file.size <= MAX_ATTACHMENT_SIZE);
+
+    if (oversizedFiles.length > 0) {
+      const oversizedNames = oversizedFiles
+        .slice(0, 3)
+        .map((file) => file.name)
+        .join('、');
+      const suffix = oversizedFiles.length > 3 ? ` 等 ${oversizedFiles.length} 个文件` : '';
+      Message.warning(`${oversizedNames}${suffix} 超过 100MB 限制，已跳过`);
+    }
+
+    if (allowedFiles.length > 0) {
+      emit('upload-files', allowedFiles);
+    }
   }
   target.value = '';
 };
