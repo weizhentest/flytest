@@ -609,6 +609,60 @@ export interface AiIterationTestReport {
   execution_status_distribution: Record<string, number>;
   bug_status_distribution: Record<string, number>;
   review_status_distribution: Record<string, number>;
+  requirement_summary: {
+    testcase_count: number;
+    traceable_testcase_count: number;
+    unlinked_testcase_count: number;
+    linked_document_count: number;
+    linked_module_count: number;
+    project_latest_document_count: number;
+    documents: Array<{
+      id: string;
+      title: string;
+      status: string;
+      version: string;
+      is_latest: boolean;
+      linked_testcase_count: number;
+      module_count: number;
+    }>;
+    modules: Array<{
+      id: string;
+      title: string;
+      document_id: string;
+      document_title: string;
+      matched_testcase_count: number;
+      content_excerpt: string;
+    }>;
+  };
+  bug_workflow_summary: {
+    bug_count: number;
+    fixed_bug_count: number;
+    submitted_retest_bug_count: number;
+    closed_bug_count: number;
+    reactivated_bug_count: number;
+    confirmed_bug_count: number;
+    retest_failed_total_count: number;
+    bugs_with_failed_retest: Array<{
+      id: number;
+      title: string;
+      status: string;
+      suite: string;
+      failed_retest_count: number;
+      fix_count: number;
+      resolve_count: number;
+      close_count: number;
+    }>;
+    top_retest_failed_bugs: Array<{
+      id: number;
+      title: string;
+      status: string;
+      suite: string;
+      failed_retest_count: number;
+      fix_count: number;
+      resolve_count: number;
+      close_count: number;
+    }>;
+  };
 }
 
 export interface AiIterationTestReportResponse {

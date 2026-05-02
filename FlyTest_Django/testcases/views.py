@@ -20,6 +20,7 @@ import logging
 import re
 import threading
 import time
+from collections import defaultdict
 from difflib import SequenceMatcher
 from copy import deepcopy
 from uuid import uuid4
@@ -4379,11 +4380,15 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             .distinct()
         )
         bugs = list(bug_queryset)
+        bug_ids = [bug.id for bug in bugs]
 
         execution_status_distribution = {}
         review_status_distribution = {}
         bug_status_distribution = {}
         bug_priority_distribution = {}
+        requirement_document_case_map: dict[str, set[int]] = defaultdict(set)
+        requirement_module_case_map: dict[str, set[int]] = defaultdict(set)
+        testcase_traceability_map: dict[int, tuple[str, str]] = {}
 
         suite_case_map: dict[int, list[TestCase]] = {suite.id: [] for suite in suites}
         for testcase in testcases:
@@ -4399,6 +4404,13 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             review_status_distribution[testcase.review_status or ""] = (
                 review_status_distribution.get(testcase.review_status or "", 0) + 1
             )
+
+            traceability = _extract_requirement_traceability(testcase.notes)
+            if traceability:
+                document_id, module_id = traceability
+                testcase_traceability_map[testcase.id] = traceability
+                requirement_document_case_map[document_id].add(testcase.id)
+                requirement_module_case_map[module_id].add(testcase.id)
 
         for bug in bugs:
             effective_status = bug.get_effective_status()
@@ -4436,8 +4448,106 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
                 }
             )
 
+        linked_document_ids = list(requirement_document_case_map.keys())
+        linked_module_ids = list(requirement_module_case_map.keys())
+        linked_modules = list(
+            RequirementModule.objects.filter(pk__in=linked_module_ids).select_related("document")
+        )
+        linked_documents = list(
+            RequirementDocument.objects.filter(project=project, pk__in=linked_document_ids)
+        )
+        latest_documents = list(
+            RequirementDocument.objects.filter(project=project, is_latest=True)
+            .exclude(status="failed")
+            .order_by("-updated_at")
+        )
+        requirement_documents_payload = []
+        requirement_document_ids_in_payload: set[str] = set()
+        for document in linked_documents + latest_documents:
+            document_id = str(document.id)
+            if document_id in requirement_document_ids_in_payload:
+                continue
+            requirement_document_ids_in_payload.add(document_id)
+            requirement_documents_payload.append(
+                {
+                    "id": document_id,
+                    "title": document.title,
+                    "status": document.status,
+                    "version": document.version,
+                    "is_latest": bool(document.is_latest),
+                    "linked_testcase_count": len(requirement_document_case_map.get(document_id, set())),
+                    "module_count": document.modules.count(),
+                }
+            )
+
+        linked_modules.sort(
+            key=lambda item: (
+                item.document.title if item.document_id else "",
+                item.order,
+                item.title,
+            )
+        )
+        requirement_modules_payload = [
+            {
+                "id": str(module.id),
+                "title": module.title,
+                "document_id": str(module.document_id),
+                "document_title": module.document.title if module.document_id else "",
+                "matched_testcase_count": len(requirement_module_case_map.get(str(module.id), set())),
+                "content_excerpt": (module.content or "").strip()[:160],
+            }
+            for module in linked_modules
+        ]
+        requirement_summary = {
+            "testcase_count": len(testcases),
+            "traceable_testcase_count": len(testcase_traceability_map),
+            "unlinked_testcase_count": max(len(testcases) - len(testcase_traceability_map), 0),
+            "linked_document_count": len(linked_document_ids),
+            "linked_module_count": len(linked_module_ids),
+            "project_latest_document_count": len(latest_documents),
+            "documents": requirement_documents_payload,
+            "modules": requirement_modules_payload,
+        }
+
+        bug_activity_counts: dict[int, dict[str, int]] = defaultdict(
+            lambda: {
+                "fix_count": 0,
+                "resolve_count": 0,
+                "activate_count": 0,
+                "close_count": 0,
+                "confirm_count": 0,
+                "assign_count": 0,
+            }
+        )
+        if bug_ids:
+            for activity in TestBugActivity.objects.filter(bug_id__in=bug_ids).order_by("created_at", "id"):
+                counts = bug_activity_counts[activity.bug_id]
+                if activity.action == TestBugActivity.ACTION_FIX:
+                    counts["fix_count"] += 1
+                elif activity.action == TestBugActivity.ACTION_RESOLVE:
+                    counts["resolve_count"] += 1
+                elif activity.action == TestBugActivity.ACTION_ACTIVATE:
+                    counts["activate_count"] += 1
+                elif activity.action == TestBugActivity.ACTION_CLOSE:
+                    counts["close_count"] += 1
+                elif activity.action == TestBugActivity.ACTION_CONFIRM:
+                    counts["confirm_count"] += 1
+                elif activity.action == TestBugActivity.ACTION_ASSIGN:
+                    counts["assign_count"] += 1
+
         bug_payload = []
         for bug in bugs:
+            workflow_counts = bug_activity_counts.get(
+                bug.id,
+                {
+                    "fix_count": 0,
+                    "resolve_count": 0,
+                    "activate_count": 0,
+                    "close_count": 0,
+                    "confirm_count": 0,
+                    "assign_count": 0,
+                },
+            )
             related_testcases = []
             if bug.testcase_id and bug.testcase:
                 related_testcases.append({"id": bug.testcase.id, "name": bug.testcase.name})
@@ -4470,8 +4580,54 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
                     "expected_result": bug.expected_result or "",
                     "actual_result": bug.actual_result or "",
                     "related_testcases": related_testcases,
+                    "workflow_counts": {
+                        **workflow_counts,
+                        "failed_retest_count": workflow_counts.get("activate_count", 0),
+                    },
                 }
             )
+
+        top_retest_failed_bugs = sorted(
+            [
+                {
+                    "id": bug.id,
+                    "title": bug.title,
+                    "status": bug.get_effective_status_display(),
+                    "suite": bug.suite.name if bug.suite_id else "",
+                    "failed_retest_count": bug_activity_counts.get(bug.id, {}).get("activate_count", 0),
+                    "fix_count": bug_activity_counts.get(bug.id, {}).get("fix_count", 0),
+                    "resolve_count": bug_activity_counts.get(bug.id, {}).get("resolve_count", 0),
+                    "close_count": bug_activity_counts.get(bug.id, {}).get("close_count", 0),
+                }
+                for bug in bugs
+                if bug_activity_counts.get(bug.id, {}).get("activate_count", 0) > 0
+            ],
+            key=lambda item: (-item["failed_retest_count"], item["id"]),
+        )
+        bug_workflow_summary = {
+            "bug_count": len(bugs),
+            "fixed_bug_count": sum(1 for bug in bugs if bug_activity_counts.get(bug.id, {}).get("fix_count", 0) > 0),
+            "submitted_retest_bug_count": sum(
+                1 for bug in bugs if bug_activity_counts.get(bug.id, {}).get("resolve_count", 0) > 0
+            ),
+            "closed_bug_count": sum(
+                1
+                for bug in bugs
+                if bug.get_effective_status() == TestBug.STATUS_CLOSED
+                or bug_activity_counts.get(bug.id, {}).get("close_count", 0) > 0
+            ),
+            "reactivated_bug_count": sum(
+                1 for bug in bugs if bug_activity_counts.get(bug.id, {}).get("activate_count", 0) > 0
+            ),
+            "confirmed_bug_count": sum(
+                1 for bug in bugs if bug_activity_counts.get(bug.id, {}).get("confirm_count", 0) > 0
+            ),
+            "retest_failed_total_count": sum(
+                bug_activity_counts.get(bug.id, {}).get("activate_count", 0) for bug in bugs
+            ),
+            "bugs_with_failed_retest": top_retest_failed_bugs,
+            "top_retest_failed_bugs": top_retest_failed_bugs[:5],
+        }
 
         suite_breakdown = []
         for suite in sorted(suites, key=lambda item: (item.level, item.id)):
@@ -4529,6 +4685,8 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             "review_status_distribution": review_status_distribution,
             "bug_status_distribution": bug_status_distribution,
             "bug_priority_distribution": bug_priority_distribution,
+            "requirement_summary": requirement_summary,
+            "bug_workflow_summary": bug_workflow_summary,
             "suite_breakdown": suite_breakdown,
             "testcases": testcase_payload,
             "bugs": bug_payload,
@@ -4559,6 +4717,8 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
                     "execution_status_distribution": execution_status_distribution,
                     "bug_status_distribution": bug_status_distribution,
                     "review_status_distribution": review_status_distribution,
+                    "requirement_summary": requirement_summary,
+                    "bug_workflow_summary": bug_workflow_summary,
                 },
             },
             status=status.HTTP_200_OK,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -14,39 +14,23 @@ logger = logging.getLogger(__name__)
 
 TEST_REPORT_SYSTEM_PROMPT = """
 你是 FlyTest 的测试报告分析助手。
-请基于输入的测试套件、测试用例、BUG 数据，生成一次迭代测试报告。
+请基于输入的套件、测试用例、需求追踪和 BUG 流转记录，输出一次迭代测试报告。
 
 要求：
-1. 只能基于输入数据分析，不允许臆造不存在的版本、环境、结论或根因。
-2. 输出必须是 JSON，不要输出 Markdown，不要输出额外解释。
-3. 结论要偏实战，突出覆盖情况、质量风险、阻塞问题、建议动作。
-4. 推荐项请给出明确优先级：high、medium、low。
+1. 只能根据输入数据分析，不允许编造版本、环境、根因或结论。
+2. 输出必须是 JSON，不要输出 Markdown，不要输出额外说明。
+3. 重点关注需求覆盖、执行结果、BUG 闭环情况，以及重复复测失败风险。
+4. findings.severity 只能是 high / medium / low。
+5. recommendations.priority 只能是 high / medium / low。
 
 JSON 结构：
 {
-  "summary": "一段整体总结",
-  "quality_overview": "对测试覆盖、执行情况、质量趋势的概述",
-  "risk_overview": "对主要风险、阻塞点、遗留问题的概述",
-  "findings": [
-    {
-      "title": "关键发现标题",
-      "detail": "关键发现说明",
-      "severity": "high"
-    }
-  ],
-  "recommendations": [
-    {
-      "title": "建议标题",
-      "detail": "建议内容",
-      "priority": "high"
-    }
-  ],
-  "evidence": [
-    {
-      "label": "证据标签",
-      "detail": "证据内容"
-    }
-  ]
+  "summary": "整体结论",
+  "quality_overview": "质量概览",
+  "risk_overview": "风险概览",
+  "findings": [{"title": "标题", "detail": "说明", "severity": "high"}],
+  "recommendations": [{"title": "标题", "detail": "说明", "priority": "high"}],
+  "evidence": [{"label": "标签", "detail": "说明"}]
 }
 """.strip()
 
@@ -55,13 +39,13 @@ JSON 结构：
 class IterationTestReportResult:
     used_ai: bool
     note: str
+    model_name: str | None
     summary: str
     quality_overview: str
     risk_overview: str
-    findings: list[dict[str, Any]] = field(default_factory=list)
-    recommendations: list[dict[str, Any]] = field(default_factory=list)
-    evidence: list[dict[str, Any]] = field(default_factory=list)
-    model_name: str | None = None
+    findings: list[dict[str, str]]
+    recommendations: list[dict[str, str]]
+    evidence: list[dict[str, str]]
 
 
 def _safe_json_loads(text: str) -> dict[str, Any]:
@@ -82,24 +66,18 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
         return json.loads(stripped[start : end + 1])
 
 
-def _normalize_priority(value: Any) -> str:
+def _normalize_level(value: Any, default: str = "medium") -> str:
     candidate = str(value or "").strip().lower()
     if candidate in {"high", "medium", "low"}:
         return candidate
-    return "medium"
+    return default
 
 
-def _normalize_severity(value: Any) -> str:
-    candidate = str(value or "").strip().lower()
-    if candidate in {"high", "medium", "low"}:
-        return candidate
-    return "medium"
-
-
-def _normalize_items(items: Any, *, kind: str) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
+def _normalize_report_items(items: Any, *, kind: str) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
     if not isinstance(items, list):
         return normalized
+
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -112,7 +90,7 @@ def _normalize_items(items: Any, *, kind: str) -> list[dict[str, Any]]:
                 {
                     "title": title[:120],
                     "detail": detail[:1000],
-                    "severity": _normalize_severity(item.get("severity")),
+                    "severity": _normalize_level(item.get("severity")),
                 }
             )
         elif kind == "recommendation":
@@ -120,7 +98,7 @@ def _normalize_items(items: Any, *, kind: str) -> list[dict[str, Any]]:
                 {
                     "title": title[:120],
                     "detail": detail[:1000],
-                    "priority": _normalize_priority(item.get("priority")),
+                    "priority": _normalize_level(item.get("priority")),
                 }
             )
         else:
@@ -128,152 +106,318 @@ def _normalize_items(items: Any, *, kind: str) -> list[dict[str, Any]]:
     return normalized
 
 
+def _build_ai_prompt(report_context: dict[str, Any]) -> str:
+    prompt_payload = {
+        "project": report_context.get("project") or {},
+        "selected_suite_ids": report_context.get("selected_suite_ids") or [],
+        "selected_suite_names": report_context.get("selected_suite_names") or [],
+        "generated_at": report_context.get("generated_at"),
+        "totals": report_context.get("totals") or {},
+        "execution_status_distribution": report_context.get("execution_status_distribution") or {},
+        "review_status_distribution": report_context.get("review_status_distribution") or {},
+        "bug_status_distribution": report_context.get("bug_status_distribution") or {},
+        "requirement_summary": report_context.get("requirement_summary") or {},
+        "bug_workflow_summary": report_context.get("bug_workflow_summary") or {},
+        "suite_breakdown": report_context.get("suite_breakdown") or [],
+    }
+    return json.dumps(prompt_payload, ensure_ascii=False, indent=2)
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _truncate(value: str, limit: int = 120) -> str:
+    text = (value or "").strip().replace("\r", " ").replace("\n", " ")
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
+
+
+def _build_requirement_findings(requirement_summary: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    findings: list[dict[str, str]] = []
+    recommendations: list[dict[str, str]] = []
+    evidence: list[dict[str, str]] = []
+
+    traceable_count = _safe_int(requirement_summary.get("traceable_testcase_count"))
+    testcase_count = _safe_int(requirement_summary.get("testcase_count"))
+    unlinked_count = _safe_int(requirement_summary.get("unlinked_testcase_count"))
+    linked_document_count = _safe_int(requirement_summary.get("linked_document_count"))
+    linked_module_count = _safe_int(requirement_summary.get("linked_module_count"))
+
+    evidence.append(
+        {
+            "label": "需求追踪",
+            "detail": (
+                f"本轮共 {testcase_count} 条测试用例，其中 {traceable_count} 条已关联需求，"
+                f"覆盖 {linked_document_count} 份需求文档、{linked_module_count} 个需求模块。"
+            ),
+        }
+    )
+
+    if testcase_count > 0 and unlinked_count > 0:
+        findings.append(
+            {
+                "title": "需求追踪存在断点",
+                "detail": f"仍有 {unlinked_count} 条测试用例未写入来源需求文档或模块，报告对需求覆盖面的判断会变弱。",
+                "severity": "medium",
+            }
+        )
+        recommendations.append(
+            {
+                "title": "补齐用例与需求映射",
+                "detail": "为未关联需求的测试用例补充来源需求文档ID与来源需求模块ID，方便后续按迭代自动生成更准确的覆盖报告。",
+                "priority": "medium",
+            }
+        )
+
+    modules = requirement_summary.get("modules") or []
+    if modules:
+        top_modules = "；".join(
+            f"{item.get('document_title', '-')}/{item.get('title', '-')}"
+            f"（匹配 {item.get('matched_testcase_count', 0)} 条）"
+            for item in modules[:3]
+        )
+        evidence.append({"label": "重点需求模块", "detail": top_modules})
+
+    return findings, recommendations, evidence
+
+
+def _build_bug_findings(bug_workflow_summary: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    findings: list[dict[str, str]] = []
+    recommendations: list[dict[str, str]] = []
+    evidence: list[dict[str, str]] = []
+
+    fixed_bug_count = _safe_int(bug_workflow_summary.get("fixed_bug_count"))
+    submitted_retest_bug_count = _safe_int(bug_workflow_summary.get("submitted_retest_bug_count"))
+    closed_bug_count = _safe_int(bug_workflow_summary.get("closed_bug_count"))
+    reactivated_bug_count = _safe_int(bug_workflow_summary.get("reactivated_bug_count"))
+    retest_failed_total_count = _safe_int(bug_workflow_summary.get("retest_failed_total_count"))
+
+    evidence.append(
+        {
+            "label": "BUG闭环",
+            "detail": (
+                f"已修复 {fixed_bug_count} 个，已提交复测 {submitted_retest_bug_count} 个，"
+                f"已关闭 {closed_bug_count} 个，重新激活 {reactivated_bug_count} 个。"
+            ),
+        }
+    )
+
+    if retest_failed_total_count > 0:
+        findings.append(
+            {
+                "title": "存在复测回退BUG",
+                "detail": f"本轮 BUG 处理过程中累计出现 {retest_failed_total_count} 次复测失败后重新激活，说明修复质量或回归覆盖仍有缺口。",
+                "severity": "high",
+            }
+        )
+        recommendations.append(
+            {
+                "title": "针对反复激活BUG补强回归",
+                "detail": "优先对重复复测失败的BUG补充前置检查、回归用例和复盘记录，避免同类问题在下一轮迭代继续回流。",
+                "priority": "high",
+            }
+        )
+
+    top_failed = bug_workflow_summary.get("top_retest_failed_bugs") or []
+    if top_failed:
+        evidence.append(
+            {
+                "label": "重复复测失败TOP BUG",
+                "detail": "；".join(
+                    f"{item.get('title', '-')}"
+                    f"（失败 {item.get('failed_retest_count', 0)} 次，当前 {item.get('status', '-')}）"
+                    for item in top_failed[:3]
+                ),
+            }
+        )
+
+    return findings, recommendations, evidence
+
+
 def build_rule_based_iteration_report(report_context: dict[str, Any]) -> IterationTestReportResult:
     totals = report_context.get("totals") or {}
-    suite_breakdown = list(report_context.get("suite_breakdown") or [])
-    bug_status_distribution = report_context.get("bug_status_distribution") or {}
-    execution_status_distribution = report_context.get("execution_status_distribution") or {}
+    suite_count = _safe_int(totals.get("suite_count"))
+    selected_suite_count = _safe_int(totals.get("selected_suite_count"))
+    testcase_count = _safe_int(totals.get("testcase_count"))
+    approved_testcase_count = _safe_int(totals.get("approved_testcase_count"))
+    bug_count = _safe_int(totals.get("bug_count"))
 
-    suite_count = int(totals.get("suite_count") or 0)
-    testcase_count = int(totals.get("testcase_count") or 0)
-    bug_count = int(totals.get("bug_count") or 0)
-    approved_count = int(totals.get("approved_testcase_count") or 0)
-    passed_count = int(execution_status_distribution.get("passed") or 0)
-    failed_count = int(execution_status_distribution.get("failed") or 0)
-    not_executed_count = int(execution_status_distribution.get("not_executed") or 0)
-    pending_retest_count = int(bug_status_distribution.get("pending_retest") or 0)
-    unassigned_bug_count = int(bug_status_distribution.get("unassigned") or 0)
-    expired_bug_count = int(bug_status_distribution.get("expired") or 0)
+    execution_distribution = report_context.get("execution_status_distribution") or {}
+    passed_count = _safe_int(execution_distribution.get("passed"))
+    failed_count = _safe_int(execution_distribution.get("failed"))
+    not_executed_count = _safe_int(execution_distribution.get("not_executed"))
+    not_applicable_count = _safe_int(execution_distribution.get("not_applicable"))
+
+    requirement_summary = report_context.get("requirement_summary") or {}
+    bug_workflow_summary = report_context.get("bug_workflow_summary") or {}
+
+    linked_document_count = _safe_int(requirement_summary.get("linked_document_count"))
+    linked_module_count = _safe_int(requirement_summary.get("linked_module_count"))
+    traceable_testcase_count = _safe_int(requirement_summary.get("traceable_testcase_count"))
+    retest_failed_total_count = _safe_int(bug_workflow_summary.get("retest_failed_total_count"))
+    reactivated_bug_count = _safe_int(bug_workflow_summary.get("reactivated_bug_count"))
+    closed_bug_count = _safe_int(bug_workflow_summary.get("closed_bug_count"))
 
     summary = (
-        f"本次报告覆盖 {suite_count} 个套件、{testcase_count} 条测试用例、{bug_count} 条 BUG。"
-        f" 其中已审核通过用例 {approved_count} 条，执行通过 {passed_count} 条，执行失败 {failed_count} 条。"
-    )
-    quality_overview = (
-        f"当前纳入报告的用例中，未执行 {not_executed_count} 条，"
-        f"已通过审核的用例 {approved_count} 条。"
-        f" 如失败与未执行用例占比偏高，说明本轮回归闭环仍未完成。"
-    )
-    risk_overview = (
-        f"当前待复测 BUG {pending_retest_count} 条、未指派 BUG {unassigned_bug_count} 条、"
-        f"已过期 BUG {expired_bug_count} 条。"
-        f" 这些问题会直接影响本轮迭代交付质量与验证效率。"
+        f"本轮报告覆盖 {selected_suite_count} 个所选套件及其下共 {suite_count} 个套件节点，"
+        f"纳入 {testcase_count} 条测试用例与 {bug_count} 个 BUG。"
+        f"其中已执行通过 {passed_count} 条、失败 {failed_count} 条、未执行 {not_executed_count} 条。"
+        f"需求侧已追踪 {linked_document_count} 份文档、{linked_module_count} 个模块；"
+        f"BUG 闭环侧累计关闭 {closed_bug_count} 个，复测失败重新激活 {retest_failed_total_count} 次。"
     )
 
-    findings: list[dict[str, Any]] = []
-    recommendations: list[dict[str, Any]] = []
-    evidence: list[dict[str, Any]] = []
+    quality_overview = (
+        f"当前用例审核通过 {approved_testcase_count}/{testcase_count} 条，"
+        f"可直接纳入评估的需求追踪用例 {traceable_testcase_count} 条。"
+        f"执行结果中通过 {passed_count} 条、失败 {failed_count} 条、无需执行 {not_applicable_count} 条，"
+        f"整体质量判断已同时参考套件执行结果、需求映射和 BUG 流转记录。"
+    )
+
+    risk_overview = (
+        f"当前主要风险集中在 {failed_count} 条失败用例、{not_executed_count} 条未执行用例，"
+        f"以及 {reactivated_bug_count} 个被重新激活的 BUG。"
+        f"若复测失败次数持续增加，说明修复验证链路仍不稳定，需要优先补齐回归与需求追踪。"
+    )
+
+    findings: list[dict[str, str]] = []
+    recommendations: list[dict[str, str]] = []
+    evidence: list[dict[str, str]] = []
 
     if failed_count > 0:
         findings.append(
             {
                 "title": "存在执行失败用例",
-                "detail": f"当前选中范围内共有 {failed_count} 条测试用例执行失败，需要优先定位失败原因并安排回归。",
+                "detail": f"本轮共有 {failed_count} 条测试用例执行失败，建议优先定位失败集中模块并结合相关 BUG 一并复核。",
                 "severity": "high",
             }
         )
     if not_executed_count > 0:
         findings.append(
             {
-                "title": "仍有未执行用例",
-                "detail": f"当前仍有 {not_executed_count} 条测试用例未执行，测试覆盖闭环尚未完成。",
+                "title": "仍有未执行覆盖空档",
+                "detail": f"当前仍有 {not_executed_count} 条测试用例未执行，可能导致部分需求与风险点尚未被本轮验证。",
                 "severity": "medium",
             }
         )
-    if pending_retest_count > 0 or expired_bug_count > 0:
+    if bug_count > 0 and closed_bug_count < bug_count:
         findings.append(
             {
-                "title": "BUG 闭环存在风险",
-                "detail": f"待复测 BUG {pending_retest_count} 条，已过期 BUG {expired_bug_count} 条，建议优先推进修复验证。",
-                "severity": "high",
+                "title": "BUG闭环尚未完成",
+                "detail": f"当前共有 {bug_count} 个 BUG 纳入报告，其中仅 {closed_bug_count} 个已关闭，仍需继续跟进未闭环问题。",
+                "severity": "medium",
             }
         )
 
-    recommendations.append(
-        {
-            "title": "优先清理失败与待复测问题",
-            "detail": "优先处理执行失败用例、待复测 BUG 和已过期 BUG，确保本轮迭代的高风险问题先闭环。",
-            "priority": "high",
-        }
+    requirement_findings, requirement_recommendations, requirement_evidence = _build_requirement_findings(
+        requirement_summary
     )
-    if not_executed_count > 0:
+    bug_findings, bug_recommendations, bug_evidence = _build_bug_findings(bug_workflow_summary)
+
+    findings.extend(requirement_findings)
+    findings.extend(bug_findings)
+    recommendations.extend(requirement_recommendations)
+    recommendations.extend(bug_recommendations)
+    evidence.extend(requirement_evidence)
+    evidence.extend(bug_evidence)
+
+    if not recommendations:
         recommendations.append(
             {
-                "title": "补齐未执行用例覆盖",
-                "detail": "尽快补齐未执行测试用例，避免因覆盖不足导致上线风险残留。",
-                "priority": "medium",
+                "title": "维持当前回归节奏",
+                "detail": "继续按套件维度维护执行状态、需求追踪和 BUG 闭环记录，确保后续测试报告可持续复用。",
+                "priority": "low",
             }
         )
 
-    for suite in suite_breakdown[:5]:
+    suite_breakdown = report_context.get("suite_breakdown") or []
+    if suite_breakdown:
+        top_suite = max(suite_breakdown, key=lambda item: _safe_int(item.get("failed_testcase_count")))
+        if _safe_int(top_suite.get("failed_testcase_count")) > 0:
+            evidence.append(
+                {
+                    "label": "失败用例集中套件",
+                    "detail": (
+                        f"{top_suite.get('path', top_suite.get('name', '-'))}："
+                        f"失败 {_safe_int(top_suite.get('failed_testcase_count'))} 条，"
+                        f"待复测BUG {_safe_int(top_suite.get('pending_retest_bug_count'))} 个。"
+                    ),
+                }
+            )
+
+    requirement_documents = requirement_summary.get("documents") or []
+    if requirement_documents:
         evidence.append(
             {
-                "label": f"套件 {suite.get('name') or '-'}",
-                "detail": (
-                    f"包含测试用例 {suite.get('testcase_count') or 0} 条，"
-                    f"BUG {suite.get('bug_count') or 0} 条，"
-                    f"失败用例 {suite.get('failed_testcase_count') or 0} 条，"
-                    f"待复测 BUG {suite.get('pending_retest_bug_count') or 0} 条。"
+                "label": "需求文档范围",
+                "detail": "；".join(
+                    f"{item.get('title', '-')}"
+                    f"（版本 {item.get('version', '-')}, 关联用例 {item.get('linked_testcase_count', 0)} 条）"
+                    for item in requirement_documents[:3]
                 ),
             }
         )
 
+    note = "报告已基于测试套件、需求追踪和 BUG 闭环记录自动生成；当前未调用外部模型。"
+
     return IterationTestReportResult(
         used_ai=False,
-        note="当前使用规则统计生成测试报告摘要。",
-        summary=summary,
-        quality_overview=quality_overview,
-        risk_overview=risk_overview,
-        findings=findings,
-        recommendations=recommendations,
-        evidence=evidence,
+        note=note,
+        model_name=None,
+        summary=_truncate(summary, 300),
+        quality_overview=_truncate(quality_overview, 300),
+        risk_overview=_truncate(risk_overview, 300),
+        findings=findings[:8],
+        recommendations=recommendations[:8],
+        evidence=evidence[:10],
     )
 
 
 def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> IterationTestReportResult:
     fallback = build_rule_based_iteration_report(report_context)
     active_config = get_user_active_llm_config(user)
-    if active_config is None:
-        fallback.note = "当前未配置可用模型，已返回规则统计版测试报告。"
+    if not active_config:
         return fallback
-
-    user_prompt = (
-        "请基于以下测试数据生成一次迭代测试报告。\n"
-        "仅输出 JSON。\n\n"
-        f"{json.dumps(report_context, ensure_ascii=False, indent=2)}"
-    )
 
     try:
         response_text = invoke_plain_text_llm(
             active_config,
             [
                 SystemMessage(content=TEST_REPORT_SYSTEM_PROMPT),
-                HumanMessage(content=user_prompt),
+                HumanMessage(content=_build_ai_prompt(report_context)),
             ],
             temperature=0.2,
         )
         payload = _safe_json_loads(response_text)
 
-        summary = str(payload.get("summary") or "").strip() or fallback.summary
-        quality_overview = str(payload.get("quality_overview") or "").strip() or fallback.quality_overview
-        risk_overview = str(payload.get("risk_overview") or "").strip() or fallback.risk_overview
-        findings = _normalize_items(payload.get("findings"), kind="finding") or fallback.findings
-        recommendations = _normalize_items(payload.get("recommendations"), kind="recommendation") or fallback.recommendations
-        evidence = _normalize_items(payload.get("evidence"), kind="evidence") or fallback.evidence
+        summary = _truncate(str(payload.get("summary") or fallback.summary), 300)
+        quality_overview = _truncate(
+            str(payload.get("quality_overview") or fallback.quality_overview),
+            300,
+        )
+        risk_overview = _truncate(str(payload.get("risk_overview") or fallback.risk_overview), 300)
+        findings = _normalize_report_items(payload.get("findings"), kind="finding") or fallback.findings
+        recommendations = (
+            _normalize_report_items(payload.get("recommendations"), kind="recommendation")
+            or fallback.recommendations
+        )
+        evidence = _normalize_report_items(payload.get("evidence"), kind="evidence") or fallback.evidence
 
-        model_name = getattr(active_config, "model", None) or getattr(active_config, "model_name", None)
         return IterationTestReportResult(
             used_ai=True,
-            note="测试报告已通过 AI 自动生成。",
+            note="报告已结合当前模型输出与结构化测试数据自动生成。",
+            model_name=getattr(active_config, "name", None) or None,
             summary=summary,
             quality_overview=quality_overview,
             risk_overview=risk_overview,
-            findings=findings,
-            recommendations=recommendations,
-            evidence=evidence,
-            model_name=model_name,
+            findings=findings[:8],
+            recommendations=recommendations[:8],
+            evidence=evidence[:10],
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to generate AI iteration test report: %s", exc)
-        fallback.note = f"AI 生成失败，已降级为规则统计版测试报告：{exc}"
+        logger.warning("生成 AI 测试报告失败，已回退到规则报告: %s", exc, exc_info=True)
         return fallback

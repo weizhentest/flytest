@@ -9,7 +9,8 @@ from django.test.utils import override_settings
 from rest_framework.test import APIClient
 
 from projects.models import Project, ProjectMember
-from testcases.models import TestBug, TestCase as TestCaseModel
+from requirements.models import RequirementDocument, RequirementModule
+from testcases.models import TestBug, TestBugActivity, TestCase as TestCaseModel
 from testcases.models import TestCaseAssignment, TestCaseModule, TestReportSnapshot, TestSuite
 from testcases.serializers import TestExecutionCreateSerializer, TestSuiteSerializer
 
@@ -341,7 +342,29 @@ class TestSuiteExecutionTests(TestCase):
             creator=self.user,
             review_status="approved",
             execution_status="failed",
+            notes="来源需求文档ID: {document_id}\n来源需求模块ID: {module_id}",
         )
+        requirement_document = RequirementDocument.objects.create(
+            project=self.project,
+            title="登录需求",
+            document_type="md",
+            status="review_completed",
+            version="V1.2",
+            is_latest=True,
+            uploader=admin_user,
+            content="登录、退出和会话记忆功能需求",
+        )
+        requirement_module = RequirementModule.objects.create(
+            document=requirement_document,
+            title="记住我与登录失败提示",
+            content="需要验证错误凭据不会建立登录态，且记住我状态符合预期。",
+            order=1,
+        )
+        child_case.notes = (
+            f"来源需求文档ID: {requirement_document.id}\n"
+            f"来源需求模块ID: {requirement_module.id}"
+        )
+        child_case.save(update_fields=["notes"])
         self.suite.testcases.add(self.testcase)
         child_suite.testcases.add(child_case)
         bug = TestBug.objects.create(
@@ -353,6 +376,24 @@ class TestSuiteExecutionTests(TestCase):
             opened_by=admin_user,
         )
         bug.related_testcases.add(child_case)
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=TestBugActivity.ACTION_FIX,
+            content="修复完成",
+            operator=admin_user,
+        )
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=TestBugActivity.ACTION_RESOLVE,
+            content="提交复测",
+            operator=admin_user,
+        )
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=TestBugActivity.ACTION_ACTIVATE,
+            content="复测失败，重新激活",
+            operator=admin_user,
+        )
 
         self.api_client.force_authenticate(user=admin_user)
         response = self.api_client.post(
@@ -370,6 +411,13 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(payload["bug_count"], 1)
         self.assertTrue(payload["summary"])
         self.assertTrue(payload["suite_breakdown"])
+        self.assertIn("requirement_summary", payload)
+        self.assertIn("bug_workflow_summary", payload)
+        self.assertEqual(payload["requirement_summary"]["linked_document_count"], 1)
+        self.assertEqual(payload["requirement_summary"]["linked_module_count"], 1)
+        self.assertEqual(payload["requirement_summary"]["traceable_testcase_count"], 1)
+        self.assertEqual(payload["bug_workflow_summary"]["retest_failed_total_count"], 1)
+        self.assertEqual(payload["bug_workflow_summary"]["reactivated_bug_count"], 1)
 
     def test_ai_report_requires_suite_selection(self):
         admin_user = User.objects.create_superuser(

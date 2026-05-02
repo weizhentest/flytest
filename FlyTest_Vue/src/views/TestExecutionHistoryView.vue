@@ -233,6 +233,100 @@
             </div>
           </div>
 
+          <div class="report-two-column">
+            <div class="report-section">
+              <div class="section-title">需求依据</div>
+              <div class="summary-inline">
+                已关联需求文档 {{ reportData.requirement_summary.linked_document_count }} 份，
+                需求模块 {{ reportData.requirement_summary.linked_module_count }} 个，
+                可追踪用例 {{ reportData.requirement_summary.traceable_testcase_count }} 条，
+                未关联用例 {{ reportData.requirement_summary.unlinked_testcase_count }} 条
+              </div>
+              <a-empty
+                v-if="requirementDocuments.length === 0"
+                description="当前所选套件暂无需求文档追踪信息"
+              />
+              <div v-else class="item-list compact-item-list">
+                <div
+                  v-for="item in requirementDocuments"
+                  :key="item.id"
+                  class="item-card"
+                >
+                  <div class="item-header">
+                    <span class="item-title">{{ item.title }}</span>
+                    <a-tag :color="item.is_latest ? 'green' : 'arcoblue'">
+                      {{ item.version || '-' }}
+                    </a-tag>
+                  </div>
+                  <div class="item-detail">
+                    状态：{{ item.status || '-' }} / 关联用例 {{ item.linked_testcase_count }} 条 / 模块 {{ item.module_count }} 个
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="report-section">
+              <div class="section-title">需求模块</div>
+              <a-empty
+                v-if="requirementModules.length === 0"
+                description="当前所选套件暂无需求模块映射"
+              />
+              <div v-else class="item-list compact-item-list">
+                <div
+                  v-for="item in requirementModules"
+                  :key="item.id"
+                  class="item-card"
+                >
+                  <div class="item-title">{{ item.document_title }} / {{ item.title }}</div>
+                  <div class="item-detail">
+                    匹配用例 {{ item.matched_testcase_count }} 条
+                    <span v-if="item.content_excerpt"> / {{ item.content_excerpt }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-two-column">
+            <div class="report-section">
+              <div class="section-title">BUG闭环分析</div>
+              <div class="summary-inline">
+                已修复 {{ reportData.bug_workflow_summary.fixed_bug_count }} 个，
+                已提交复测 {{ reportData.bug_workflow_summary.submitted_retest_bug_count }} 个，
+                已关闭 {{ reportData.bug_workflow_summary.closed_bug_count }} 个，
+                重新激活 {{ reportData.bug_workflow_summary.reactivated_bug_count }} 个，
+                复测失败累计 {{ reportData.bug_workflow_summary.retest_failed_total_count }} 次
+              </div>
+              <div class="tag-flow">
+                <a-tag color="arcoblue">已确认 {{ reportData.bug_workflow_summary.confirmed_bug_count }}</a-tag>
+                <a-tag color="green">已关闭 {{ reportData.bug_workflow_summary.closed_bug_count }}</a-tag>
+                <a-tag color="orange">待复测 {{ reportData.bug_workflow_summary.submitted_retest_bug_count }}</a-tag>
+                <a-tag color="red">复测失败 {{ reportData.bug_workflow_summary.retest_failed_total_count }}</a-tag>
+              </div>
+            </div>
+            <div class="report-section">
+              <div class="section-title">重复复测失败TOP BUG</div>
+              <a-empty
+                v-if="topRetestFailedBugs.length === 0"
+                description="当前没有复测失败后重新激活的BUG"
+              />
+              <div v-else class="item-list compact-item-list">
+                <div
+                  v-for="item in topRetestFailedBugs"
+                  :key="item.id"
+                  class="item-card"
+                >
+                  <div class="item-header">
+                    <span class="item-title">{{ item.title }}</span>
+                    <a-tag color="red">失败 {{ item.failed_retest_count }} 次</a-tag>
+                  </div>
+                  <div class="item-detail">
+                    状态：{{ item.status }} / 套件：{{ item.suite || '-' }} / 修复 {{ item.fix_count }} 次 / 提交复测 {{ item.resolve_count }} 次
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="report-section">
             <div class="section-title">关键发现</div>
             <a-empty v-if="reportData.findings.length === 0" description="暂无关键发现" />
@@ -462,6 +556,14 @@ const bugStatusList = computed(() => {
     color: key === 'closed' ? 'green' : key === 'pending_retest' ? 'orange' : key === 'expired' ? 'red' : 'arcoblue',
   }));
 });
+
+const requirementDocuments = computed(() => reportData.value?.requirement_summary?.documents || []);
+
+const requirementModules = computed(() => reportData.value?.requirement_summary?.modules || []);
+
+const topRetestFailedBugs = computed(
+  () => reportData.value?.bug_workflow_summary?.top_retest_failed_bugs || []
+);
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -849,6 +951,49 @@ function buildReportMarkdown(report: AiIterationTestReport) {
     });
   }
 
+  lines.push('', '## 需求依据');
+  lines.push(
+    `- 已关联需求文档：${report.requirement_summary.linked_document_count}`,
+    `- 已关联需求模块：${report.requirement_summary.linked_module_count}`,
+    `- 可追踪用例：${report.requirement_summary.traceable_testcase_count}`,
+    `- 未关联用例：${report.requirement_summary.unlinked_testcase_count}`
+  );
+  if (report.requirement_summary.documents.length > 0) {
+    report.requirement_summary.documents.forEach((item) => {
+      lines.push(
+        `- 文档 ${item.title}：版本 ${item.version || '-'}，状态 ${item.status || '-'}，关联用例 ${item.linked_testcase_count} 条，模块 ${item.module_count} 个`
+      );
+    });
+  }
+  if (report.requirement_summary.modules.length > 0) {
+    lines.push('', '### 需求模块');
+    report.requirement_summary.modules.forEach((item) => {
+      lines.push(
+        `- ${item.document_title} / ${item.title}：匹配用例 ${item.matched_testcase_count} 条${
+          item.content_excerpt ? `，摘要 ${item.content_excerpt}` : ''
+        }`
+      );
+    });
+  }
+
+  lines.push('', '## BUG闭环分析');
+  lines.push(
+    `- 已修复：${report.bug_workflow_summary.fixed_bug_count}`,
+    `- 已提交复测：${report.bug_workflow_summary.submitted_retest_bug_count}`,
+    `- 已关闭：${report.bug_workflow_summary.closed_bug_count}`,
+    `- 已确认：${report.bug_workflow_summary.confirmed_bug_count}`,
+    `- 重新激活：${report.bug_workflow_summary.reactivated_bug_count}`,
+    `- 复测失败累计：${report.bug_workflow_summary.retest_failed_total_count}`
+  );
+  if (report.bug_workflow_summary.top_retest_failed_bugs.length > 0) {
+    lines.push('', '### 重复复测失败TOP BUG');
+    report.bug_workflow_summary.top_retest_failed_bugs.forEach((item) => {
+      lines.push(
+        `- ${item.title}：失败 ${item.failed_retest_count} 次，当前状态 ${item.status}，套件 ${item.suite || '-'}，修复 ${item.fix_count} 次，提交复测 ${item.resolve_count} 次`
+      );
+    });
+  }
+
   lines.push('', '## 套件明细');
   report.suite_breakdown.forEach((item) => {
     lines.push(
@@ -1011,6 +1156,7 @@ watch(
 .report-meta,
 .sidebar-note,
 .section-note,
+.summary-inline,
 .checked-summary {
   font-size: 12px;
   color: #86909c;
@@ -1239,6 +1385,10 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.compact-item-list .item-card {
+  padding: 12px 14px;
 }
 
 .tag-flow {
