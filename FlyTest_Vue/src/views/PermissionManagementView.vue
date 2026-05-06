@@ -32,11 +32,11 @@
             >
               <div class="entity-info">
                 <div class="entity-avatar">
-                  {{ activeEntityType === 'user' ? (entity as User).username.charAt(0).toUpperCase() : (entity as Organization).name.charAt(0).toUpperCase() }}
+                  {{ activeEntityType === 'user' ? getUserEntityName(entity as User).charAt(0).toUpperCase() : (entity as Organization).name.charAt(0).toUpperCase() }}
                 </div>
                 <div class="entity-details">
                   <div class="entity-name">
-                    {{ activeEntityType === 'user' ? (entity as User).username : (entity as Organization).name }}
+                    {{ activeEntityType === 'user' ? getUserEntityName(entity as User) : (entity as Organization).name }}
                   </div>
                   <div class="entity-meta">
                     {{ activeEntityType === 'user' ? (entity as User).email : `ID: ${entity.id}` }}
@@ -92,7 +92,7 @@
             <div class="entity-info">
               <i :class="activeEntityType === 'user' ? 'arco-icon arco-icon-user' : 'arco-icon arco-icon-user-group'"></i>
               <div class="entity-details">
-                <h3>{{ activeEntityType === 'user' ? (selectedEntity as User).username : (selectedEntity as Organization).name }} 的权限</h3>
+                <h3>{{ activeEntityType === 'user' ? getUserEntityName(selectedEntity as User) : (selectedEntity as Organization).name }} 的权限</h3>
                 <p>{{ activeEntityType === 'user' ? (selectedEntity as User).email : `组织 ID: ${selectedEntity.id}` }}</p>
               </div>
             </div>
@@ -118,6 +118,7 @@ import { Message } from '@arco-design/web-vue';
 import { getUserList, type User } from '@/services/userService';
 import { getOrganizationList, type Organization } from '@/services/organizationService';
 import PermissionTreeSelector from '@/components/permission/PermissionTreeSelector.vue';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 // 实体类型
 type EntityType = 'user' | 'group';
@@ -132,6 +133,8 @@ const entitiesLoading = ref(false);
 // 实体数据
 const users = ref<User[]>([]);
 const organizations = ref<Organization[]>([]);
+
+const getUserEntityName = (user: User) => getUserDisplayName(user, '未命名用户');
 
 // 分页配置
 const entityPagination = reactive({
@@ -149,7 +152,8 @@ const filteredEntities = computed(() => {
   return entities.filter(entity => {
     if (activeEntityType.value === 'user') {
       const user = entity as User;
-      return user.username.toLowerCase().includes(keyword) ||
+      return getUserEntityName(user).toLowerCase().includes(keyword) ||
+             user.username.toLowerCase().includes(keyword) ||
              (user.email && user.email.toLowerCase().includes(keyword));
     } else {
       const org = entity as Organization;

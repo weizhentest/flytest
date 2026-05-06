@@ -1,8 +1,23 @@
 import logging
 from rest_framework import permissions
 from accounts.models import is_user_approved
+from projects.models import ProjectMember
 
 logger = logging.getLogger(__name__)
+
+PROJECT_MEMBER_PERMISSION_APPS = {
+    "projects",
+    "requirements",
+    "testcases",
+    "api_automation",
+    "ui_automation",
+    "app_automation",
+    "knowledge",
+    "data_factory",
+    "langgraph_integration",
+    "skills",
+    "mcp_tools",
+}
 
 
 class HasModelPermission(permissions.BasePermission):
@@ -54,6 +69,8 @@ class HasModelPermission(permissions.BasePermission):
 
         # 获取所需权限
         required_perm = self._get_required_permission(request, view, action, app_label, model_name)
+        if self._should_allow_project_member_access(request, view, app_label, model_name, required_perm):
+            return True
         logger.debug(f"检查用户 {request.user.username} 是否有权限 {required_perm} (操作: {action})")
 
         # 检查用户是否有所需权限
@@ -102,6 +119,8 @@ class HasModelPermission(permissions.BasePermission):
 
         # 获取所需权限
         required_perm = self._get_required_permission(request, view, action, app_label, model_name)
+        if self._should_allow_project_member_access(request, view, app_label, model_name, required_perm, obj=obj):
+            return True
 
         # 只检查模型级权限，不检查对象级权限
         # 对象级权限检查由其他权限类负责（如IsProjectMember等）
@@ -173,6 +192,54 @@ class HasModelPermission(permissions.BasePermission):
 
         logger.debug(f"最终所需权限: {required_perm}")
         return required_perm
+
+    def _should_allow_project_member_access(self, request, view, app_label, model_name, required_perm, obj=None):
+        if request.method != "GET":
+            return False
+
+        if not required_perm or not required_perm.startswith(f"{app_label}.view_"):
+            return False
+
+        if app_label not in PROJECT_MEMBER_PERMISSION_APPS:
+            return False
+
+        if app_label == "projects" and model_name == "projectdeletionrequest":
+            return False
+
+        project_id = self._resolve_project_id(view, app_label, model_name, obj=obj)
+        member_queryset = ProjectMember.objects.filter(user=request.user)
+        if project_id is not None:
+            member_queryset = member_queryset.filter(project_id=project_id)
+
+        return member_queryset.exists()
+
+    def _resolve_project_id(self, view, app_label, model_name, obj=None):
+        for key in ("project_pk", "project_id"):
+            raw_value = view.kwargs.get(key)
+            if raw_value not in (None, ""):
+                try:
+                    return int(raw_value)
+                except (TypeError, ValueError):
+                    return None
+
+        if obj is not None:
+            if getattr(obj, "project_id", None):
+                return obj.project_id
+            project = getattr(obj, "project", None)
+            if project is not None:
+                return getattr(project, "id", None)
+            if app_label == "projects" and model_name == "project":
+                return getattr(obj, "id", None)
+
+        if app_label == "projects" and model_name == "project":
+            raw_value = view.kwargs.get("pk")
+            if raw_value not in (None, ""):
+                try:
+                    return int(raw_value)
+                except (TypeError, ValueError):
+                    return None
+
+        return None
 
 
 def permission_required(perm):

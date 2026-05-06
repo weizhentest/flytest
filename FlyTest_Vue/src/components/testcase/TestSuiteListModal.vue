@@ -119,6 +119,7 @@ import {
   deleteTestSuite,
   type TestSuite,
 } from '@/services/testSuiteService';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import { formatDate } from '@/utils/formatters';
 import TestSuiteFormModal from './TestSuiteFormModal.vue';
 import TestExecutionConfirmModal from './TestExecutionConfirmModal.vue';
@@ -167,7 +168,7 @@ const columns = [
   {
     title: '创建者',
     dataIndex: 'creator_detail',
-    render: ({ record }: { record: TestSuite }) => record.creator_detail?.username || '-',
+    render: ({ record }: { record: TestSuite }) => getUserDisplayName(record.creator_detail),
     width: 100,
   },
   { title: '创建时间', dataIndex: 'created_at', slotName: 'created_at', width: 150 },

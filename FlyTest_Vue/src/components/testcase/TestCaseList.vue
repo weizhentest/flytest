@@ -63,7 +63,7 @@
           @change="onAssigneeChange"
         >
           <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
-            {{ member.user_detail.username }}
+            {{ getUserDisplayName(member.user_detail) }}
           </a-option>
         </a-select>
         <a-button type="outline" class="io-btn" @click="handleExport">
@@ -250,7 +250,7 @@
         <a-form-item field="assigneeId" label="执行人" required>
           <a-select v-model="assignmentForm.assigneeId" :loading="assignmentLoading" placeholder="请选择执行人" allow-search>
             <a-option v-for="member in projectMembers" :key="member.id" :value="member.user">
-              {{ member.user_detail.username }}
+              {{ getUserDisplayName(member.user_detail) }}
             </a-option>
           </a-select>
         </a-form-item>
@@ -265,6 +265,7 @@ import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
 import { IconFolder, IconDownload, IconDown } from '@arco-design/web-vue/es/icon';
 import { useAuthStore } from '@/store/authStore';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import { API_BASE_URL } from '@/config/api';
 import ExportModal from '@/features/testcase-templates/components/ExportModal.vue';
 import {
@@ -500,14 +501,14 @@ const columns = computed(() => {
   {
     title: '创建者',
     dataIndex: 'creator_detail',
-    render: ({ record }: { record: TestCase }) => record.creator_detail?.username || '-',
+    render: ({ record }: { record: TestCase }) => getUserDisplayName(record.creator_detail),
     width: 120,
     align: 'center',
   },
   {
     title: '执行人',
     dataIndex: 'assignee_detail',
-    render: ({ record }: { record: TestCaseListItem }) => record.assignee_detail?.username || '未分配',
+    render: ({ record }: { record: TestCaseListItem }) => getUserDisplayName(record.assignee_detail, '未分配'),
     width: 120,
     align: 'center',
   },

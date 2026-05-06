@@ -165,6 +165,7 @@ import {
   type TestExecution,
 } from '@/services/testExecutionService';
 import { formatDate } from '@/utils/formatters';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import TestExecutionReportModal from './TestExecutionReportModal.vue';
 
 // 组件属性
@@ -205,7 +206,7 @@ const columns = [
   {
     title: '执行人',
     dataIndex: 'executor_detail',
-    render: ({ record }: { record: TestExecution }) => record.executor_detail?.username || '-',
+    render: ({ record }: { record: TestExecution }) => getUserDisplayName(record.executor_detail),
     width: 100,
     align: 'center' as const,
   },

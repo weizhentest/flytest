@@ -9,7 +9,7 @@
     <div class="register-card">
       <div class="brand-section">
         <div class="brand-logo">
-          <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
+          <img :src="brandFullLogoUrl" alt="FlyTest Logo" class="register-full-logo" />
         </div>
         <h1 class="brand-title">注册新账号</h1>
         <p class="brand-subtitle">欢迎加入 FlyTest</p>
@@ -33,6 +33,7 @@
               placeholder="请输入姓名（仅支持中文）"
             />
           </div>
+          <div class="input-tip">姓名仅支持 2 到 20 位中文，且不能与其他用户重复。</div>
         </div>
 
         <div class="input-group">
@@ -159,7 +160,7 @@
 import { computed, reactive, ref } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { useAuthStore } from '@/store/authStore';
-import { brandLogoUrl } from '@/utils/assetUrl';
+import { brandFullLogoUrl } from '@/utils/assetUrl';
 
 const CHINA_MOBILE_REGEX = /^1[3-9]\d{9}$/;
 const CHINESE_REAL_NAME_REGEX = /^[\u4e00-\u9fff·]{2,20}$/;
@@ -320,16 +321,17 @@ const handleSubmit = async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 70px;
-  height: 70px;
+  width: min(240px, 100%);
+  max-width: 100%;
+  height: auto;
   margin-bottom: 20px;
 }
 
-.logo-icon {
-  width: 48px;
-  height: 48px;
+.register-full-logo {
+  width: 100%;
+  max-width: 240px;
+  height: auto;
   object-fit: contain;
-  border-radius: 4px;
 }
 
 .brand-title {
@@ -388,6 +390,14 @@ const handleSubmit = async () => {
   border-color: var(--theme-accent);
   background: #ffffff;
   box-shadow: 0 0 0 4px rgba(var(--theme-accent-rgb), 0.08);
+}
+
+.input-tip {
+  margin-top: 6px;
+  padding-left: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
 }
 
 .password-toggle {

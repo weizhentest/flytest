@@ -258,7 +258,7 @@ def validate_phone_number_value(value, *, exclude_user_id=None, allow_blank=Fals
     return phone_number
 
 
-def validate_real_name_value(value, *, allow_blank=False):
+def validate_real_name_value(value, *, exclude_user_id=None, allow_blank=False):
     real_name = (value or "").strip()
     if not real_name:
         if allow_blank:
@@ -267,6 +267,12 @@ def validate_real_name_value(value, *, allow_blank=False):
 
     if not CHINESE_REAL_NAME_REGEX.fullmatch(real_name):
         raise serializers.ValidationError("姓名仅支持2到20位中文。")
+
+    real_name_exists = User.objects.filter(profile__real_name=real_name)
+    if exclude_user_id is not None:
+        real_name_exists = real_name_exists.exclude(id=exclude_user_id)
+    if real_name_exists.exists():
+        raise serializers.ValidationError("该姓名已被使用，请更换后重试。")
 
     return real_name
 
@@ -411,7 +417,11 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
 
     def validate_real_name(self, value):
         allow_blank = not bool(self.context.get("registration_mode"))
-        return validate_real_name_value(value, allow_blank=allow_blank)
+        return validate_real_name_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+            allow_blank=allow_blank,
+        )
 
     def validate_username(self, value):
         if not value and bool(self.context.get("registration_mode")):
@@ -430,6 +440,7 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
             )
             attrs["real_name"] = validate_real_name_value(
                 attrs.get("real_name"),
+                exclude_user_id=self.instance.id if self.instance else None,
                 allow_blank=False,
             )
             attrs["username"] = generate_random_system_username()
@@ -558,7 +569,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         )
 
     def validate_real_name(self, value):
-        return validate_real_name_value(value, allow_blank=True)
+        return validate_real_name_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+            allow_blank=True,
+        )
 
     def validate_username(self, value):
         return validate_system_username_value(
@@ -1160,7 +1175,7 @@ class UserApprovalReviewSerializer(serializers.Serializer):
 
 class CurrentUserProfileSerializer(serializers.Serializer):
     username = serializers.CharField(required=False)
-    email = serializers.EmailField(required=False)
+    email = serializers.EmailField(required=False, allow_blank=True)
     phone_number = serializers.CharField(required=False, allow_blank=True, max_length=30)
     real_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
 
@@ -1172,7 +1187,14 @@ class CurrentUserProfileSerializer(serializers.Serializer):
         )
 
     def validate_real_name(self, value):
-        return validate_real_name_value(value, allow_blank=True)
+        return validate_real_name_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+            allow_blank=True,
+        )
+
+    def validate_email(self, value):
+        return (value or "").strip()
 
     def validate_username(self, value):
         return validate_system_username_value(

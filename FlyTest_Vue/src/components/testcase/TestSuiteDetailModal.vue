@@ -16,7 +16,7 @@
             {{ suiteDetail.id }}
           </a-descriptions-item>
           <a-descriptions-item label="创建人">
-            {{ suiteDetail.creator_detail?.username || '-' }}
+            {{ getUserDisplayName(suiteDetail.creator_detail) }}
           </a-descriptions-item>
           <a-descriptions-item label="测试用例数量">
             <a-tag color="blue">{{ suiteDetail.testcase_count }} 条</a-tag>
@@ -47,6 +47,7 @@
 import { computed, ref, watch } from 'vue';
 import { Message } from '@arco-design/web-vue';
 import { getTestSuiteDetail, type TestSuite } from '@/services/testSuiteService';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import { formatDate } from '@/utils/formatters';
 
 interface Props {

@@ -179,7 +179,7 @@
             </a-table-column>
             <a-table-column title="执行人" data-index="executor_detail">
               <template #cell="{ record }">
-                {{ record.executor_detail?.username || '-' }}
+                {{ getUserDisplayName(record.executor_detail) }}
               </template>
             </a-table-column>
           </template>
@@ -451,6 +451,7 @@ import { Message, type FormInstance } from '@arco-design/web-vue';
 	import { useProjectStore } from '@/store/projectStore';
 	import { useAuthStore } from '@/store/authStore';
 	import request from '@/utils/request';
+	import { getUserDisplayName } from '@/utils/userDisplay';
 	import {
 	  createAutomationScript,
 	  deleteAutomationScript,

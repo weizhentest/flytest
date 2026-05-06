@@ -4,8 +4,7 @@
 
     <div class="content-layer">
       <div class="brand-area">
-        <img :src="brandLogoUrl" alt="Logo" class="brand-logo" />
-        <h1 class="brand-title">FlyTest</h1>
+        <img :src="brandFullLogoLoginWhiteUrl" alt="FlyTest Logo" class="brand-full-logo" />
         <p class="brand-subtitle">AI智能测试平台</p>
         <div class="brand-tags" role="list" aria-label="平台能力标签">
           <div v-for="tag in featureTags" :key="tag.label" class="tag-item" role="listitem">
@@ -172,7 +171,7 @@ import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
 import { useStarryBackground } from '@/composables/useStarryBackground'
 import { useAuthStore } from '@/store/authStore'
-import { brandLogoUrl } from '@/utils/assetUrl'
+import { brandFullLogoLoginWhiteUrl } from '@/utils/assetUrl'
 
 interface FeatureTag {
   label: string
@@ -344,10 +343,6 @@ watch(loginDialogVisible, (visible) => {
 })
 
 onMounted(() => {
-  authStore.checkAuthStatus()
-  if (authStore.isLoggedIn) {
-    router.push({ name: 'Dashboard' })
-  }
   const saved = localStorage.getItem('rememberedUsername')
   if (saved) {
     username.value = saved
@@ -405,20 +400,12 @@ onBeforeUnmount(() => {
   animation: fade-in-down 0.8s ease-out;
 }
 
-.brand-logo {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 16px;
-  filter: drop-shadow(0 0 20px rgba(100, 180, 255, 0.4));
-}
-
-.brand-title {
-  margin: 0 0 8px;
-  color: #fff;
-  font-size: 42px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  text-shadow: 0 0 30px rgba(100, 180, 255, 0.3);
+.brand-full-logo {
+  display: block;
+  width: min(240px, 34vw);
+  height: auto;
+  margin: 0 auto 12px;
+  filter: drop-shadow(0 0 24px rgba(100, 180, 255, 0.22));
 }
 
 .brand-subtitle {
@@ -914,8 +901,8 @@ onBeforeUnmount(() => {
     padding: 12px 16px 88px;
   }
 
-  .brand-title {
-    font-size: 32px;
+  .brand-full-logo {
+    width: min(240px, 68vw);
   }
 
   .login-launcher {

@@ -67,6 +67,7 @@ declare module 'vue' {
     ATooltip: typeof import('@arco-design/web-vue')['Tooltip']
     ATree: typeof import('@arco-design/web-vue')['Tree']
     ATreeSelect: typeof import('@arco-design/web-vue')['TreeSelect']
+    ATrigger: typeof import('@arco-design/web-vue')['Trigger']
     ATypographyParagraph: typeof import('@arco-design/web-vue')['TypographyParagraph']
     ATypographyText: typeof import('@arco-design/web-vue')['TypographyText']
     AUpload: typeof import('@arco-design/web-vue')['Upload']

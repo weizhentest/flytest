@@ -71,6 +71,9 @@
 
               <a-form-item label="姓名">
                 <a-input v-model="profileForm.real_name" placeholder="请输入姓名（仅支持中文）" />
+                <div class="field-tip">
+                  <span>姓名仅支持 2 到 20 位中文，且不能与其他用户重复。</span>
+                </div>
               </a-form-item>
 
               <a-form-item label="联系邮箱（选填）">
@@ -261,12 +264,16 @@ const handleSaveProfile = async () => {
 
   profileLoading.value = true
   try {
-    const response = await updateCurrentProfile({
+    const payload: Record<string, string> = {
       username: profileForm.username,
-      email: profileForm.email,
       real_name: profileForm.real_name,
       phone_number: profileForm.phone_number,
-    })
+    }
+    if (profileForm.email.trim()) {
+      payload.email = profileForm.email.trim()
+    }
+
+    const response = await updateCurrentProfile(payload)
     if (!response.success || !response.data) {
       Message.error(response.error || '保存个人资料失败')
       return

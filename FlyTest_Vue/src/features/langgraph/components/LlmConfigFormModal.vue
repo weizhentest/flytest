@@ -319,6 +319,7 @@ import { IconThunderbolt } from '@arco-design/web-vue/es/icon';
 import { createLlmConfig, partialUpdateLlmConfig, testLlmConnection, fetchModels, getProviders } from '@/features/langgraph/services/llmConfigService';
 import { getOrganizationList } from '@/services/organizationService';
 import { getUserList } from '@/services/userService';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import type {
   LlmConfig,
   CreateLlmConfigRequest,
@@ -594,7 +595,7 @@ const loadShareTargets = async () => {
 
     if (userResponse.success && userResponse.data) {
       memberOptions.value = userResponse.data.map(item => ({
-        label: `${item.username}${item.email ? ` (${item.email})` : ''}`,
+        label: `${getUserDisplayName(item)}${item.email ? ` (${item.email})` : ''}`,
         value: item.id,
       }));
     }

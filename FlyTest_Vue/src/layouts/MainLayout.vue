@@ -4,11 +4,7 @@
     <a-layout-header class="header">
       <div class="left-section">
         <div class="logo" unselectable="on">
-          <img :src="brandLogoUrl" alt="FlyTest Logo" class="logo-icon" />
-          <div class="logo-copy">
-            <span class="logo-text">FlyTest</span>
-            <span class="logo-subtitle">AI智能测试平台</span>
-          </div>
+          <img :src="brandFullLogoUrl" alt="FlyTest Logo" class="logo-full" />
         </div>
         <div class="project-selector" v-if="showProjectSelector">
           <a-select
@@ -72,37 +68,7 @@
           <icon-sun-fill v-if="themeStore.isBlack" class="theme-switch-icon" />
           <icon-moon-fill v-else class="theme-switch-icon" />
         </button>
-        <!-- 版本号显示 -->
-        <a-popover v-if="hasUpdate" position="bottom" trigger="hover" content-class="version-popover">
-          <a 
-            class="version-badge update-available" 
-            :href="versionInfo?.releaseUrl || versionUpdatesUrl"
-            target="_blank"
-          >
-            当前版本: {{ currentVersion }}
-            <span class="update-dot"></span>
-          </a>
-          <template #content>
-            <div class="version-update-info">
-              <div class="version-update-header">
-                <span class="update-title">新版本可用</span>
-                <span class="update-version">v{{ versionInfo?.latest }}</span>
-              </div>
-              <div class="version-update-notes" v-if="releaseNotesPreview">
-                {{ releaseNotesPreview }}
-              </div>
-              <a 
-                class="version-update-footer"
-                :href="versionInfo?.releaseUrl || versionUpdatesUrl"
-                target="_blank"
-              >
-                点击查看完整更新日志
-              </a>
-            </div>
-          </template>
-        </a-popover>
-        <span v-else class="version-badge">当前版本: {{ currentVersion }}</span>
-        
+        <NotificationCenter :is-admin="Boolean(user?.is_staff)" />
         <a-avatar class="avatar">
           <span>{{ userInitial }}</span>
         </a-avatar>
@@ -527,17 +493,11 @@ import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useAiActivityStore } from '@/store/aiActivityStore';
-import { brandLogoUrl } from '@/utils/assetUrl';
+import { brandFullLogoUrl } from '@/utils/assetUrl';
+import NotificationCenter from '@/components/notifications/NotificationCenter.vue';
 import ImportJobStatusBadge from '@/features/api-automation/components/ImportJobStatusBadge.vue';
 import { fetchModels, getActiveLlmConfig, testLlmConnection } from '@/features/langgraph/services/llmConfigService';
 import type { LlmConfig } from '@/features/langgraph/types/llmConfig';
-import {
-  getCurrentVersion,
-  formatVersion,
-  checkLatestVersion,
-  getVersionUpdatesUrl,
-  type VersionInfo
-} from '@/services/versionService';
 import {
   Layout as ALayout,
   Menu as AMenu,
@@ -546,7 +506,6 @@ import {
   Doption as ADoption,
   SubMenu as ASubMenu,
   Select as ASelect,
-  Popover as APopover,
   Message
 } from '@arco-design/web-vue';
 import {
@@ -609,24 +568,6 @@ const aiStatus = ref<{
 let aiStatusTimer: ReturnType<typeof setTimeout> | null = null;
 let aiStatusRefreshInFlight = false;
 
-// 版本信息
-const currentVersion = ref(formatVersion(getCurrentVersion()));
-const versionInfo = ref<VersionInfo | null>(null);
-const hasUpdate = computed(() => versionInfo.value?.hasUpdate ?? false);
-const versionUpdatesUrl = getVersionUpdatesUrl();
-
-// 更新说明预览
-const releaseNotesPreview = computed(() => {
-  const notes = versionInfo.value?.releaseNotes;
-  if (!notes) return '';
-  // 提取发布说明中的纯文本
-  return notes
-    .replace(/^#+\\s*/gm, '')
-    .replace(/\\r\\n/g, '\\n').replace(/\\*\\*/g, '')
-    .replace(/`[^`]+`/g, '')
-    .trim();
-});
-
 const aiStatusLabel = computed(() => {
   switch (aiStatus.value.state) {
     case 'online':
@@ -670,14 +611,6 @@ const canDismissGenerationBadge = computed(() => {
   const status = aiActivityStore.generationJob?.status;
   return status === 'success' || status === 'failed';
 });
-
-async function checkVersion() {
-  try {
-    versionInfo.value = await checkLatestVersion();
-  } catch (error) {
-    console.warn('版本检查失败:', error);
-  }
-}
 
 const clearAiStatusTimer = () => {
   if (aiStatusTimer !== null) {
@@ -765,11 +698,17 @@ const refreshAiStatus = async ({ silent = false }: { silent?: boolean } = {}) =>
 };
 
 const handleWindowFocus = () => {
+  if (authStore.isAuthenticated && authStore.isApproved) {
+    void projectStore.fetchProjects();
+  }
   void refreshAiStatus({ silent: true });
 };
 
 const handleVisibilityChange = () => {
   if (document.visibilityState === 'visible') {
+    if (authStore.isAuthenticated && authStore.isApproved) {
+      void projectStore.fetchProjects();
+    }
     void refreshAiStatus({ silent: true });
   }
 };
@@ -934,59 +873,64 @@ const activeGroupKey = computed(() => {
 
 const openKeys = ref<string[]>([]);
 const collapsed = ref(false);
+const hasProjectAccess = computed(() => projectStore.projectList.length > 0);
 
 const hasProjectsPermission = computed(() => {
-  return authStore.hasPermission('projects.view_project');
+  return authStore.hasPermission('projects.view_project') || hasProjectAccess.value;
 });
 
 const hasRequirementsPermission = computed(() => {
-  return authStore.hasPermission('requirements.view_requirementdocument');
+  return authStore.hasPermission('requirements.view_requirementdocument') || hasProjectAccess.value;
 });
 
 const hasTestcasesPermission = computed(() => {
-  return authStore.hasPermission('testcases.view_testcase');
+  return authStore.hasPermission('testcases.view_testcase') || hasProjectAccess.value;
 });
 
 const hasTestSuitesPermission = computed(() => {
-  return authStore.hasPermission('testcases.view_testsuite');
+  return authStore.hasPermission('testcases.view_testsuite') || hasProjectAccess.value;
 });
 
 const hasTestBugsPermission = computed(() => {
-  return authStore.hasPermission('testcases.view_testsuite');
+  return authStore.hasPermission('testcases.view_testsuite') || hasProjectAccess.value;
 });
 
 const hasTestExecutionsPermission = computed(() => {
-  return authStore.hasPermission('testcases.view_testexecution');
+  return authStore.hasPermission('testcases.view_testexecution') || hasProjectAccess.value;
 });
 
 const hasLangGraphChatPermission = computed(() => {
   return authStore.hasPermission('langgraph_integration.view_llmconfig') ||
          authStore.hasPermission('langgraph_integration.view_chatsession') ||
-         authStore.hasPermission('langgraph_integration.view_chatmessage');
+         authStore.hasPermission('langgraph_integration.view_chatmessage') ||
+         hasProjectAccess.value;
 });
 
 const hasApiAutomationRequestsPermission = computed(() => {
   return authStore.hasPermission('api_automation.view_apicollection') ||
          authStore.hasPermission('api_automation.view_apirequest') ||
-         authStore.hasPermission('api_automation.view_apiimportjob');
+         authStore.hasPermission('api_automation.view_apiimportjob') ||
+         hasProjectAccess.value;
 });
 
 const hasApiAutomationTestCasesPermission = computed(() => {
   return authStore.hasPermission('api_automation.view_apitestcase') ||
-         authStore.hasPermission('api_automation.view_apicasegenerationjob');
+         authStore.hasPermission('api_automation.view_apicasegenerationjob') ||
+         hasProjectAccess.value;
 });
 
 const hasApiAutomationEnvironmentsPermission = computed(() => {
-  return authStore.hasPermission('api_automation.view_apienvironment');
+  return authStore.hasPermission('api_automation.view_apienvironment') || hasProjectAccess.value;
 });
 
 const hasApiAutomationExecutionRecordsPermission = computed(() => {
-  return authStore.hasPermission('api_automation.view_apiexecutionrecord');
+  return authStore.hasPermission('api_automation.view_apiexecutionrecord') || hasProjectAccess.value;
 });
 
 const hasApiAutomationExecutionReportPermission = computed(() => {
   return authStore.hasPermission('api_automation.view_apiexecutionreport') ||
-         authStore.hasPermission('api_automation.view_apiexecutionrecord');
+         authStore.hasPermission('api_automation.view_apiexecutionrecord') ||
+         hasProjectAccess.value;
 });
 
 const hasApiAutomationPermission = computed(() => {
@@ -999,18 +943,18 @@ const hasApiAutomationPermission = computed(() => {
 
 const hasApiAutomationMenuItems = computed(() => hasApiAutomationPermission.value);
 
-const hasAppAutomationOverviewPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationoverview'));
-const hasAppAutomationDevicesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationdevice'));
-const hasAppAutomationPackagesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationpackage'));
-const hasAppAutomationElementsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationelement'));
-const hasAppAutomationSceneBuilderPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscenebuilder'));
-const hasAppAutomationTestCasesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationtestcase'));
-const hasAppAutomationSuitesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsuite'));
-const hasAppAutomationExecutionsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationexecution'));
-const hasAppAutomationScheduledTasksPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscheduledtask'));
-const hasAppAutomationNotificationsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationnotification'));
-const hasAppAutomationReportsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationreport'));
-const hasAppAutomationSettingsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsettings'));
+const hasAppAutomationOverviewPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationoverview') || hasProjectAccess.value);
+const hasAppAutomationDevicesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationdevice') || hasProjectAccess.value);
+const hasAppAutomationPackagesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationpackage') || hasProjectAccess.value);
+const hasAppAutomationElementsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationelement') || hasProjectAccess.value);
+const hasAppAutomationSceneBuilderPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscenebuilder') || hasProjectAccess.value);
+const hasAppAutomationTestCasesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationtestcase') || hasProjectAccess.value);
+const hasAppAutomationSuitesPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsuite') || hasProjectAccess.value);
+const hasAppAutomationExecutionsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationexecution') || hasProjectAccess.value);
+const hasAppAutomationScheduledTasksPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationscheduledtask') || hasProjectAccess.value);
+const hasAppAutomationNotificationsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationnotification') || hasProjectAccess.value);
+const hasAppAutomationReportsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationreport') || hasProjectAccess.value);
+const hasAppAutomationSettingsPermission = computed(() => authStore.hasPermission('app_automation.view_appautomationsettings') || hasProjectAccess.value);
 
 const hasAppAutomationMenuItems = computed(() => {
   return hasAppAutomationOverviewPermission.value ||
@@ -1029,42 +973,46 @@ const hasAppAutomationMenuItems = computed(() => {
 
 const hasUiAutomationPagesPermission = computed(() => {
   return authStore.hasPermission('ui_automation.view_uimodule') ||
-         authStore.hasPermission('ui_automation.view_uipage');
+         authStore.hasPermission('ui_automation.view_uipage') ||
+         hasProjectAccess.value;
 });
 
 const hasUiAutomationPageStepsPermission = computed(() => {
   return authStore.hasPermission('ui_automation.view_uipagesteps') ||
-         authStore.hasPermission('ui_automation.view_uipagestepsdetailed');
+         authStore.hasPermission('ui_automation.view_uipagestepsdetailed') ||
+         hasProjectAccess.value;
 });
 
 const hasUiAutomationTestCasesPermission = computed(() => {
   return authStore.hasPermission('ui_automation.view_uitestcase') ||
-         authStore.hasPermission('ui_automation.view_uicasestepsdetailed');
+         authStore.hasPermission('ui_automation.view_uicasestepsdetailed') ||
+         hasProjectAccess.value;
 });
 
 const hasUiAutomationAiIntelligentPermission = computed(() => {
   return authStore.hasPermission('ui_automation.view_uiaicase') ||
-         authStore.hasPermission('ui_automation.view_uiaiexecutionrecord');
+         authStore.hasPermission('ui_automation.view_uiaiexecutionrecord') ||
+         hasProjectAccess.value;
 });
 
 const hasUiAutomationExecutionRecordsPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uiexecutionrecord');
+  return authStore.hasPermission('ui_automation.view_uiexecutionrecord') || hasProjectAccess.value;
 });
 
 const hasUiAutomationBatchRecordsPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uibatchexecutionrecord');
+  return authStore.hasPermission('ui_automation.view_uibatchexecutionrecord') || hasProjectAccess.value;
 });
 
 const hasUiAutomationPublicDataPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uipublicdata');
+  return authStore.hasPermission('ui_automation.view_uipublicdata') || hasProjectAccess.value;
 });
 
 const hasUiAutomationEnvConfigPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uienvironmentconfig');
+  return authStore.hasPermission('ui_automation.view_uienvironmentconfig') || hasProjectAccess.value;
 });
 
 const hasUiAutomationActuatorsPermission = computed(() => {
-  return authStore.hasPermission('ui_automation.view_uiactuator');
+  return authStore.hasPermission('ui_automation.view_uiactuator') || hasProjectAccess.value;
 });
 
 const hasUiAutomationPermission = computed(() => {
@@ -1082,12 +1030,13 @@ const hasUiAutomationPermission = computed(() => {
 const hasUiAutomationMenuItems = computed(() => hasUiAutomationPermission.value);
 
 const hasKnowledgePermission = computed(() => {
-  return authStore.hasPermission('knowledge.view_knowledgebase');
+  return authStore.hasPermission('knowledge.view_knowledgebase') || hasProjectAccess.value;
 });
 
 const hasDataFactoryPermission = computed(() => {
   return authStore.hasPermission('data_factory.view_datafactoryrecord') ||
-         authStore.hasPermission('data_factory.view_datafactorytag');
+         authStore.hasPermission('data_factory.view_datafactorytag') ||
+         hasProjectAccess.value;
 });
 
 const hasDataFactoryMenuItems = computed(() => hasDataFactoryPermission.value);
@@ -1228,13 +1177,12 @@ const handlePopupVisibleChange = (visible: boolean) => {
 onMounted(async () => {
   window.addEventListener('focus', handleWindowFocus);
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  authStore.checkAuthStatus();
+  await authStore.bootstrapSession();
   console.log('MainLayout mounted, user:', user.value?.username);
   await projectStore.fetchProjects();
   if (activeGroupKey.value && !openKeys.value.includes(activeGroupKey.value)) {
     openKeys.value = [...openKeys.value, activeGroupKey.value];
   }
-  checkVersion();
   await refreshAiStatus();
 });
 
@@ -1304,6 +1252,14 @@ onUnmounted(() => {
   margin-right: 0;
 }
 
+.logo-wordmark {
+  display: block;
+  width: auto;
+  height: 26px;
+  margin-left: 4px;
+  object-fit: contain;
+}
+
 .logo-text {
   flex-shrink: 0;
   font-size: 22px;
@@ -1367,113 +1323,6 @@ onUnmounted(() => {
 .theme-switch-icon {
   font-size: 16px;
   line-height: 1;
-}
-
-/* 版本号样式 */
-.version-badge {
-  font-size: 13px;
-  color: #86909c;
-  background: #f2f3f5;
-  padding: 2px 8px;
-  border-radius: 10px;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  line-height: 1.5;
-}
-
-.version-badge.update-available {
-  color: #00b42a;
-  background: #e8ffea;
-  cursor: pointer;
-}
-
-.version-badge.update-available:hover {
-  background: #d4f7d4;
-}
-
-.update-dot {
-  width: 5px;
-  height: 5px;
-  background: #00b42a;
-  border-radius: 50%;
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-/* 版本更新弹出框样式 */
-.version-update-info {
-  max-width: 320px;
-  padding: 4px;
-}
-
-.version-update-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e5e6eb;
-}
-
-.update-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1d2129;
-}
-
-.update-version {
-  font-size: 13px;
-  color: #00b42a;
-  font-weight: 500;
-  background: #e8ffea;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.version-update-notes {
-  font-size: 12px;
-  color: #4e5969;
-  line-height: 1.6;
-  max-height: 400px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-}
-
-.version-update-notes::-webkit-scrollbar {
-  display: none; /* Chrome/Safari/Opera */
-}
-
-.version-update-footer {
-  display: block;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e5e6eb;
-  font-size: 12px;
-  color: #165dff;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.version-update-footer:hover {
-  color: #0e42d2;
-  text-decoration: underline;
 }
 
 .avatar {
@@ -1888,33 +1737,11 @@ onUnmounted(() => {
   margin-right: 8px;
 }
 
-.logo-copy {
-  gap: 5px;
-  transform: translateY(-3px);
-}
-
-.logo-icon {
-  width: 60px;
-  height: 60px;
-  margin-right: 0;
-}
-
-.logo-text {
-  display: inline-flex;
-  align-items: center;
-  padding-top: 2px;
-  font-size: 24px;
-  font-family: "Segoe UI Variable Display", "Segoe UI", "Trebuchet MS", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #1f2329;
-  text-shadow: none;
-}
-
-.logo-subtitle {
-  font-size: 11px;
-  font-family: "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  letter-spacing: 0.18em;
+.logo-full {
+  display: block;
+  width: auto;
+  height: 40px;
+  object-fit: contain;
 }
 
 .project-selector :deep(.arco-select-view) {

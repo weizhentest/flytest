@@ -106,6 +106,7 @@ INSTALLED_APPS = [
     "channels",
     "accounts",
     "projects",
+    "site_notifications",
     "testcases",
     "drf_spectacular",
     "corsheaders",

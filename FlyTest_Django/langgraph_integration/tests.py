@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
+from accounts.models import UserProfile
 from langgraph_integration.models import LLMConfig, LLMTokenUsage, get_user_active_llm_config
 from langgraph_integration.views import (
     LLMConfigViewSet,
@@ -357,6 +358,18 @@ class TokenUsageDashboardTests(TestCase):
             email="bob@example.com",
             password="password123",
         )
+        UserProfile.objects.update_or_create(
+            user=self.admin,
+            defaults={"real_name": "管理员"},
+        )
+        UserProfile.objects.update_or_create(
+            user=self.user_a,
+            defaults={"real_name": "张三"},
+        )
+        UserProfile.objects.update_or_create(
+            user=self.user_b,
+            defaults={"real_name": "李四"},
+        )
         self.config_a = LLMConfig.objects.create(
             owner=self.admin,
             config_name="GLM",
@@ -429,6 +442,7 @@ class TokenUsageDashboardTests(TestCase):
         self.assertEqual(len(response.data["by_model"]), 2)
         self.assertEqual(response.data["by_model"][0]["model_name"], "gpt-5.4")
         self.assertEqual(response.data["by_user"][0]["username"], "bob")
+        self.assertEqual(response.data["by_user"][0]["real_name"], "李四")
 
     def test_token_usage_dashboard_for_regular_user_only_returns_self(self):
         self.client.force_authenticate(self.user_a)
@@ -440,3 +454,4 @@ class TokenUsageDashboardTests(TestCase):
         self.assertEqual(response.data["permissions"]["can_view_all_users"], False)
         self.assertEqual(len(response.data["by_user"]), 1)
         self.assertEqual(response.data["by_user"][0]["username"], "alice")
+        self.assertEqual(response.data["by_user"][0]["real_name"], "张三")

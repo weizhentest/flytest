@@ -54,6 +54,7 @@ urlpatterns = [
     path("api/token/", MyTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", CookieTokenRefreshView.as_view(), name="token_refresh"),
     path("api/accounts/", include("accounts.urls")),
+    path("api/notifications/", include("site_notifications.urls")),
     path("api/", include(router.urls)),
     path("api/", include(projects_router.urls)),
     path("api/lg/", include("langgraph_integration.urls")),

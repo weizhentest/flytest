@@ -218,6 +218,8 @@ export const createUser = async (userData: CreateUserRequest): Promise<CreateUse
           errorMessage = responseData.detail;
         } else if (responseData && responseData.username && Array.isArray(responseData.username)) {
           errorMessage = `用户名错误: ${responseData.username.join(', ')}`;
+        } else if (responseData && responseData.real_name && Array.isArray(responseData.real_name)) {
+          errorMessage = `姓名错误: ${responseData.real_name.join(', ')}`;
         } else if (responseData && responseData.email && Array.isArray(responseData.email)) {
           errorMessage = `邮箱错误: ${responseData.email.join(', ')}`;
         } else if (responseData && responseData.password && Array.isArray(responseData.password)) {
@@ -364,6 +366,8 @@ export const updateUser = async (userId: number, userData: UpdateUserRequest): P
         errorMessage = responseData.detail;
       } else if (responseData && responseData.username && Array.isArray(responseData.username)) {
         errorMessage = `用户名错误: ${responseData.username.join(', ')}`;
+      } else if (responseData && responseData.real_name && Array.isArray(responseData.real_name)) {
+        errorMessage = `姓名错误: ${responseData.real_name.join(', ')}`;
       } else if (responseData && responseData.email && Array.isArray(responseData.email)) {
         errorMessage = `邮箱错误: ${responseData.email.join(', ')}`;
       } else if (responseData && responseData.password && Array.isArray(responseData.password)) {

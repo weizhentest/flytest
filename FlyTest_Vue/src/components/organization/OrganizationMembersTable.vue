@@ -64,6 +64,7 @@ import {
   type OrganizationUser
 } from '@/services/organizationService';
 import { getUserList } from '@/services/userService';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 const props = defineProps<{
   organizationId: number;
@@ -205,7 +206,7 @@ const fetchAllUsers = async () => {
 
       // 转换为下拉选择框需要的格式
       availableUsers.value = filteredUsers.map(user => ({
-        label: `${user.username} (${user.email})`,
+        label: getUserDisplayName(user),
         value: user.id
       }));
     } else {
@@ -287,7 +288,7 @@ const removeMember = (member: OrganizationUser) => {
 
   Modal.warning({
     title: '确认移除',
-    content: `确定要将用户 "${member.username}" 从组织中移除吗？`,
+    content: `确定要将用户 "${getUserDisplayName(member)}" 从组织中移除吗？`,
     okText: '确定移除',
     cancelText: '取消',
     onOk: async () => {

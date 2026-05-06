@@ -4112,7 +4112,7 @@ class TokenUsageStatsAPIView(APIView):
 
         # 用户维度统计（排行榜 - 使用全部数据）
         user_stats = (
-            all_users_queryset.values("user__username", "user_id")
+            all_users_queryset.values("user__username", "user__profile__real_name", "user_id")
             .annotate(
                 total_input=Sum("prompt_tokens"),
                 total_output=Sum("completion_tokens"),
@@ -4190,6 +4190,7 @@ class TokenUsageStatsAPIView(APIView):
                         "rank": index + 1,
                         "user_id": item["user_id"],
                         "username": item["user__username"],
+                        "real_name": item.get("user__profile__real_name") or "",
                         "input_tokens": item["total_input"] or 0,
                         "output_tokens": item["total_output"] or 0,
                         "total_tokens": item["total_tokens"] or 0,

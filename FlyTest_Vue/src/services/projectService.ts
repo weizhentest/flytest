@@ -700,6 +700,7 @@ export interface TokenUsageStats {
   by_user: Array<{
     user_id: number;
     username: string;
+    real_name?: string;
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;

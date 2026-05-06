@@ -212,7 +212,7 @@
                   <div class="resource-label">用户排行</div>
                   <div class="resource-stats">
                     <div class="stat-row" v-for="(user, index) in tokenStats.by_user.slice(0, 3)" :key="user.user_id">
-                      <span>{{ index + 1 }}. {{ user.username }}</span>
+                      <span>{{ index + 1 }}. {{ getUserDisplayName(user) }}</span>
                       <span class="stat-num">{{ formatTokenCount(user.total_tokens) }}</span>
                     </div>
                   </div>
@@ -295,6 +295,7 @@ import {
 import { getProjectStatistics, getTokenUsageStats, type ProjectStatistics, type TokenUsageStats } from '@/services/projectService';
 import { useProjectStore } from '@/store/projectStore';
 import { useAuthStore } from '@/store/authStore';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import LlmTokenUsageDashboard from '@/features/langgraph/components/LlmTokenUsageDashboard.vue';
 import { fetchTokenUsageStats } from '@/features/langgraph/services/llmConfigService';
 import type { TokenUsageStats as LlmTokenUsageStats } from '@/features/langgraph/types/llmConfig';

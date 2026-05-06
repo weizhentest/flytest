@@ -391,6 +391,7 @@ import {
 } from '@/services/testcaseService';
 import { formatDate, REVIEW_STATUS_OPTIONS, TEST_TYPE_OPTIONS } from '@/utils/formatters';
 import type { ReviewStatus } from '@/services/testcaseService';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 interface StepWithError extends TestCaseStep {
   temp_id?: string; // 用于表格 row-key
@@ -932,7 +933,7 @@ const previewExistingScreenshot = (screenshot: TestCaseScreenshot) => {
     '描述': screenshot.description || '-',
     '步骤': screenshot.step_number ? `步骤 ${screenshot.step_number}` : '-',
     '上传时间': formatDate(uploadTime),
-    '上传者': screenshot.uploader_detail?.username || '-',
+    '上传者': getUserDisplayName(screenshot.uploader_detail),
   };
   showPreviewModal.value = true;
 };
@@ -973,7 +974,7 @@ const updatePreviewFromIndex = () => {
       '描述': screenshot.description || '-',
       '步骤': screenshot.step_number ? `步骤 ${screenshot.step_number}` : '-',
       '上传时间': formatDate(uploadTime),
-      '上传者': screenshot.uploader_detail?.username || '-',
+      '上传者': getUserDisplayName(screenshot.uploader_detail),
     };
   }
 };

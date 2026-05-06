@@ -149,6 +149,7 @@
           <a-col :span="12">
             <a-form-item field="real_name" label="姓名">
               <a-input v-model="addUserForm.real_name" placeholder="请输入姓名（仅支持中文）" />
+              <div class="form-field-tip">姓名仅支持 2 到 20 位中文，且不能与其他用户重复。</div>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -215,6 +216,7 @@
               <a-col :span="12">
                 <a-form-item field="real_name" label="姓名">
                   <a-input v-model="editUserForm.real_name" placeholder="请输入姓名（仅支持中文）" />
+                  <div class="form-field-tip">姓名仅支持 2 到 20 位中文，且不能与其他用户重复。</div>
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -286,6 +288,7 @@ import {
 } from '@/services/userService';
 import PermissionTreeSelector from '@/components/permission/PermissionTreeSelector.vue';
 import { useProjectStore } from '@/store/projectStore';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 const projectStore = useProjectStore();
 
@@ -770,13 +773,13 @@ const handleEditUser = async (done: (closed: boolean) => void) => {
 const approvePendingUser = (user: User) => {
   Modal.confirm({
     title: '审核通过',
-    content: `确认审核通过用户“${user.username}”吗？通过后需要继续分配权限，用户才能看到对应菜单。`,
+    content: `确认审核通过用户“${getUserDisplayName(user)}”吗？通过后需要继续分配权限，用户才能看到对应菜单。`,
     okText: '确认通过',
     cancelText: '取消',
     onOk: async () => {
       const response = await approveUser(user.id);
       if (response.success) {
-        Message.success(`已审核通过 ${user.username}`);
+        Message.success(`已审核通过 ${getUserDisplayName(user)}`);
         fetchUserList();
         fetchApprovalSummary();
         return;
@@ -789,13 +792,13 @@ const approvePendingUser = (user: User) => {
 const rejectPendingUser = (user: User) => {
   Modal.warning({
     title: '驳回注册',
-    content: `确认驳回用户“${user.username}”吗？驳回后该用户仍可登录，但不会拥有任何后台权限。`,
+    content: `确认驳回用户“${getUserDisplayName(user)}”吗？驳回后该用户仍可登录，但不会拥有任何后台权限。`,
     okText: '确认驳回',
     cancelText: '取消',
     onOk: async () => {
       const response = await rejectUser(user.id);
       if (response.success) {
-        Message.success(`已驳回 ${user.username}`);
+        Message.success(`已驳回 ${getUserDisplayName(user)}`);
         fetchUserList();
         fetchApprovalSummary();
         return;
@@ -809,7 +812,7 @@ const rejectPendingUser = (user: User) => {
 const deleteUser = (user: User) => {
   Modal.warning({
     title: '确认删除',
-    content: `确定要删除用户 "${user.username}" 吗？此操作不可恢复。`,
+    content: `确定要删除用户 "${getUserDisplayName(user)}" 吗？此操作不可恢复。`,
     okText: '确定删除',
     cancelText: '取消',
     onOk: async () => {
@@ -864,6 +867,13 @@ const deleteUser = (user: User) => {
 .action-buttons {
   display: flex;
   gap: 10px;
+}
+
+.form-field-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-3);
 }
 
 /* 操作按钮样式优化 */

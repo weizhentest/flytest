@@ -332,6 +332,33 @@ class UserRegistrationApprovalTests(TestCase):
         self.assertEqual(payload["message"], "姓名仅支持2到20位中文。")
         self.assertEqual(payload["errors"]["real_name"][0], "姓名仅支持2到20位中文。")
 
+    def test_register_rejects_duplicate_real_name(self):
+        self.client.post(
+            "/api/accounts/register/",
+            {
+                "phone_number": "13800000031",
+                "real_name": "寮犱笁",
+                "password": "Testpass123!",
+            },
+            format="json",
+        )
+
+        response = self.client.post(
+            "/api/accounts/register/",
+            {
+                "phone_number": "13800000032",
+                "real_name": "寮犱笁",
+                "password": "Testpass123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("real_name", response.data)
+        payload = self._rendered_payload(response)
+        self.assertEqual(payload["message"], "该姓名已被使用，请更换后重试。")
+        self.assertEqual(payload["errors"]["real_name"][0], "该姓名已被使用，请更换后重试。")
+
     def test_login_supports_phone_number_after_registration(self):
         register_response = self.client.post(
             "/api/accounts/register/",
@@ -658,6 +685,27 @@ class CurrentUserProfileTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("username", response.data)
+
+    def test_profile_rejects_duplicate_real_name(self):
+        other_user = User.objects.create_user(
+            username="profileuser66",
+            email="realname@example.com",
+            password="Testpass123!",
+        )
+        other_profile = ensure_user_profile(other_user)
+        other_profile.real_name = "鏉庡洓"
+        other_profile.save(update_fields=["real_name", "updated_at"])
+
+        response = self.client.put(
+            "/api/accounts/profile/",
+            {
+                "real_name": "鏉庡洓",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("real_name", response.data)
 
     def test_profile_rejects_second_username_change_within_30_days(self):
         profile = ensure_user_profile(self.user)

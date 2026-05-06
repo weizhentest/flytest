@@ -60,7 +60,7 @@
             </a-option>
           </a-select>
         </a-descriptions-item>
-        <a-descriptions-item label="创建者">{{ testCaseDetail.creator_detail?.username || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="创建者">{{ getUserDisplayName(testCaseDetail.creator_detail) }}</a-descriptions-item>
         <a-descriptions-item label="更新时间">{{ formatDate(testCaseDetail.updated_at) }}</a-descriptions-item>
       </a-descriptions>
 
@@ -346,6 +346,7 @@ import {
 } from '@/services/testcaseService';
 import { type TestCaseModule } from '@/services/testcaseModuleService';
 import { formatDate, getLevelColor, getTestTypeLabel, REVIEW_STATUS_OPTIONS } from '@/utils/formatters';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 const props = defineProps<{
   testCaseId: number | null;
@@ -794,7 +795,7 @@ const updatePreviewContent = () => {
   if (screenshot.step_number) info['关联步骤'] = `步骤 ${screenshot.step_number}`;
   if (screenshot.page_url) info['页面地址'] = screenshot.page_url;
   if (screenshot.mcp_session_id) info['会话ID'] = screenshot.mcp_session_id;
-  if (screenshot.uploader_detail) info['上传者'] = screenshot.uploader_detail.username;
+  if (screenshot.uploader_detail) info['上传者'] = getUserDisplayName(screenshot.uploader_detail);
 
   info['上传时间'] = formatDate(uploadTime);
 

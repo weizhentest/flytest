@@ -66,7 +66,7 @@
 
           <a-select v-model="filters.assigned_to" placeholder="指派给" allow-clear @change="handleFilterChange" @clear="handleFilterChange">
             <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
-              {{ member.user_detail.username }}
+              {{ getUserDisplayName(member.user_detail) }}
             </a-option>
           </a-select>
 
@@ -518,7 +518,7 @@
                 <template v-if="detailEditMode">
                   <a-select v-model="detailForm.assigned_to" multiple allow-clear placeholder="请选择指派人员" style="width: 100%;">
                     <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
-                      {{ member.user_detail.username }}
+                      {{ getUserDisplayName(member.user_detail) }}
                     </a-option>
                   </a-select>
                 </template>
@@ -773,7 +773,7 @@
           <a-form-item field="assigned_to" label="指派给" required>
             <a-select v-model="actionForm.assigned_to" multiple allow-clear placeholder="请选择指派人员">
               <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
-                {{ member.user_detail.username }}
+                {{ getUserDisplayName(member.user_detail) }}
               </a-option>
             </a-select>
           </a-form-item>
@@ -837,7 +837,7 @@
           <a-form-item field="assigned_to" label="指派给" required>
             <a-select v-model="batchForm.assigned_to" multiple allow-clear placeholder="请选择项目成员">
               <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
-                {{ member.user_detail.username }}
+                {{ getUserDisplayName(member.user_detail) }}
               </a-option>
             </a-select>
           </a-form-item>
@@ -922,6 +922,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Message, Modal } from '@arco-design/web-vue';
 import { IconCheckCircle, IconClose, IconCopy, IconDelete, IconDown, IconEdit, IconSettings, IconUp, IconUser } from '@arco-design/web-vue/es/icon';
 import { useAuthStore } from '@/store/authStore';
+import { getUserDisplayName } from '@/utils/userDisplay';
 import { formatDate } from '@/utils/formatters';
 import BugRichTextEditor, { type PendingBugAttachmentFile } from './BugRichTextEditor.vue';
 import {
@@ -2069,7 +2070,7 @@ const getSortLabel = (value: BugSortValue) => bugSortOptions.find((item) => item
 const getMemberName = (userId?: number) => {
   if (!userId) return '-';
   const member = projectMembers.value.find((item) => Number(item.user) === Number(userId));
-  return member?.user_detail?.username || '-';
+  return getUserDisplayName(member?.user_detail);
 };
 
 const clearSummaryFilter = async (
@@ -2423,12 +2424,12 @@ const getAssignedUserName = (bug: TestBug) => {
     return bug.assigned_to_names.join('、');
   }
   if (Array.isArray(bug.assigned_to_details) && bug.assigned_to_details.length > 0) {
-    return bug.assigned_to_details.map((item) => item.username).join('、');
+    return bug.assigned_to_details.map((item) => getUserDisplayName(item)).join('、');
   }
-  return bug.assigned_to_detail?.username || bug.assigned_to_name || '-';
+  return getUserDisplayName(bug.assigned_to_detail, bug.assigned_to_name || '-');
 };
 
-const getCreatorName = (bug: TestBug) => bug.creator_detail?.username || bug.opened_by_name || '-';
+const getCreatorName = (bug: TestBug) => getUserDisplayName(bug.creator_detail, bug.opened_by_name || '-');
 
 const getRelatedTestcaseNames = (bug?: TestBug | null) => {
   if (!bug) {

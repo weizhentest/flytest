@@ -1,69 +1,60 @@
 <svg width="512" height="512" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="plane-app-bg" x1="18" y1="14" x2="112" y2="118" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4BC2FF" />
-      <stop offset="0.5" stop-color="#1FA3FF" />
-      <stop offset="1" stop-color="#0089FF" />
+    <linearGradient id="fly-whale-app-bg" x1="18" y1="14" x2="110" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#77A8FF" />
+      <stop offset="0.52" stop-color="#4B7BFF" />
+      <stop offset="1" stop-color="#2C56E8" />
     </linearGradient>
-    <radialGradient id="plane-app-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(92 30) rotate(140) scale(36)">
-      <stop stop-color="#9BDDFF" stop-opacity="0.52" />
-      <stop offset="1" stop-color="#9BDDFF" stop-opacity="0" />
+    <radialGradient id="fly-whale-app-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(92 28) rotate(138) scale(40)">
+      <stop stop-color="#D3E0FF" stop-opacity="0.56" />
+      <stop offset="1" stop-color="#D3E0FF" stop-opacity="0" />
     </radialGradient>
-    <filter id="plane-app-shadow" x="6" y="6" width="116" height="116" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#0064C8" flood-opacity="0.24" />
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#FFFFFF" flood-opacity="0.14" />
+    <filter id="fly-whale-app-shadow" x="6" y="6" width="116" height="116" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#2447BF" flood-opacity="0.28" />
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#FFFFFF" flood-opacity="0.16" />
     </filter>
-    <linearGradient id="plane-app-route" x1="30" y1="84" x2="62" y2="70" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#B8F4FF" stop-opacity="0.16" />
-      <stop offset="1" stop-color="#F4FDFF" stop-opacity="0.48" />
+    <linearGradient id="fly-whale-app-body" x1="36" y1="44" x2="88" y2="92" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#E3EBFF" />
     </linearGradient>
   </defs>
 
-  <g filter="url(#plane-app-shadow)">
-    <circle cx="64" cy="64" r="56" fill="url(#plane-app-bg)" />
-    <circle cx="64" cy="64" r="55" stroke="#C9EAFF" stroke-opacity="0.28" stroke-width="2" />
-    <circle cx="92" cy="30" r="30" fill="url(#plane-app-glow)" />
+  <g filter="url(#fly-whale-app-shadow)">
+    <circle cx="64" cy="64" r="56" fill="url(#fly-whale-app-bg)" />
+    <circle cx="64" cy="64" r="55" stroke="#DCE5FF" stroke-opacity="0.26" stroke-width="2" />
+    <circle cx="92" cy="28" r="30" fill="url(#fly-whale-app-glow)" />
 
     <path
-      d="M28 84C36 82 43 79.5 49 76C53 73.7 56.8 71.3 61 69.8"
-      stroke="url(#plane-app-route)"
-      stroke-width="3"
-      stroke-linecap="round"
-      stroke-dasharray="1 12"
-    />
-    <rect x="24.5" y="79.6" width="8.5" height="6.2" rx="2.1" fill="#F4FDFF" fill-opacity="0.62" />
-    <rect x="24.5" y="79.6" width="8.5" height="6.2" rx="2.1" stroke="#B9E9FF" stroke-opacity="0.22" stroke-width="0.9" />
-
-    <rect x="37.8" y="74.8" width="7.6" height="5.7" rx="1.9" fill="#E8FAFF" fill-opacity="0.5" />
-    <rect x="37.8" y="74.8" width="7.6" height="5.7" rx="1.9" stroke="#A9DFFF" stroke-opacity="0.18" stroke-width="0.8" />
-
-    <rect x="49.6" y="70.2" width="6.8" height="5.1" rx="1.7" fill="#DDF5FF" fill-opacity="0.38" />
-    <rect x="49.6" y="70.2" width="6.8" height="5.1" rx="1.7" stroke="#9FD5FF" stroke-opacity="0.14" stroke-width="0.75" />
-
-    <path
-      d="M33 63.5L91.5 40.5C95.5 39 99.2 42.8 97.6 46.7L74.6 101.3C73 105.1 67.7 105.2 65.9 101.5L55.4 79.7L33 63.5Z"
-      fill="#F9FDFF"
+      d="M33.5 71.3C33.5 57.8 45.1 47 59.5 47C67.6 47 74.7 49.9 80.3 55C84.3 58.6 87.1 62.9 90.8 65.8C94.4 68.7 98.6 70.1 103.5 70C101.9 77.2 98.4 82.8 92.9 86.7C89 89.5 84.5 91.2 79.4 91.5C77.1 91.6 75.3 92.2 73.6 93.6C69.8 96.6 65.1 98.2 59.6 98.2C45.3 98.2 33.5 86.5 33.5 71.3Z"
+      fill="url(#fly-whale-app-body)"
     />
     <path
-      d="M55.2 79.4L91.7 40.9"
-      stroke="#BEDFFF"
-      stroke-width="5.2"
+      d="M78.8 55.7C83.1 49.6 88.9 44.9 96.8 41.2C97.1 48.3 95 53.9 90.4 59"
+      stroke="#F8FAFF"
+      stroke-width="6"
       stroke-linecap="round"
       stroke-linejoin="round"
     />
     <path
-      d="M33 63.5L58.8 67.2C61.6 67.6 64.4 66.7 66.4 64.8L91.5 40.5"
-      stroke="#FFFFFF"
-      stroke-width="6.2"
+      d="M91.4 66.3C94.8 62 99.3 59.3 105 58.4C104 64.1 103.4 68 103.5 70"
+      stroke="#F8FAFF"
+      stroke-width="5.8"
       stroke-linecap="round"
       stroke-linejoin="round"
     />
     <path
-      d="M55.6 79.6L63.6 93.7"
-      stroke="#BEDFFF"
-      stroke-width="5.4"
+      d="M52.8 88.6C59.1 89 65.4 88 71.1 84.9"
+      stroke="#B9CBFF"
+      stroke-width="4.2"
       stroke-linecap="round"
-      stroke-linejoin="round"
     />
+    <path
+      d="M54.8 60.8C57.4 58.8 60.6 57.8 64.2 57.8C68.8 57.8 72.6 59.5 75.5 62.7"
+      stroke="#D4DFFF"
+      stroke-width="4"
+      stroke-linecap="round"
+    />
+    <circle cx="55.9" cy="68.1" r="3.3" fill="#2D57E8" />
+    <circle cx="56.9" cy="67" r="0.95" fill="#FFFFFF" />
   </g>
 </svg>

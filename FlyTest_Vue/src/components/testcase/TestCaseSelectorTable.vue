@@ -105,6 +105,7 @@ import { Message } from '@arco-design/web-vue';
 import { getTestCaseList, type TestCase } from '@/services/testcaseService';
 import { getTestCaseModules, type TestCaseModule } from '@/services/testcaseModuleService';
 import { formatDate, getLevelColor, TEST_TYPE_OPTIONS, getTestTypeLabel } from '@/utils/formatters';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 interface Props {
   currentProjectId: number | null;
@@ -156,7 +157,7 @@ const columns = [
   {
     title: '创建者',
     dataIndex: 'creator_detail',
-    render: ({ record }: { record: TestCase }) => record.creator_detail?.username || '-',
+    render: ({ record }: { record: TestCase }) => getUserDisplayName(record.creator_detail),
     width: 100,
   },
   {

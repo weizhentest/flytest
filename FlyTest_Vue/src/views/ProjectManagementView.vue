@@ -310,6 +310,8 @@ import {
 } from '@/services/projectService';
 import { getUserList } from '@/services/userService';
 import { useAuthStore } from '@/store/authStore';
+import { useProjectStore } from '@/store/projectStore';
+import { getUserDisplayName } from '@/utils/userDisplay';
 
 // 加载状态
 const loading = ref(false);
@@ -318,6 +320,7 @@ const searchKeyword = ref('');
 
 // 权限检查
 const authStore = useAuthStore();
+const projectStore = useProjectStore();
 const hasProjectPermission = ref(false); // 默认无权限，等待权限检查结果
 
 // 简单的权限检查逻辑
@@ -343,9 +346,10 @@ const checkProjectPermission = () => {
   ];
   
   // 使用authStore的hasPermission方法检查权限
-  hasProjectPermission.value = projectPermissions.some(permission =>
-    authStore.hasPermission(permission)
-  );
+  hasProjectPermission.value =
+    projectPermissions.some(permission => authStore.hasPermission(permission)) ||
+    projectStore.projectList.length > 0 ||
+    projectData.value.length > 0;
 };
 
 // 联系管理员
@@ -376,7 +380,7 @@ const columns = [
     title: '创建者',
     dataIndex: 'creator_detail',
     render: ({ record }: { record: Project }) => {
-      return record.creator_detail?.username || '-';
+      return getUserDisplayName(record.creator_detail);
     }
   },
   {
@@ -409,6 +413,18 @@ const pagination = reactive({
   pageSizeOptions: [10, 20, 50, 100],
 });
 
+const syncProjectDataFromStore = () => {
+  if (searchKeyword.value.trim()) {
+    return;
+  }
+
+  projectData.value = [...projectStore.projectList];
+  pagination.total = projectStore.projectList.length;
+  if (projectStore.projectList.length > 0) {
+    hasProjectPermission.value = true;
+  }
+};
+
 // 获取项目列表
 const fetchProjectList = async () => {
   loading.value = true;
@@ -422,16 +438,27 @@ const fetchProjectList = async () => {
     if (response.success && response.data) {
       projectData.value = response.data;
       pagination.total = response.total || response.data.length;
+      if (response.data.length > 0) {
+        hasProjectPermission.value = true;
+      }
     } else {
-      Message.error(response.error || '获取项目列表失败');
-      projectData.value = [];
-      pagination.total = 0;
+      if (projectStore.projectList.length > 0) {
+        syncProjectDataFromStore();
+      } else {
+        Message.error(response.error || '获取项目列表失败');
+        projectData.value = [];
+        pagination.total = 0;
+      }
     }
   } catch (error) {
     console.error('获取项目列表出错:', error);
-    Message.error('获取项目列表时发生错误');
-    projectData.value = [];
-    pagination.total = 0;
+    if (projectStore.projectList.length > 0) {
+      syncProjectDataFromStore();
+    } else {
+      Message.error('获取项目列表时发生错误');
+      projectData.value = [];
+      pagination.total = 0;
+    }
   } finally {
     loading.value = false;
   }
@@ -458,9 +485,14 @@ const onPageSizeChange = (pageSize: number) => {
 };
 
 // 在组件挂载时检查权限并加载项目数据
-onMounted(() => {
+onMounted(async () => {
+  await authStore.bootstrapSession();
+  await projectStore.fetchProjects();
   checkProjectPermission();
-  fetchProjectList();
+  if (projectStore.projectList.length > 0 && !searchKeyword.value.trim()) {
+    syncProjectDataFromStore();
+  }
+  await fetchProjectList();
 });
 
 // 监听认证状态变化
@@ -471,6 +503,13 @@ watch(() => authStore.isAuthenticated, () => {
 // 监听用户权限变化
 watch(() => authStore.userPermissions, () => {
   checkProjectPermission();
+}, { deep: true });
+
+watch(() => projectStore.projectList, () => {
+  checkProjectPermission();
+  if (!searchKeyword.value.trim()) {
+    syncProjectDataFromStore();
+  }
 }, { deep: true });
 
 // 处理行点击事件
@@ -495,7 +534,8 @@ const memberColumns = [
   },
   {
     title: '用户名',
-    dataIndex: 'user_detail.username',
+    dataIndex: 'user_detail',
+    render: ({ record }: { record: ProjectMember }) => getUserDisplayName(record.user_detail),
     width: 120,
   },
   {
@@ -610,7 +650,7 @@ const fetchAvailableUsers = async () => {
 
       // 转换为下拉选择框需要的格式
       availableUsers.value = filteredUsers.map(user => ({
-        label: `${user.username} (${user.email || ''})`,
+        label: getUserDisplayName(user),
         value: user.id
       }));
     } else {
@@ -670,7 +710,7 @@ const removeMember = (member: ProjectMember) => {
 
   Modal.warning({
     title: '确认移除',
-    content: `确定要移除成员 "${member.user_detail?.username || ''}" 吗？`,
+    content: `确定要移除成员 "${getUserDisplayName(member.user_detail)}" 吗？`,
     okText: '确认',
     cancelText: '取消',
     onOk: async () => {
