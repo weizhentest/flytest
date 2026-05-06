@@ -3,6 +3,9 @@ import { request } from '@/utils/request'
 export interface ProfileData {
   id: number
   username: string
+  username_changed_at?: string | null
+  username_next_editable_at?: string | null
+  can_change_username?: boolean
   email: string
   first_name: string
   last_name: string
@@ -14,6 +17,7 @@ export interface ProfileData {
 }
 
 export interface UpdateProfilePayload {
+  username?: string
   email: string
   real_name?: string
   phone_number?: string

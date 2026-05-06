@@ -8,6 +8,7 @@ from django.core.cache import cache
 from django.conf import settings
 from django.db.utils import OperationalError
 from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient, APIRequestFactory
 
@@ -232,15 +233,17 @@ class UserRegistrationApprovalTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        user = User.objects.get(username="1")
+        user = User.objects.get(profile__phone_number="13800000000")
         self.assertFalse(user.is_staff)
+        self.assertRegex(user.username, r"^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$")
+        self.assertFalse(user.username.isdigit())
         self.assertEqual(user.profile.phone_number, "13800000000")
         self.assertEqual(user.profile.real_name, "张三")
         approval = user.approval_record
         self.assertEqual(approval.status, UserApproval.STATUS_PENDING)
         self.assertFalse(is_user_approved(user))
 
-    def test_register_auto_assigns_incrementing_numeric_username(self):
+    def test_register_auto_assigns_unique_alphanumeric_username(self):
         first_response = self.client.post(
             "/api/accounts/register/",
             {
@@ -262,8 +265,11 @@ class UserRegistrationApprovalTests(TestCase):
 
         self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(User.objects.filter(username="1").exists())
-        self.assertTrue(User.objects.filter(username="2").exists())
+        first_user = User.objects.get(profile__phone_number="13800000001")
+        second_user = User.objects.get(profile__phone_number="13800000002")
+        self.assertNotEqual(first_user.username, second_user.username)
+        self.assertRegex(first_user.username, r"^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$")
+        self.assertRegex(second_user.username, r"^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$")
 
     def test_register_rejects_invalid_phone_number(self):
         response = self.client.post(
@@ -338,7 +344,7 @@ class UserRegistrationApprovalTests(TestCase):
         )
         self.assertEqual(register_response.status_code, status.HTTP_201_CREATED)
 
-        user = User.objects.get(username="1")
+        user = User.objects.get(profile__phone_number="13800000005")
         ensure_user_approval_record(user, status=UserApproval.STATUS_APPROVED)
 
         response = self.client.post(
@@ -349,7 +355,7 @@ class UserRegistrationApprovalTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_login_rejects_non_phone_username(self):
+    def test_login_supports_system_username(self):
         user = User.objects.create_user(
             username="phone-only-user",
             email="phone-only@example.com",
@@ -366,8 +372,7 @@ class UserRegistrationApprovalTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("username", response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @patch.dict(RegisterRateThrottle.THROTTLE_RATES, {"register": "1/hour"}, clear=False)
     def test_failed_register_attempts_do_not_consume_throttle_quota(self):
@@ -566,6 +571,7 @@ class CurrentUserProfileTests(TestCase):
         response = self.client.put(
             "/api/accounts/profile/",
             {
+                "username": "profileuser01",
                 "email": "updated-profile@example.com",
                 "phone_number": "13800000000",
                 "real_name": "张三",
@@ -575,9 +581,11 @@ class CurrentUserProfileTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "profileuser01")
         self.assertEqual(self.user.email, "updated-profile@example.com")
         self.assertEqual(self.user.profile.phone_number, "13800000000")
         self.assertEqual(self.user.profile.real_name, "张三")
+        self.assertIsNotNone(self.user.profile.username_changed_at)
 
     def test_updated_profile_is_visible_in_user_management_list(self):
         admin = User.objects.create_user(
@@ -632,6 +640,40 @@ class CurrentUserProfileTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertEqual(self.user.profile.phone_number, "13900000000")
+
+    def test_profile_rejects_duplicate_username(self):
+        User.objects.create_user(
+            username="profileuser88",
+            email="another@example.com",
+            password="Testpass123!",
+        )
+
+        response = self.client.put(
+            "/api/accounts/profile/",
+            {
+                "username": "profileuser88",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("username", response.data)
+
+    def test_profile_rejects_second_username_change_within_30_days(self):
+        profile = ensure_user_profile(self.user)
+        profile.username_changed_at = timezone.now()
+        profile.save(update_fields=["username_changed_at", "updated_at"])
+
+        response = self.client.put(
+            "/api/accounts/profile/",
+            {
+                "username": "profileuser99",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("username", response.data)
 
     def test_change_password_invalidates_existing_access_and_refresh_tokens(self):
         self.client.force_authenticate(user=None)

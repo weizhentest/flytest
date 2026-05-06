@@ -1,8 +1,11 @@
 import re
+import secrets
+import string
 
 from django.contrib.auth.models import User, Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from django.utils.translation import gettext_lazy as _
@@ -228,6 +231,8 @@ PERMISSION_NAME_TRANSLATIONS = {
 
 CHINA_MOBILE_REGEX = re.compile(r"^1[3-9]\d{9}$")
 CHINESE_REAL_NAME_REGEX = re.compile(r"^[\u4e00-\u9fff·]{2,20}$")
+SYSTEM_USERNAME_REGEX = re.compile(r"^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$")
+SYSTEM_USERNAME_CHANGE_INTERVAL_DAYS = 30
 
 
 def normalize_phone_number(value):
@@ -266,12 +271,44 @@ def validate_real_name_value(value, *, allow_blank=False):
     return real_name
 
 
-def generate_next_numeric_username():
-    max_numeric_username = 0
-    for username in User.objects.values_list("username", flat=True):
-        if username and username.isdigit():
-            max_numeric_username = max(max_numeric_username, int(username))
-    return str(max_numeric_username + 1)
+def validate_system_username_value(value, *, exclude_user_id=None):
+    username = (value or "").strip()
+    if not username:
+        raise serializers.ValidationError("系统用户名不能为空。")
+    if not SYSTEM_USERNAME_REGEX.fullmatch(username):
+        raise serializers.ValidationError("系统用户名至少 3 位，仅支持字母或字母+数字组合，且不能为纯数字。")
+
+    existing = User.objects.filter(username__iexact=username)
+    if exclude_user_id is not None:
+        existing = existing.exclude(id=exclude_user_id)
+    if existing.exists():
+        raise serializers.ValidationError("该系统用户名已存在，请更换后重试。")
+    return username
+
+
+def generate_random_system_username(length=8):
+    alphabet = string.ascii_lowercase + string.digits
+    prefix = "ft"
+    random_length = max(1, length - len(prefix))
+    for _ in range(20):
+        candidate = prefix + "".join(secrets.choice(alphabet) for _ in range(random_length))
+        if not User.objects.filter(username__iexact=candidate).exists():
+            return candidate
+    raise serializers.ValidationError({"username": "系统分配用户名失败，请稍后重试。"})
+
+
+def get_username_next_editable_at(profile):
+    changed_at = getattr(profile, "username_changed_at", None)
+    if not changed_at:
+        return None
+    return changed_at + timezone.timedelta(days=SYSTEM_USERNAME_CHANGE_INTERVAL_DAYS)
+
+
+def can_change_username(profile):
+    next_editable_at = get_username_next_editable_at(profile)
+    if not next_editable_at:
+        return True
+    return timezone.now() >= next_editable_at
 
 
 class UserApprovalMixin(serializers.Serializer):
@@ -306,6 +343,9 @@ class UserApprovalMixin(serializers.Serializer):
 class UserProfileMixin(serializers.Serializer):
     phone_number = serializers.SerializerMethodField()
     real_name = serializers.SerializerMethodField()
+    username_changed_at = serializers.SerializerMethodField()
+    username_next_editable_at = serializers.SerializerMethodField()
+    can_change_username = serializers.SerializerMethodField()
 
     def get_phone_number(self, obj):
         profile = get_user_profile(obj)
@@ -314,6 +354,18 @@ class UserProfileMixin(serializers.Serializer):
     def get_real_name(self, obj):
         profile = get_user_profile(obj)
         return profile.real_name if profile else ""
+
+    def get_username_changed_at(self, obj):
+        profile = get_user_profile(obj)
+        return getattr(profile, "username_changed_at", None) if profile else None
+
+    def get_username_next_editable_at(self, obj):
+        profile = get_user_profile(obj)
+        return get_username_next_editable_at(profile) if profile else None
+
+    def get_can_change_username(self, obj):
+        profile = get_user_profile(obj)
+        return can_change_username(profile) if profile else True
 
 
 class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSerializer):
@@ -343,6 +395,9 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
             "approval_review_note",
             "approval_reviewed_at",
             "approval_reviewed_by",
+            "username_changed_at",
+            "username_next_editable_at",
+            "can_change_username",
         )  # 添加管理员相关字段
 
     def validate_phone_number(self, value):
@@ -358,6 +413,14 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
         allow_blank = not bool(self.context.get("registration_mode"))
         return validate_real_name_value(value, allow_blank=allow_blank)
 
+    def validate_username(self, value):
+        if not value and bool(self.context.get("registration_mode")):
+            return value
+        return validate_system_username_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+        )
+
     def validate(self, attrs):
         registration_mode = bool(self.context.get("registration_mode"))
         if registration_mode:
@@ -369,14 +432,19 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
                 attrs.get("real_name"),
                 allow_blank=False,
             )
-            attrs["username"] = generate_next_numeric_username()
+            attrs["username"] = generate_random_system_username()
             attrs["email"] = (attrs.get("email") or "").strip()
+        elif attrs.get("username"):
+            attrs["username"] = validate_system_username_value(
+                attrs.get("username"),
+                exclude_user_id=self.instance.id if self.instance else None,
+            )
 
         return attrs
 
     def create(self, validated_data):
         registration_mode = bool(self.context.get("registration_mode"))
-        username = validated_data.get("username") or generate_next_numeric_username()
+        username = validated_data.get("username") or generate_random_system_username()
 
         for _ in range(5):
             try:
@@ -403,7 +471,7 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
             except IntegrityError:
                 if not registration_mode:
                     raise
-                username = generate_next_numeric_username()
+                username = generate_random_system_username()
 
         raise serializers.ValidationError({"username": "系统分配用户名失败，请稍后重试。"})
 
@@ -433,6 +501,9 @@ class UserDetailSerializer(UserApprovalMixin, UserProfileMixin, serializers.Mode
             "approval_review_note",
             "approval_reviewed_at",
             "approval_reviewed_by",
+            "username_changed_at",
+            "username_next_editable_at",
+            "can_change_username",
         )  # 根据需要添加更多字段
         read_only_fields = fields
 
@@ -488,6 +559,12 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
     def validate_real_name(self, value):
         return validate_real_name_value(value, allow_blank=True)
+
+    def validate_username(self, value):
+        return validate_system_username_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+        )
 
     def update(self, instance, validated_data):
         # 信号处理器会自动处理管理员权限分配，这里只需要正常更新用户
@@ -1082,6 +1159,7 @@ class UserApprovalReviewSerializer(serializers.Serializer):
 
 
 class CurrentUserProfileSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False)
     email = serializers.EmailField(required=False)
     phone_number = serializers.CharField(required=False, allow_blank=True, max_length=30)
     real_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
@@ -1096,15 +1174,47 @@ class CurrentUserProfileSerializer(serializers.Serializer):
     def validate_real_name(self, value):
         return validate_real_name_value(value, allow_blank=True)
 
+    def validate_username(self, value):
+        return validate_system_username_value(
+            value,
+            exclude_user_id=self.instance.id if self.instance else None,
+        )
+
+    def validate(self, attrs):
+        username = attrs.get("username")
+        if not username:
+            return attrs
+
+        profile = ensure_user_profile(self.instance)
+        if username == self.instance.username:
+            return attrs
+        if not can_change_username(profile):
+            next_editable_at = get_username_next_editable_at(profile)
+            next_label = timezone.localtime(next_editable_at).strftime("%Y-%m-%d %H:%M") if next_editable_at else ""
+            raise serializers.ValidationError(
+                {"username": f"系统用户名每 30 天只能修改一次，请在 {next_label} 后再试。"}
+            )
+        return attrs
+
     def update(self, instance, validated_data):
+        profile = ensure_user_profile(instance)
+        update_fields = []
+        username = validated_data.get("username")
+        if username and username != instance.username:
+            instance.username = username
+            update_fields.append("username")
+            profile.username_changed_at = timezone.now()
         if "email" in validated_data:
             instance.email = validated_data["email"]
-            instance.save(update_fields=["email"])
-
-        profile = ensure_user_profile(instance)
+            update_fields.append("email")
+        if update_fields:
+            instance.save(update_fields=update_fields)
         profile.phone_number = validated_data.get("phone_number", profile.phone_number)
         profile.real_name = validated_data.get("real_name", profile.real_name)
-        profile.save(update_fields=["phone_number", "real_name", "updated_at"])
+        profile_update_fields = ["phone_number", "real_name", "updated_at"]
+        if "username" in validated_data and username and username == instance.username:
+            profile_update_fields.append("username_changed_at")
+        profile.save(update_fields=profile_update_fields)
         return instance
 
 
@@ -1154,10 +1264,11 @@ class MyTokenObtainPairSerializer(BaseTokenObtainPairSerializer):
 
     def validate(self, attrs):
         username = (attrs.get("username") or "").strip()
-        if not CHINA_MOBILE_REGEX.fullmatch(username):
-            raise serializers.ValidationError({"username": "请输入手机号。"})
-
-        matched_user = User.objects.filter(profile__phone_number=username).first()
+        matched_user = (
+            User.objects.filter(profile__phone_number=username).first()
+            if CHINA_MOBILE_REGEX.fullmatch(username)
+            else None
+        )
         if matched_user:
             attrs = attrs.copy()
             attrs["username"] = matched_user.username

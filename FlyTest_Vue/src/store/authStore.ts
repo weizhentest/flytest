@@ -257,7 +257,7 @@ export const useAuthStore = defineStore('auth', {
       this.hydrateFromStorage()
     },
 
-    async register(realName: string, phoneNumber: string, password: string): Promise<boolean> {
+    async register(realName: string, phoneNumber: string, password: string): Promise<AuthServiceRegisterResponse> {
       this.isLoading = true
       this.registerError = null
 
@@ -265,14 +265,17 @@ export const useAuthStore = defineStore('auth', {
         const response: AuthServiceRegisterResponse = await registerService(realName, phoneNumber, password)
         if (response.success && response.data) {
           this.logout()
-          return true
+          return response
         }
 
         this.registerError = response.error || '注册失败，请检查您输入的信息。'
-        return false
+        return response
       } catch (error: any) {
         this.registerError = error.message || '发生未知错误，请稍后再试。'
-        return false
+        return {
+          success: false,
+          error: this.registerError,
+        }
       } finally {
         this.isLoading = false
       }

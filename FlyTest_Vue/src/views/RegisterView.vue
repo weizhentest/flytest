@@ -128,6 +128,22 @@
           {{ registerError }}
         </div>
 
+        <div v-if="registerSuccess.username" class="register-tip">
+          <div class="success-title">注册成功</div>
+          <div class="success-row">
+            <span class="success-label">系统用户名</span>
+            <code class="success-username">{{ registerSuccess.username }}</code>
+          </div>
+          <div class="success-row">
+            <span class="success-label">登录方式</span>
+            <span>系统用户名 + 密码，或手机号 + 密码</span>
+          </div>
+          <div class="success-row">
+            <span class="success-label">审核状态</span>
+            <span>请等待管理员审核后再登录</span>
+          </div>
+        </div>
+
         <div class="login-link">
           <p>
             已有账号？
@@ -141,7 +157,6 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { Message } from '@arco-design/web-vue';
 import { useAuthStore } from '@/store/authStore';
 import { brandLogoUrl } from '@/utils/assetUrl';
@@ -149,7 +164,6 @@ import { brandLogoUrl } from '@/utils/assetUrl';
 const CHINA_MOBILE_REGEX = /^1[3-9]\d{9}$/;
 const CHINESE_REAL_NAME_REGEX = /^[\u4e00-\u9fff·]{2,20}$/;
 
-const router = useRouter();
 const authStore = useAuthStore();
 
 const formState = reactive({
@@ -161,6 +175,9 @@ const formState = reactive({
 
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
+const registerSuccess = reactive({
+  username: '',
+});
 
 const isLoading = computed(() => authStore.getIsLoading);
 const registerError = computed(() => authStore.getRegisterError);
@@ -203,10 +220,15 @@ const handleSubmit = async () => {
   }
 
   try {
-    const success = await authStore.register(formState.realName, formState.phoneNumber, formState.password);
-    if (success) {
-      Message.success('注册成功，请等待管理员审核后再登录');
-      router.push('/login');
+    registerSuccess.username = '';
+    const result = await authStore.register(formState.realName, formState.phoneNumber, formState.password);
+    if (result.success && result.data) {
+      registerSuccess.username = result.data.username || '';
+      Message.success(`注册成功，系统用户名：${registerSuccess.username}`);
+      formState.realName = '';
+      formState.phoneNumber = '';
+      formState.password = '';
+      formState.confirmPassword = '';
     }
   } catch (error) {
     console.error('Exception during authStore.register call:', error);
@@ -437,6 +459,33 @@ const handleSubmit = async () => {
   color: #4b5563;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.success-title {
+  margin-bottom: 8px;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.success-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.success-label {
+  min-width: 72px;
+  color: #6b7280;
+}
+
+.success-username {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(var(--theme-accent-rgb), 0.14);
+  color: var(--theme-accent);
+  font-size: 13px;
 }
 
 .login-link {

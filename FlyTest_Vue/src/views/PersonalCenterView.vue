@@ -2,7 +2,7 @@
   <div class="personal-center">
     <div class="page-header">
       <h2>个人中心</h2>
-      <p>维护姓名、登录手机号、联系邮箱与账号安全信息。</p>
+      <p>维护系统用户名、姓名、登录手机号、联系邮箱与账号安全信息。</p>
     </div>
 
     <div class="center-layout">
@@ -24,7 +24,10 @@
               <div class="profile-readonly">
                 <div class="readonly-item">
                   <span class="readonly-label">系统用户名</span>
-                  <span class="readonly-value">{{ profileForm.username || '-' }}</span>
+                  <div class="readonly-value-group">
+                    <span class="readonly-value">{{ profileForm.username || '-' }}</span>
+                    <span class="readonly-hint">支持系统用户名+密码登录</span>
+                  </div>
                 </div>
                 <div class="readonly-item">
                   <span class="readonly-label">姓名</span>
@@ -56,7 +59,14 @@
 
             <a-form v-else :model="profileForm" layout="vertical" @submit.prevent>
               <a-form-item label="系统用户名">
-                <div class="static-field">{{ profileForm.username || '-' }}</div>
+                <a-input v-model="profileForm.username" placeholder="请输入系统用户名" />
+                <div class="field-tip">
+                  <span>至少 3 位，仅支持字母或字母+数字组合，且不能为纯数字。</span>
+                  <span v-if="!profileForm.can_change_username && profileForm.username_next_editable_at">
+                    下次可修改时间：{{ formatDateTime(profileForm.username_next_editable_at) }}
+                  </span>
+                  <span v-else>系统用户名每 30 天最多修改一次。</span>
+                </div>
               </a-form-item>
 
               <a-form-item label="姓名">
@@ -163,6 +173,9 @@ const passwordLoading = ref(false)
 
 const profileForm = reactive({
   username: '',
+  username_changed_at: '',
+  username_next_editable_at: '',
+  can_change_username: true,
   email: '',
   real_name: '',
   phone_number: '',
@@ -178,9 +191,24 @@ const passwordForm = reactive({
 
 const CHINA_MOBILE_REGEX = /^1[3-9]\d{9}$/
 const CHINESE_REAL_NAME_REGEX = /^[\u4e00-\u9fff·]{2,20}$/
+const SYSTEM_USERNAME_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$/
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
 
 const applyProfileData = (payload: Partial<ProfileData> | null | undefined) => {
   profileForm.username = payload?.username || authStore.currentUser?.username || ''
+  profileForm.username_changed_at = payload?.username_changed_at || ''
+  profileForm.username_next_editable_at = payload?.username_next_editable_at || ''
+  profileForm.can_change_username = payload?.can_change_username ?? true
   profileForm.email = payload?.email || authStore.currentUser?.email || ''
   profileForm.real_name = payload?.real_name || authStore.currentUser?.real_name || ''
   profileForm.phone_number = payload?.phone_number || authStore.currentUser?.phone_number || ''
@@ -216,6 +244,11 @@ const handleSectionChange = (key: string) => {
 }
 
 const handleSaveProfile = async () => {
+  if (!profileForm.username || !SYSTEM_USERNAME_REGEX.test(profileForm.username)) {
+    Message.warning('系统用户名至少 3 位，仅支持字母或字母+数字组合，且不能为纯数字')
+    return
+  }
+
   if (profileForm.real_name && !CHINESE_REAL_NAME_REGEX.test(profileForm.real_name)) {
     Message.warning('姓名仅支持2到20位中文')
     return
@@ -229,6 +262,7 @@ const handleSaveProfile = async () => {
   profileLoading.value = true
   try {
     const response = await updateCurrentProfile({
+      username: profileForm.username,
       email: profileForm.email,
       real_name: profileForm.real_name,
       phone_number: profileForm.phone_number,
@@ -355,6 +389,22 @@ onMounted(() => {
   font-size: 14px;
   color: var(--theme-text);
   word-break: break-all;
+}
+
+.readonly-value-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.readonly-hint,
+.field-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--theme-text-secondary);
 }
 
 .static-field {

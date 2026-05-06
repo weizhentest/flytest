@@ -46,7 +46,7 @@
         </span>
         <span class="launcher-copy">
           <strong>账号登录</strong>
-          <span>请输入手机号登录</span>
+          <span>请输入系统用户名或手机号登录</span>
         </span>
       </button>
     </div>
@@ -70,7 +70,7 @@
 
           <div class="card-header">
             <h2 id="login-title">欢迎回来</h2>
-            <p id="login-description">请输入手机号登录</p>
+            <p id="login-description">请输入系统用户名或手机号登录</p>
           </div>
 
           <form class="login-form" @submit.prevent="handleLogin">
@@ -84,7 +84,7 @@
                 type="text"
                 required
                 autocomplete="username"
-                placeholder="请输入手机号"
+                placeholder="请输入系统用户名或手机号"
                 class="form-input"
               />
             </div>
@@ -194,7 +194,6 @@ const currentYear = new Date().getFullYear()
 const fingerprintAssetCandidates = ['/login-fingerprint.svg', '/login-fingerprint.png'] as const
 const currentFingerprintAssetIndex = ref(0)
 const fingerprintImageLoadFailed = ref(false)
-const CHINA_MOBILE_REGEX = /^1[3-9]\d{9}$/
 const featureTags: FeatureTag[] = [
   {
     label: 'AI生成用例',
@@ -317,12 +316,7 @@ const handleDialogKeydown = (event: KeyboardEvent) => {
 
 const handleLogin = async () => {
   if (!username.value || !password.value) {
-    Message.warning('请输入手机号和密码')
-    return
-  }
-
-  if (!CHINA_MOBILE_REGEX.test(username.value)) {
-    Message.warning('请输入手机号')
+    Message.warning('请输入系统用户名或手机号和密码')
     return
   }
 
