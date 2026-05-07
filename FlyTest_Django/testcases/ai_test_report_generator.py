@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from json_repair import repair_json
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from langgraph_integration.models import get_user_active_llm_config
@@ -20,10 +21,11 @@ TEST_REPORT_SYSTEM_PROMPT = """
 
 要求：
 1. 只能根据输入数据分析，不允许编造版本、环境、根因或结论。
-2. 输出必须是 JSON，不要输出 Markdown，不要输出额外说明。
-3. 重点关注需求覆盖、执行结果、BUG 闭环情况，以及重复复测失败风险。
-4. findings.severity 只能是 high / medium / low。
-5. recommendations.priority 只能是 high / medium / low。
+2. 输出必须是一个合法 JSON 对象，不要输出 Markdown、代码块、注释或额外说明。
+3. 如果某项信息不足，请返回空字符串或空数组，不要输出 null、undefined、N/A、待补充。
+4. 重点关注需求覆盖、执行结果、BUG 闭环情况，以及重复复测失败风险。
+5. findings.severity 只能是 high / medium / low。
+6. recommendations.priority 只能是 high / medium / low。
 
 JSON 结构：
 {
@@ -54,7 +56,7 @@ class IterationTestReportResult:
     evidence: list[dict[str, str]]
 
 
-def _safe_json_loads(text: str) -> dict[str, Any]:
+def _safe_json_loads(text: str) -> Any:
     stripped = (text or "").strip()
     if not stripped:
         raise ValueError("模型未返回内容")
@@ -64,12 +66,36 @@ def _safe_json_loads(text: str) -> dict[str, Any]:
             stripped = stripped[4:].strip()
     try:
         return json.loads(stripped)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as first_error:
         start = stripped.find("{")
         end = stripped.rfind("}")
         if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(stripped[start : end + 1])
+            repaired = repair_json(stripped, skip_json_loads=True)
+            if not repaired:
+                raise first_error
+            return json.loads(repaired)
+
+        candidate = stripped[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            repaired = repair_json(candidate, skip_json_loads=True)
+            if not repaired:
+                raise first_error
+            return json.loads(repaired)
+
+
+def _coerce_report_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        return payload
+
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                return item
+        raise ValueError("AI 返回了列表，但列表中没有可用的报告对象")
+
+    raise ValueError(f"AI 返回的顶层结构不是对象，当前类型为 {type(payload).__name__}")
 
 
 def _normalize_level(value: Any, default: str = "medium") -> str:
@@ -408,7 +434,7 @@ def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> I
             temperature=0.2,
             timeout=AI_TEST_REPORT_TIMEOUT_SECONDS,
         )
-        payload = _safe_json_loads(response_text)
+        payload = _coerce_report_payload(_safe_json_loads(response_text))
 
         summary = _truncate(str(payload.get("summary") or "").strip(), 300) or fallback.summary
         quality_overview = (
@@ -439,6 +465,10 @@ def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> I
         )
     except Exception as exc:
         logger.warning("AI test report generation failed, fallback to rule-based report: %s", exc, exc_info=True)
+        if "response_text" in locals():
+            raw_preview = str(response_text).strip().replace("\r", " ").replace("\n", " ")[:600]
+            if raw_preview:
+                logger.warning("AI test report raw response preview: %s", raw_preview)
         fallback.generation_source = "fallback"
         fallback.generation_status = "fallback"
         fallback.generation_duration_ms = int((time.perf_counter() - started_at) * 1000)

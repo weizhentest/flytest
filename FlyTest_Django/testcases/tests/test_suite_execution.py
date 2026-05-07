@@ -1009,6 +1009,143 @@ class TestSuiteExecutionTests(TestCase):
         self.assertNotEqual(result.summary, "")
         self.assertNotEqual(result.findings, [])
 
+    @patch("testcases.ai_test_report_generator.invoke_plain_text_llm")
+    @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
+    def test_iteration_report_accepts_ai_response_wrapped_in_code_block(
+        self, mock_get_config, mock_invoke_plain_text_llm
+    ):
+        mock_get_config.return_value = SimpleNamespace(name="proxy-key")
+        mock_invoke_plain_text_llm.return_value = """
+分析结果如下：
+```json
+{
+  "summary": "AI 总结",
+  "quality_overview": "AI 质量概览",
+  "risk_overview": "AI 风险概览",
+  "findings": [{"title": "发现1", "detail": "说明1", "severity": "high"}],
+  "recommendations": [{"title": "建议1", "detail": "动作1", "priority": "medium"}],
+  "evidence": [{"label": "证据1", "detail": "证据详情"}]
+}
+```
+"""
+
+        result = generate_iteration_test_report(
+            user=self.user,
+            report_context={
+                "project": {"id": self.project.id, "name": self.project.name},
+                "selected_suite_ids": [self.suite.id],
+                "selected_suite_names": [self.suite.name],
+                "generated_at": "2026-05-02T12:00:00+08:00",
+                "totals": {
+                    "suite_count": 1,
+                    "selected_suite_count": 1,
+                    "testcase_count": 1,
+                    "approved_testcase_count": 1,
+                    "bug_count": 0,
+                },
+                "execution_status_distribution": {"passed": 1},
+                "review_status_distribution": {"approved": 1},
+                "bug_status_distribution": {},
+                "requirement_summary": {},
+                "bug_workflow_summary": {},
+                "suite_breakdown": [],
+            },
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(result.generation_source, "ai")
+        self.assertEqual(result.summary, "AI 总结")
+        self.assertEqual(result.evidence[0]["label"], "证据1")
+
+    @patch("testcases.ai_test_report_generator.invoke_plain_text_llm")
+    @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
+    def test_iteration_report_repairs_non_strict_json_from_ai(self, mock_get_config, mock_invoke_plain_text_llm):
+        mock_get_config.return_value = SimpleNamespace(name="proxy-key")
+        mock_invoke_plain_text_llm.return_value = """
+{
+  summary: 'AI 总结',
+  quality_overview: 'AI 质量概览',
+  risk_overview: 'AI 风险概览',
+  findings: [{title: '发现1', detail: '说明1', severity: high}],
+  recommendations: [{title: '建议1', detail: '动作1', priority: medium}],
+  evidence: [{label: '证据1', detail: '证据详情'}],
+}
+"""
+
+        result = generate_iteration_test_report(
+            user=self.user,
+            report_context={
+                "project": {"id": self.project.id, "name": self.project.name},
+                "selected_suite_ids": [self.suite.id],
+                "selected_suite_names": [self.suite.name],
+                "generated_at": "2026-05-02T12:00:00+08:00",
+                "totals": {
+                    "suite_count": 1,
+                    "selected_suite_count": 1,
+                    "testcase_count": 1,
+                    "approved_testcase_count": 1,
+                    "bug_count": 0,
+                },
+                "execution_status_distribution": {"passed": 1},
+                "review_status_distribution": {"approved": 1},
+                "bug_status_distribution": {},
+                "requirement_summary": {},
+                "bug_workflow_summary": {},
+                "suite_breakdown": [],
+            },
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(result.generation_source, "ai")
+        self.assertEqual(result.summary, "AI 总结")
+        self.assertEqual(result.findings[0]["severity"], "high")
+        self.assertEqual(result.recommendations[0]["priority"], "medium")
+
+    @patch("testcases.ai_test_report_generator.invoke_plain_text_llm")
+    @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
+    def test_iteration_report_accepts_list_wrapped_ai_payload(self, mock_get_config, mock_invoke_plain_text_llm):
+        mock_get_config.return_value = SimpleNamespace(name="proxy-key")
+        mock_invoke_plain_text_llm.return_value = """
+[
+  {
+    "summary": "AI 总结",
+    "quality_overview": "AI 质量概览",
+    "risk_overview": "AI 风险概览",
+    "findings": [{"title": "发现1", "detail": "说明1", "severity": "high"}],
+    "recommendations": [{"title": "建议1", "detail": "动作1", "priority": "medium"}],
+    "evidence": [{"label": "证据1", "detail": "证据详情"}]
+  }
+]
+"""
+
+        result = generate_iteration_test_report(
+            user=self.user,
+            report_context={
+                "project": {"id": self.project.id, "name": self.project.name},
+                "selected_suite_ids": [self.suite.id],
+                "selected_suite_names": [self.suite.name],
+                "generated_at": "2026-05-02T12:00:00+08:00",
+                "totals": {
+                    "suite_count": 1,
+                    "selected_suite_count": 1,
+                    "testcase_count": 1,
+                    "approved_testcase_count": 1,
+                    "bug_count": 0,
+                },
+                "execution_status_distribution": {"passed": 1},
+                "review_status_distribution": {"approved": 1},
+                "bug_status_distribution": {},
+                "requirement_summary": {},
+                "bug_workflow_summary": {},
+                "suite_breakdown": [],
+            },
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(result.generation_source, "ai")
+        self.assertEqual(result.summary, "AI 总结")
+        self.assertEqual(result.evidence[0]["label"], "证据1")
+
     @patch("testcases.ai_test_report_generator.invoke_plain_text_llm", side_effect=RuntimeError("Service error"))
     @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
     def test_iteration_report_falls_back_when_ai_call_fails(self, mock_get_config, _mock_invoke_plain_text_llm):
