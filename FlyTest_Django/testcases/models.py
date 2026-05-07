@@ -875,6 +875,8 @@ class TestBug(models.Model):
             return cls.STATUS_PENDING_RETEST
         if status == "closed":
             return cls.STATUS_CLOSED
+        if status == cls.STATUS_EXPIRED:
+            return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
         if status == cls.STATUS_UNASSIGNED:
             return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
         if status == cls.STATUS_ASSIGNED:
@@ -883,15 +885,18 @@ class TestBug(models.Model):
             return status
         return cls.STATUS_ASSIGNED if has_assignees else cls.STATUS_UNASSIGNED
 
-    def get_effective_status(self):
-        normalized_status = self.normalize_status_value(
+    def get_workflow_status(self):
+        return self.normalize_status_value(
             self.status,
             self.assigned_to_id,
             self.has_assignees(),
         )
-        if normalized_status != self.STATUS_CLOSED and self.deadline and self.deadline < timezone.localdate():
+
+    def get_effective_status(self):
+        workflow_status = self.get_workflow_status()
+        if workflow_status != self.STATUS_CLOSED and self.deadline and self.deadline < timezone.localdate():
             return self.STATUS_EXPIRED
-        return normalized_status
+        return workflow_status
 
     def get_effective_status_display(self):
         effective_status = self.get_effective_status()
@@ -899,7 +904,7 @@ class TestBug(models.Model):
 
     def save(self, *args, **kwargs):
         self.clean()
-        self.status = self.normalize_status_value(self.status, self.assigned_to_id)
+        self.status = self.get_workflow_status()
         super().save(*args, **kwargs)
 
     def __str__(self):

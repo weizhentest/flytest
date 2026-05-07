@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,6 +42,10 @@ class IterationTestReportResult:
     used_ai: bool
     note: str
     model_name: str | None
+    generation_source: str
+    generation_status: str
+    generation_duration_ms: int
+    fallback_reason: str
     summary: str
     quality_overview: str
     risk_overview: str
@@ -369,6 +374,10 @@ def build_rule_based_iteration_report(report_context: dict[str, Any]) -> Iterati
         used_ai=False,
         note=note,
         model_name=None,
+        generation_source="rule",
+        generation_status="completed",
+        generation_duration_ms=0,
+        fallback_reason="",
         summary=_truncate(summary, 300),
         quality_overview=_truncate(quality_overview, 300),
         risk_overview=_truncate(risk_overview, 300),
@@ -379,9 +388,11 @@ def build_rule_based_iteration_report(report_context: dict[str, Any]) -> Iterati
 
 
 def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> IterationTestReportResult:
+    started_at = time.perf_counter()
     fallback = build_rule_based_iteration_report(report_context)
     active_config = get_user_active_llm_config(user)
     if not active_config:
+        fallback.generation_duration_ms = int((time.perf_counter() - started_at) * 1000)
         return fallback
 
     model_name = getattr(active_config, "name", None) or None
@@ -415,6 +426,10 @@ def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> I
             used_ai=True,
             note="测试报告已通过 AI 分析接口生成，并结合当前测试数据完成结构化整理。",
             model_name=model_name,
+            generation_source="ai",
+            generation_status="completed",
+            generation_duration_ms=int((time.perf_counter() - started_at) * 1000),
+            fallback_reason="",
             summary=summary,
             quality_overview=quality_overview,
             risk_overview=risk_overview,
@@ -424,8 +439,14 @@ def generate_iteration_test_report(*, user, report_context: dict[str, Any]) -> I
         )
     except Exception as exc:
         logger.warning("AI test report generation failed, fallback to rule-based report: %s", exc, exc_info=True)
+        fallback.generation_source = "fallback"
+        fallback.generation_status = "fallback"
+        fallback.generation_duration_ms = int((time.perf_counter() - started_at) * 1000)
+        fallback.fallback_reason = str(exc)
         fallback.note = (
             f"AI 分析接口调用失败或超时（最长等待 {AI_TEST_REPORT_TIMEOUT_SECONDS} 秒），"
             f"已自动切换为规则生成报告。原因：{exc}"
         )
+    else:
+        fallback.generation_duration_ms = int((time.perf_counter() - started_at) * 1000)
     return fallback

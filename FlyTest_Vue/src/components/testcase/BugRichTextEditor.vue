@@ -225,11 +225,26 @@ const handleFileChange = (event: Event) => {
   outline: none;
   line-height: 1.7;
   word-break: break-word;
+  text-align: left;
 }
 
 .editor-surface:empty::before {
   content: attr(data-placeholder);
   color: var(--color-text-3);
+  text-align: left;
+  display: block;
+}
+
+.editor-surface :deep(p),
+.editor-surface :deep(ol),
+.editor-surface :deep(ul),
+.editor-surface :deep(li),
+.editor-surface :deep(blockquote),
+.editor-surface :deep(pre),
+.editor-surface :deep(h1),
+.editor-surface :deep(h2),
+.editor-surface :deep(h3) {
+  text-align: left;
 }
 
 .hidden-file-input {

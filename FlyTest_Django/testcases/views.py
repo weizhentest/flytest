@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.db import transaction, close_old_connections
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.http import HttpResponse
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -3204,45 +3204,52 @@ class TestBugViewSet(viewsets.ModelViewSet):
             TestBug.STATUS_ASSIGNED,
             TestBug.STATUS_CONFIRMED,
         }
+        workflow_status = bug.get_workflow_status()
         effective_status = bug.get_effective_status()
         previous_status = previous_status or effective_status
         changed_fields = set()
 
         if status_explicit:
-            if effective_status in active_statuses:
+            if workflow_status in active_statuses:
                 if bug.resolution:
                     bug.resolution = ""
                     changed_fields.add("resolution")
-            elif effective_status in resolved_statuses and not bug.resolution:
+            elif workflow_status in resolved_statuses and not bug.resolution:
                 bug.resolution = "fixed"
                 changed_fields.add("resolution")
         elif resolution_explicit:
             if bug.resolution:
-                if effective_status in active_statuses:
+                if workflow_status in active_statuses:
                     bug.status = TestBug.STATUS_FIXED
-                    effective_status = TestBug.STATUS_FIXED
+                    workflow_status = TestBug.STATUS_FIXED
                     changed_fields.add("status")
-            elif effective_status in resolved_statuses:
+            elif workflow_status in resolved_statuses:
                 bug.status = self._get_default_unresolved_bug_status(
                     bug,
                     prefer_confirmed=prefer_confirmed_when_reopen,
                 )
-                effective_status = bug.status
+                workflow_status = bug.status
                 changed_fields.add("status")
         else:
-            if bug.resolution and effective_status in active_statuses:
+            if bug.resolution and workflow_status in active_statuses:
                 bug.status = TestBug.STATUS_FIXED
-                effective_status = TestBug.STATUS_FIXED
+                workflow_status = TestBug.STATUS_FIXED
                 changed_fields.add("status")
-            elif not bug.resolution and effective_status in resolved_statuses:
+            elif not bug.resolution and workflow_status in resolved_statuses:
                 bug.status = self._get_default_unresolved_bug_status(
                     bug,
                     prefer_confirmed=prefer_confirmed_when_reopen,
                 )
-                effective_status = bug.status
+                workflow_status = bug.status
                 changed_fields.add("status")
 
-        if effective_status in active_statuses:
+        effective_status = (
+            TestBug.STATUS_EXPIRED
+            if workflow_status != TestBug.STATUS_CLOSED and bug.deadline and bug.deadline < timezone.localdate()
+            else workflow_status
+        )
+
+        if workflow_status in active_statuses:
             if bug.resolution:
                 bug.resolution = ""
                 changed_fields.add("resolution")
@@ -3259,7 +3266,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
                 bug.closed_at = None
                 changed_fields.add("closed_at")
 
-        if effective_status in {TestBug.STATUS_FIXED, TestBug.STATUS_PENDING_RETEST}:
+        if workflow_status in {TestBug.STATUS_FIXED, TestBug.STATUS_PENDING_RETEST}:
             if not bug.resolution:
                 bug.resolution = "fixed"
                 changed_fields.add("resolution")
@@ -3273,7 +3280,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
                 bug.closed_at = None
                 changed_fields.add("closed_at")
 
-        if effective_status == TestBug.STATUS_CLOSED:
+        if workflow_status == TestBug.STATUS_CLOSED:
             if not bug.resolution:
                 bug.resolution = "fixed"
                 changed_fields.add("resolution")
@@ -3286,7 +3293,7 @@ class TestBugViewSet(viewsets.ModelViewSet):
             changed_fields.update({"closed_by", "closed_at"})
 
         if previous_status != effective_status:
-            bug.status = effective_status
+            bug.status = workflow_status
             changed_fields.add("status")
 
         if changed_fields:
@@ -4118,6 +4125,34 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
     def _get_snapshot_queryset(self, project):
         return TestReportSnapshot.objects.filter(project=project).select_related("creator")
 
+    def _normalize_report_suite_ids(self, project, suite_ids, *, allow_empty=False):
+        if not isinstance(suite_ids, list):
+            return None, Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            normalized_suite_ids = [int(item) for item in suite_ids]
+        except (TypeError, ValueError):
+            return None, Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_suite_ids = list(dict.fromkeys(normalized_suite_ids))
+        if not allow_empty and not normalized_suite_ids:
+            return None, Response({"error": "请至少选择一个测试套件"}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_suite_ids = set(
+            TestSuite.objects.filter(project=project, id__in=normalized_suite_ids).values_list("id", flat=True)
+        )
+        missing_ids = [item for item in normalized_suite_ids if item not in existing_suite_ids]
+        if missing_ids:
+            return (
+                None,
+                Response(
+                    {"error": f"以下测试套件不存在或不属于当前项目: {missing_ids}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                ),
+            )
+
+        return normalized_suite_ids, None
+
     def get_permissions(self):
         """返回当前视图所需的权限实例列表。"""
         from .permissions import IsProjectMemberForTestExecution
@@ -4311,39 +4346,15 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
     def ai_report(self, request, project_pk=None):
         project = get_object_or_404(Project, pk=project_pk)
         suite_ids = request.data.get("suite_ids") or []
-
-        if not isinstance(suite_ids, list) or not suite_ids:
-            return Response(
-                {"error": "请至少选择一个测试套件"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            selected_suite_ids = [int(item) for item in suite_ids]
-        except (TypeError, ValueError):
-            return Response(
-                {"error": "测试套件参数格式错误"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        selected_suite_ids, error_response = self._normalize_report_suite_ids(project, suite_ids)
+        if error_response is not None:
+            return error_response
 
         selected_suites = list(
             TestSuite.objects.filter(project=project, id__in=selected_suite_ids)
             .select_related("parent", "creator")
             .prefetch_related("children")
         )
-        if not selected_suites:
-            return Response(
-                {"error": "未找到可生成报告的测试套件"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        found_suite_ids = {suite.id for suite in selected_suites}
-        missing_ids = [item for item in selected_suite_ids if item not in found_suite_ids]
-        if missing_ids:
-            return Response(
-                {"error": f"以下测试套件不存在或不属于当前项目: {missing_ids}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         expanded_suite_ids = set()
         for suite in selected_suites:
@@ -4359,14 +4370,21 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
         testcase_queryset = (
             TestCase.objects.filter(test_suites__id__in=expanded_suite_ids)
             .select_related("module", "creator")
-            .prefetch_related("steps")
+            .prefetch_related(
+                "steps",
+                Prefetch(
+                    "test_suites",
+                    queryset=TestSuite.objects.filter(id__in=expanded_suite_ids).only("id", "name"),
+                    to_attr="report_test_suites",
+                ),
+            )
             .distinct()
         )
         testcases = list(testcase_queryset)
         testcase_ids = [testcase.id for testcase in testcases]
 
         assignment_map = {
-            assignment.testcase_id: assignment
+            (assignment.suite_id, assignment.testcase_id): assignment
             for assignment in TestCaseAssignment.objects.filter(
                 testcase_id__in=testcase_ids,
                 suite_id__in=expanded_suite_ids,
@@ -4392,11 +4410,9 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
 
         suite_case_map: dict[int, list[TestCase]] = {suite.id: [] for suite in suites}
         for testcase in testcases:
-            linked_suite_ids = list(
-                testcase.test_suites.filter(id__in=expanded_suite_ids).values_list("id", flat=True)
-            )
-            for suite_id in linked_suite_ids:
-                suite_case_map.setdefault(suite_id, []).append(testcase)
+            linked_suites = list(getattr(testcase, "report_test_suites", []))
+            for suite in linked_suites:
+                suite_case_map.setdefault(suite.id, []).append(testcase)
 
             execution_status_distribution[testcase.execution_status] = (
                 execution_status_distribution.get(testcase.execution_status, 0) + 1
@@ -4419,7 +4435,24 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
 
         testcase_payload = []
         for testcase in testcases:
-            assignment = assignment_map.get(testcase.id)
+            linked_suites = list(getattr(testcase, "report_test_suites", []))
+            testcase_assignments = []
+            assignment_names = []
+            for suite in linked_suites:
+                assignment = assignment_map.get((suite.id, testcase.id))
+                if not assignment:
+                    continue
+                assignee_name = assignment.assignee.username if assignment.assignee else ""
+                testcase_assignments.append(
+                    {
+                        "suite_id": suite.id,
+                        "suite_name": suite.name,
+                        "assignee": assignee_name,
+                        "assigned_at": assignment.created_at.isoformat() if assignment.created_at else None,
+                    }
+                )
+                if assignee_name and assignee_name not in assignment_names:
+                    assignment_names.append(assignee_name)
             steps_payload = [
                 {
                     "step_number": getattr(step, "step_number", index + 1),
@@ -4440,8 +4473,9 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
                     "execution_status": testcase.execution_status,
                     "executed_at": testcase.executed_at.isoformat() if testcase.executed_at else None,
                     "creator": testcase.creator.username if testcase.creator else "",
-                    "assignee": assignment.assignee.username if assignment and assignment.assignee else "",
-                    "assigned_at": assignment.created_at.isoformat() if assignment and assignment.created_at else None,
+                    "assignee": "、".join(assignment_names),
+                    "assigned_at": testcase_assignments[0]["assigned_at"] if len(testcase_assignments) == 1 else None,
+                    "assignments": testcase_assignments,
                     "steps": steps_payload,
                     "notes": testcase.notes or "",
                     "related_bug_count": getattr(testcase, "related_bug_count", None),
@@ -4925,6 +4959,11 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
 
         completion_criteria = [
             {
+                "name": "测试范围内至少已有有效执行结果",
+                "passed": executed_count > 0,
+                "detail": f"当前已执行用例 {executed_count} 条，未执行用例 {not_executed_count} 条",
+            },
+            {
                 "name": "无未关闭致命/严重缺陷",
                 "passed": high_severity_open_bug_count == 0,
                 "detail": f"当前未关闭致命/严重缺陷 {high_severity_open_bug_count} 个",
@@ -4961,37 +5000,44 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             },
         ]
         passed_criteria_count = sum(1 for item in completion_criteria if item["passed"])
+        all_criteria_passed = passed_criteria_count == len(completion_criteria)
+        has_blocking_quality_risk = any(
+            [
+                len(testcases) == 0,
+                approved_testcase_count == 0 and len(testcases) > 0,
+                unapproved_testcase_count > 0,
+                executed_count == 0 and len(testcases) > 0,
+                high_severity_open_bug_count > 0,
+                failed_count > 0,
+            ]
+        )
+        has_residual_release_risk = any(
+            [
+                len(open_bugs) > 0,
+                bug_workflow_summary["retest_failed_total_count"] > 0,
+                not_executed_count > 0,
+                unlinked_testcase_count > 0,
+            ]
+        )
 
         if len(testcases) == 0:
             quality_rating = "不合格"
             release_recommendation = "不建议发布"
-        elif approved_testcase_count == 0:
+        elif has_blocking_quality_risk:
             quality_rating = "不合格"
             release_recommendation = "不建议发布"
-        elif unapproved_testcase_count > 0:
-            quality_rating = "不合格"
-            release_recommendation = "不建议发布"
-        elif executed_count == 0:
-            quality_rating = "不合格"
-            release_recommendation = "不建议发布"
-        elif high_severity_open_bug_count > 0:
-            quality_rating = "不合格"
-            release_recommendation = "不建议发布"
-        elif failed_count > 0:
-            quality_rating = "不合格"
-            release_recommendation = "不建议发布"
-        elif len(open_bugs) > 0 or bug_workflow_summary["retest_failed_total_count"] > 0:
+        elif all_criteria_passed:
+            quality_rating = "优"
+            release_recommendation = "建议发布"
+        elif has_residual_release_risk:
             quality_rating = "良"
             release_recommendation = "有条件发布"
-        elif not_executed_count > 0 or unlinked_testcase_count > 0:
+        elif passed_criteria_count >= len(completion_criteria) - 1:
             quality_rating = "合格"
-            release_recommendation = "有条件发布"
-        elif passed_criteria_count == len(completion_criteria):
-            quality_rating = "优"
             release_recommendation = "建议发布"
         else:
             quality_rating = "良"
-            release_recommendation = "建议发布"
+            release_recommendation = "有条件发布"
 
         process_risks = []
         if unapproved_testcase_count > 0:
@@ -5023,6 +5069,10 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             )
         if not_executed_count > 0:
             residual_risks.append(f"未执行用例 {not_executed_count} 条，剩余需求覆盖与边界风险仍未被完全验证。")
+        if unlinked_testcase_count > 0:
+            residual_risks.append(
+                f"仍有 {unlinked_testcase_count} 条测试用例未完成需求追踪映射，发布后的问题回溯与覆盖证明存在缺口。"
+            )
 
         follow_up_actions = []
         if unapproved_testcase_count > 0:
@@ -5187,6 +5237,33 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
             },
         }
 
+        normalized_findings = [
+            {
+                "title": str(item.get("title") or "").strip(),
+                "detail": str(item.get("detail") or "").strip(),
+                "severity": str(item.get("severity") or "medium").strip().lower() or "medium",
+            }
+            for item in (report_result.findings or [])
+            if isinstance(item, dict) and str(item.get("title") or "").strip() and str(item.get("detail") or "").strip()
+        ]
+        normalized_recommendations = [
+            {
+                "title": str(item.get("title") or "").strip(),
+                "detail": str(item.get("detail") or "").strip(),
+                "priority": str(item.get("priority") or "medium").strip().lower() or "medium",
+            }
+            for item in (report_result.recommendations or [])
+            if isinstance(item, dict) and str(item.get("title") or "").strip() and str(item.get("detail") or "").strip()
+        ]
+        normalized_evidence = [
+            {
+                "label": str(item.get("label") or "").strip(),
+                "detail": str(item.get("detail") or "").strip(),
+            }
+            for item in (report_result.evidence or [])
+            if isinstance(item, dict) and str(item.get("label") or "").strip() and str(item.get("detail") or "").strip()
+        ]
+
         return Response(
             {
                 "success": True,
@@ -5200,12 +5277,16 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
                     "used_ai": report_result.used_ai,
                     "note": report_result.note,
                     "model_name": report_result.model_name,
-                    "summary": report_result.summary,
-                    "quality_overview": report_result.quality_overview,
-                    "risk_overview": report_result.risk_overview,
-                    "findings": report_result.findings,
-                    "recommendations": report_result.recommendations,
-                    "evidence": report_result.evidence,
+                    "generation_source": getattr(report_result, "generation_source", "ai" if report_result.used_ai else "rule"),
+                    "generation_status": getattr(report_result, "generation_status", "completed"),
+                    "generation_duration_ms": getattr(report_result, "generation_duration_ms", 0),
+                    "fallback_reason": getattr(report_result, "fallback_reason", ""),
+                    "summary": str(report_result.summary or "").strip(),
+                    "quality_overview": str(report_result.quality_overview or "").strip(),
+                    "risk_overview": str(report_result.risk_overview or "").strip(),
+                    "findings": normalized_findings,
+                    "recommendations": normalized_recommendations,
+                    "evidence": normalized_evidence,
                     "suite_breakdown": suite_breakdown,
                     "execution_status_distribution": execution_status_distribution,
                     "bug_status_distribution": bug_status_distribution,
@@ -5233,15 +5314,12 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
 
         if not title:
             return Response({"error": "快照标题不能为空"}, status=status.HTTP_400_BAD_REQUEST)
-        if not isinstance(suite_ids, list):
-            return Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
         if not isinstance(report_data, dict):
             return Response({"error": "报告数据格式错误"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            normalized_suite_ids = [int(item) for item in suite_ids]
-        except (TypeError, ValueError):
-            return Response({"error": "测试套件参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_suite_ids, error_response = self._normalize_report_suite_ids(project, suite_ids)
+        if error_response is not None:
+            return error_response
 
         snapshot = TestReportSnapshot.objects.create(
             project=project,
@@ -5285,12 +5363,9 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
 
         if "suite_ids" in request.data:
             suite_ids = request.data.get("suite_ids") or []
-            if not isinstance(suite_ids, list):
-                return Response({"error": "suite_ids 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
-            try:
-                normalized_suite_ids = [int(item) for item in suite_ids]
-            except (TypeError, ValueError):
-                return Response({"error": "suite_ids 参数格式错误"}, status=status.HTTP_400_BAD_REQUEST)
+            normalized_suite_ids, error_response = self._normalize_report_suite_ids(project, suite_ids)
+            if error_response is not None:
+                return error_response
             snapshot.suite_ids = normalized_suite_ids
             updated_fields.append("suite_ids")
 

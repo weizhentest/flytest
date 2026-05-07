@@ -393,10 +393,6 @@
               <a-button @click="cancelDetailEdit">取消</a-button>
               <a-button type="primary" :loading="detailSaving" @click="saveDetailEdit">保存</a-button>
             </template>
-            <template v-else-if="detailBug">
-              <a-button type="primary" :disabled="!canEditBug(detailBug)" @click="startDetailEdit(detailBug)">编辑</a-button>
-              <a-button @click="openCopyDetail(detailBug)">复制</a-button>
-            </template>
           </div>
         </div>
 
@@ -447,14 +443,22 @@
             </div>
             <div v-if="detailBug && !detailDraftType && !detailEditMode" class="bug-detail-toolbar">
               <a-button
+                type="primary"
+                class="bug-detail-toolbar-button"
+                :disabled="!canEditBug(detailBug)"
+                @click="startDetailEdit(detailBug)"
+              >
+                <template #icon><icon-edit /></template>
+                编辑
+              </a-button>
+              <a-button
                 type="outline"
                 class="bug-detail-toolbar-button"
                 :disabled="!canManageBugStatus(detailBug)"
                 @click="handleActionSelect(detailBug, 'assign')"
               >
                 <template #icon><icon-user /></template>
-                指派给
-              </a-button>
+                指派给              </a-button>
               <a-dropdown
                 trigger="click"
                 :disabled="!canManageBugStatus(detailBug)"
@@ -462,8 +466,7 @@
               >
                 <a-button type="outline" class="bug-detail-toolbar-button">
                   <template #icon><icon-check-circle /></template>
-                  处理状态
-                </a-button>
+                  处理状态                </a-button>
                 <template #content>
                   <a-doption v-for="item in getStatusActionOptions(detailBug)" :key="item.value" :value="item.value">
                     {{ item.label }}
@@ -473,16 +476,6 @@
               <a-button type="outline" class="bug-detail-toolbar-button" @click="openCopyDetail(detailBug)">
                 <template #icon><icon-copy /></template>
                 复制
-              </a-button>
-              <a-button
-                type="outline"
-                status="danger"
-                class="bug-detail-toolbar-button"
-                :disabled="!canEditBug(detailBug)"
-                @click="handleActionSelect(detailBug, 'delete')"
-              >
-                <template #icon><icon-delete /></template>
-                删除
               </a-button>
             </div>
           </div>

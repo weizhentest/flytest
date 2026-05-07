@@ -10,7 +10,7 @@
           <div>
             <div class="sidebar-title">测试报告</div>
             <div class="sidebar-subtitle">
-              勾选一个或多个根套件、子套件，基于测试用例与 BUG 数据生成本轮迭代测试报告。
+              选择一个或多个根套件、子套件，基于测试用例、BUG 与执行记录生成当前迭代测试报告。
             </div>
           </div>
           <a-button size="small" @click="fetchSuites">刷新</a-button>
@@ -64,10 +64,92 @@
             :disabled="checkedSuiteIds.length === 0"
             @click="handleGenerateReport"
           >
-            AI生成测试报告
+            {{ currentGenerateButtonText }}
           </a-button>
           <div class="sidebar-note">
             生成时会带入所选套件及其子套件下的测试用例、BUG 列表和执行状态数据。
+          </div>
+        </div>
+
+        <div v-if="latestGenerationRecord" class="generation-record-panel">
+          <div class="generation-record-header">
+            <span class="generation-record-title">最近一次生成</span>
+            <a-tag
+              size="small"
+              :color="
+                latestGenerationRecord.source === 'fallback'
+                  ? 'orange'
+                  : latestGenerationRecord.source === 'ai'
+                    ? 'arcoblue'
+                    : 'gold'
+              "
+            >
+              {{ latestGenerationRecord.sourceLabel }}
+            </a-tag>
+          </div>
+          <div class="generation-record-time">{{ latestGenerationRecord.generatedAtText }}</div>
+          <div class="generation-record-grid">
+            <div class="generation-record-item">
+              <span class="generation-record-label">生成状态</span>
+              <span class="generation-record-value">{{ latestGenerationRecord.statusText }}</span>
+            </div>
+            <div class="generation-record-item">
+              <span class="generation-record-label">生成耗时</span>
+              <span class="generation-record-value">{{ latestGenerationRecord.durationText }}</span>
+            </div>
+            <div class="generation-record-item">
+              <span class="generation-record-label">选择套件</span>
+              <span class="generation-record-value">{{ latestGenerationRecord.selectedSuiteCount }} 个</span>
+            </div>
+            <div class="generation-record-item">
+              <span class="generation-record-label">覆盖套件</span>
+              <span class="generation-record-value">{{ latestGenerationRecord.suiteCount }} 个</span>
+            </div>
+          </div>
+          <div class="generation-record-note">{{ latestGenerationRecord.note }}</div>
+        </div>
+
+        <div v-if="snapshotCompareItems.length > 0" class="generation-record-panel compare-panel">
+          <div class="generation-record-header">
+            <span class="generation-record-title">快照变化</span>
+            <div class="compare-panel-actions">
+              <span class="compare-panel-note">当前报告 vs {{ compareSnapshotDescription }}</span>
+              <a-select
+                v-model="selectedCompareSnapshotId"
+                size="small"
+                class="compare-target-select"
+              >
+                <a-option value="auto">自动选择上一版</a-option>
+                <a-option v-for="item in compareSnapshotOptions" :key="item.id" :value="item.id">
+                  {{ item.title }}
+                </a-option>
+              </a-select>
+            </div>
+          </div>
+          <div class="compare-list">
+            <div v-for="item in snapshotCompareItems" :key="item.label" class="compare-item">
+              <div class="compare-item-top">
+                <span class="compare-item-label">{{ item.label }}</span>
+                <span
+                  class="compare-item-delta"
+                  :class="{
+                    up: item.trend === 'up',
+                    down: item.trend === 'down',
+                    flat: item.trend === 'flat',
+                    positive: item.impact === 'positive',
+                    negative: item.impact === 'negative',
+                    neutral: item.impact === 'neutral',
+                  }"
+                >
+                  {{ item.delta }}
+                </span>
+              </div>
+              <div class="compare-item-values">
+                <span>当前 {{ item.current }}</span>
+                <span>对比 {{ item.previous }}</span>
+              </div>
+              <div class="compare-item-judgement">{{ item.judgement }}</div>
+            </div>
           </div>
         </div>
 
@@ -95,9 +177,24 @@
             allow-clear
           />
 
+          <a-radio-group
+            v-model="snapshotSourceFilter"
+            type="button"
+            size="small"
+            class="snapshot-filter-group"
+          >
+            <a-radio value="all">全部</a-radio>
+            <a-radio value="ai">AI</a-radio>
+            <a-radio value="fallback">回退</a-radio>
+            <a-radio value="rule">规则</a-radio>
+            <a-radio value="pinned">置顶</a-radio>
+          </a-radio-group>
+
           <div class="snapshot-summary">
             <span>共 {{ reportSnapshots.length }} 条</span>
-            <span v-if="snapshotKeyword.trim()">筛选后 {{ filteredReportSnapshots.length }} 条</span>
+            <span v-if="snapshotKeyword.trim() || snapshotSourceFilter !== 'all'">
+              筛选后 {{ filteredReportSnapshots.length }} 条
+            </span>
           </div>
 
           <a-empty v-if="filteredReportSnapshots.length === 0" description="暂无报告快照" />
@@ -129,6 +226,13 @@
                   <span>{{ item.generatedAtText }}</span>
                   <span>创建人：{{ item.creatorName }}</span>
                 </div>
+                <div class="snapshot-report-meta">
+                  <a-tag size="small" :color="getGenerationSourceColor(item.report)">
+                    {{ getSnapshotSummaryMeta(item).sourceLabel }}
+                  </a-tag>
+                  <span>{{ getSnapshotSummaryMeta(item).durationText }}</span>
+                  <span>{{ getSnapshotSummaryMeta(item).statusText }}</span>
+                </div>
               </div>
 
               <div class="snapshot-actions">
@@ -158,82 +262,62 @@
                 <div class="report-title-block">
                   <div class="report-title">本轮测试报告</div>
                   <div class="report-meta">
-                    {{ reportData.report_standard.test_overview.test_object }} / {{ reportData.report_standard.test_overview.target_version }}
+                    {{ reportData.report_standard.test_overview.test_object }} /
+                    {{ reportData.report_standard.test_overview.target_version }}
                   </div>
                 </div>
                 <div class="hero-tag-group">
-                  <a-tag color="arcoblue">已选套件 {{ checkedSuiteIds.length }}</a-tag>
-                  <a-tag :color="reportData.used_ai ? 'arcoblue' : 'gold'">
-                    {{ reportData.used_ai ? 'AI生成' : '规则生成' }}
+                  <a-tag
+                    :color="
+                      getReleaseRecommendationColor(
+                        reportData.report_standard.quality_conclusion.release_recommendation
+                      )
+                    "
+                  >
+                    {{ reportData.report_standard.quality_conclusion.release_recommendation }}
+                  </a-tag>
+                  <a-tag
+                    :color="getQualityRatingColor(reportData.report_standard.quality_conclusion.rating)"
+                  >
+                    质量评级：{{ reportData.report_standard.quality_conclusion.rating }}
                   </a-tag>
                 </div>
               </div>
-              <div class="hero-description">
-                {{ reportData.report_standard.quality_conclusion.conclusion }}
-              </div>
+              <div class="hero-description">{{ reportData.summary }}</div>
               <div class="hero-meta-grid">
                 <div class="hero-meta-item">
-                  <span class="hero-meta-label">生成时间</span>
-                  <span class="hero-meta-value">{{ formatDateTime(reportData.generated_at) }}</span>
+                  <div class="hero-meta-label">报告编号</div>
+                  <div class="hero-meta-value">{{ reportData.report_standard.basic_info.report_no }}</div>
                 </div>
                 <div class="hero-meta-item">
-                  <span class="hero-meta-label">报告编号</span>
-                  <span class="hero-meta-value">{{ reportData.report_standard.basic_info.report_no }}</span>
+                  <div class="hero-meta-label">报告日期</div>
+                  <div class="hero-meta-value">{{ reportData.report_standard.basic_info.report_date }}</div>
                 </div>
                 <div class="hero-meta-item">
-                  <span class="hero-meta-label">编写人</span>
-                  <span class="hero-meta-value">{{ reportData.report_standard.basic_info.author }}</span>
+                  <div class="hero-meta-label">编写人</div>
+                  <div class="hero-meta-value">{{ reportData.report_standard.basic_info.author }}</div>
                 </div>
                 <div class="hero-meta-item">
-                  <span class="hero-meta-label">审核人</span>
-                  <span class="hero-meta-value">{{ reportData.report_standard.basic_info.reviewer }}</span>
-                </div>
-                <div class="hero-meta-item" v-if="reportData.model_name">
-                  <span class="hero-meta-label">生成模型</span>
-                  <span class="hero-meta-value">{{ reportData.model_name }}</span>
+                  <div class="hero-meta-label">审核人</div>
+                  <div class="hero-meta-value">{{ reportData.report_standard.basic_info.reviewer }}</div>
                 </div>
               </div>
             </div>
-
             <div class="hero-side">
               <div class="hero-status-card">
                 <div class="hero-status-label">发布建议</div>
                 <div class="hero-status-value">
-                  <a-tag
-                    size="large"
-                    :color="getReleaseRecommendationColor(reportData.report_standard.quality_conclusion.release_recommendation)"
-                  >
-                    {{ reportData.report_standard.quality_conclusion.release_recommendation }}
-                  </a-tag>
+                  {{ reportData.report_standard.quality_conclusion.release_recommendation }}
                 </div>
-                <div class="hero-status-footnote">
-                  质量评级：{{ reportData.report_standard.quality_conclusion.rating }}
-                </div>
-              </div>
-              <div class="hero-highlight-grid">
-                <div class="hero-highlight-card">
-                  <div class="hero-highlight-label">通过率</div>
-                  <div class="hero-highlight-value">{{ reportData.report_standard.result_details.case_execution.pass_rate }}%</div>
-                </div>
-                <div class="hero-highlight-card">
-                  <div class="hero-highlight-label">未关闭BUG</div>
-                  <div class="hero-highlight-value">{{ reportData.report_standard.appendices.defect_list_summary.open_total }}</div>
-                </div>
-                <div class="hero-highlight-card">
-                  <div class="hero-highlight-label">复测失败</div>
-                  <div class="hero-highlight-value">{{ reportData.report_standard.defect_summary.trend_summary.retest_failed_total }}</div>
-                </div>
-                <div class="hero-highlight-card">
-                  <div class="hero-highlight-label">未执行用例</div>
-                  <div class="hero-highlight-value">{{ reportData.report_standard.result_details.case_execution.not_executed }}</div>
-                </div>
+                <div class="hero-status-footnote">{{ releaseDecisionFootnote }}</div>
               </div>
             </div>
           </div>
 
           <div class="report-toolbar">
-            <a-space>
-              <a-button size="small" :disabled="!reportData || !activeSnapshotId" @click="handleOverwriteSnapshot">
+            <a-space wrap>
+              <a-button size="small" :disabled="!reportData" @click="handleSaveSnapshot">保存快照</a-button>
+              <a-button size="small" :disabled="!activeSnapshotId || !reportData" @click="handleOverwriteSnapshot">
                 覆盖当前快照
               </a-button>
               <a-button size="small" @click="handleCopyReportSummary">复制摘要</a-button>
@@ -242,318 +326,588 @@
             </a-space>
           </div>
 
-          <div class="report-summary-grid">
-            <div v-for="item in overviewCards" :key="item.label" class="summary-card">
-              <div class="summary-topline">{{ item.kicker }}</div>
-              <div class="summary-label">{{ item.label }}</div>
-              <div class="summary-value" :class="{ 'summary-value-small': item.compact }">{{ item.value }}</div>
-              <div class="summary-footnote">{{ item.footnote }}</div>
+          <div class="report-nav-panel">
+            <div class="report-nav-title">报告导航</div>
+            <div class="report-nav-list">
+              <a-button
+                v-for="item in reportSectionNavItems"
+                :key="item.id"
+                size="small"
+                class="report-nav-button"
+                @click="scrollToReportSection(item.id)"
+              >
+                {{ item.label }}
+              </a-button>
             </div>
           </div>
 
-          <div class="report-summary-grid report-summary-grid-secondary">
-            <div class="summary-card summary-card-soft">
-              <div class="summary-label">覆盖套件</div>
-              <div class="summary-value">{{ reportData.suite_count }}</div>
-              <div class="summary-footnote">本次纳入所有关联根套件与子套件统计</div>
+          <a-alert v-if="generationInsight" class="generation-alert" :type="generationInsight.status">
+            <template #title>{{ generationInsight.title }}</template>
+            {{ generationInsight.description }}
+          </a-alert>
+
+          <div class="report-summary-grid">
+            <div class="item-card">
+              <div class="hero-kicker">SCOPE</div>
+              <div class="decision-focus-label">已选套件</div>
+              <div class="decision-focus-value">{{ reportData.selected_suite_count }}</div>
+              <div class="decision-focus-footnote">实际汇总覆盖 {{ reportData.suite_count }} 个套件节点</div>
             </div>
-            <div class="summary-card summary-card-soft">
-              <div class="summary-label">测试用例</div>
-              <div class="summary-value">{{ reportData.testcase_count }}</div>
-              <div class="summary-footnote">
+            <div class="item-card">
+              <div class="hero-kicker">CASE</div>
+              <div class="decision-focus-label">测试用例</div>
+              <div class="decision-focus-value">{{ reportData.testcase_count }}</div>
+              <div class="decision-focus-footnote">
                 已执行 {{ reportData.report_standard.activity_summary.workload.executed_cases }} 条
               </div>
             </div>
-            <div class="summary-card summary-card-soft">
-              <div class="summary-label">BUG数量</div>
-              <div class="summary-value">{{ reportData.bug_count }}</div>
-              <div class="summary-footnote">
-                未关闭 {{ reportData.report_standard.appendices.defect_list_summary.open_total }} 个
+            <div class="item-card">
+              <div class="hero-kicker">BUG</div>
+              <div class="decision-focus-label">关联 BUG</div>
+              <div class="decision-focus-value">{{ reportData.bug_count }}</div>
+              <div class="decision-focus-footnote">
+                未关闭 {{ reportData.report_standard.appendices.defect_list_summary.open_total }} 条
               </div>
             </div>
-            <div class="summary-card summary-card-soft">
-              <div class="summary-label">本次选择</div>
-              <div class="summary-value">{{ reportData.selected_suite_count }}</div>
-              <div class="summary-footnote">支持多套件联合生成一次迭代报告</div>
-            </div>
-          </div>
-
-          <div class="report-section">
-            <div class="section-title">报告基本信息</div>
-            <div class="report-summary-grid">
-              <div class="summary-card">
-                <div class="summary-label">报告编号</div>
-                <div class="summary-value summary-value-small">{{ reportData.report_standard.basic_info.report_no }}</div>
+            <div class="item-card">
+              <div class="hero-kicker">TRACE</div>
+              <div class="decision-focus-label">需求追踪</div>
+              <div class="decision-focus-value">
+                {{ reportData.requirement_summary.traceable_testcase_count }}/{{ reportData.requirement_summary.testcase_count }}
               </div>
-              <div class="summary-card">
-                <div class="summary-label">报告版本</div>
-                <div class="summary-value">{{ reportData.report_standard.basic_info.report_version }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">编写人</div>
-                <div class="summary-value">{{ reportData.report_standard.basic_info.author }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">审核人</div>
-                <div class="summary-value">{{ reportData.report_standard.basic_info.reviewer }}</div>
-              </div>
-            </div>
-            <div class="summary-inline">
-              报告日期：{{ reportData.report_standard.basic_info.report_date }} / 负责人：{{ reportData.report_standard.basic_info.owner }}
-            </div>
-          </div>
-
-          <div class="report-two-column">
-            <div class="report-section">
-              <div class="section-title">测试概述</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">测试对象</div>
-                  <div class="item-detail">
-                    {{ reportData.report_standard.test_overview.test_object }} / {{ reportData.report_standard.test_overview.target_version }}
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">测试范围</div>
-                  <div class="item-detail">{{ reportData.report_standard.test_overview.scope_included }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">不在范围</div>
-                  <div class="item-detail">{{ reportData.report_standard.test_overview.scope_excluded }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">测试目标</div>
-                  <div class="item-detail">
-                    <div v-for="(item, index) in reportData.report_standard.test_overview.objectives" :key="index">
-                      {{ index + 1 }}. {{ item }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="report-section">
-              <div class="section-title">测试环境</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">硬件/网络</div>
-                  <div class="item-detail">{{ reportData.report_standard.environment.hardware_network }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">软件环境</div>
-                  <div class="item-detail">{{ reportData.report_standard.environment.software_environment }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">第三方依赖</div>
-                  <div class="item-detail">{{ reportData.report_standard.environment.third_party_services }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">测试工具</div>
-                  <div class="item-detail">{{ reportData.report_standard.environment.test_tools.join('、') }}</div>
-                </div>
+              <div class="decision-focus-footnote">
+                未追踪 {{ reportData.requirement_summary.unlinked_testcase_count }} 条
               </div>
             </div>
           </div>
 
-          <div class="report-two-column">
-            <div class="report-section">
-              <div class="section-title">测试活动摘要</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">测试类型</div>
-                  <div class="item-detail">{{ reportData.report_standard.activity_summary.test_types.join('、') }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">测试轮次</div>
-                  <div class="item-detail">{{ reportData.report_standard.activity_summary.test_round }}</div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">时间跨度</div>
-                  <div class="item-detail">
-                    {{ formatDateTime(reportData.report_standard.activity_summary.time_span.start) }}
-                    至
-                    {{ formatDateTime(reportData.report_standard.activity_summary.time_span.end) }}
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">工作量</div>
-                  <div class="item-detail">
-                    人日：{{ reportData.report_standard.activity_summary.workload.person_days }} / 总用例：{{ reportData.report_standard.activity_summary.workload.total_cases }}
-                    / 已执行：{{ reportData.report_standard.activity_summary.workload.executed_cases }} / 自动化占比：{{ reportData.report_standard.activity_summary.workload.automation_ratio }}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="report-section">
-              <div class="section-title">测试结果详情</div>
-              <div class="tag-flow">
-                <a-tag color="arcoblue">总用例 {{ reportData.report_standard.result_details.case_execution.total }}</a-tag>
-                <a-tag color="green">通过 {{ reportData.report_standard.result_details.case_execution.passed }}</a-tag>
-                <a-tag color="red">失败 {{ reportData.report_standard.result_details.case_execution.failed }}</a-tag>
-                <a-tag color="orange">阻塞/无需执行 {{ reportData.report_standard.result_details.case_execution.blocked }}</a-tag>
-                <a-tag color="gray">未执行 {{ reportData.report_standard.result_details.case_execution.not_executed }}</a-tag>
-                <a-tag color="arcoblue">通过率 {{ reportData.report_standard.result_details.case_execution.pass_rate }}%</a-tag>
-              </div>
-              <div class="item-list compact-item-list">
-                <div
-                  v-for="item in reportData.report_standard.result_details.execution_breakdown"
-                  :key="item.name"
-                  class="item-card"
-                >
-                  <div class="item-header">
-                    <span class="item-title">{{ item.name }}</span>
-                    <a-tag color="arcoblue">{{ item.count }}</a-tag>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div class="report-summary-caption">
+            以上摘要用于快速判断当前版本是否具备发布基础，详细证据以下方测试结果、缺陷闭环与风险说明为准。
           </div>
 
-          <div class="report-two-column">
-            <div class="report-section">
-              <div class="section-title">缺陷统计</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">按严重程度</div>
-                  <div class="tag-flow">
-                    <a-tag v-for="item in reportData.report_standard.defect_summary.by_severity" :key="item.name" color="arcoblue">
-                      {{ item.name }} {{ item.count }}
-                    </a-tag>
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">按状态</div>
-                  <div class="tag-flow">
-                    <a-tag v-for="item in reportData.report_standard.defect_summary.by_status" :key="item.name" color="arcoblue">
-                      {{ item.name }} {{ item.count }}
-                    </a-tag>
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">按模块</div>
-                  <div class="item-detail">
-                    <div v-for="item in reportData.report_standard.defect_summary.by_module" :key="item.name">
-                      {{ item.name }}：{{ item.count }}
-                    </div>
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">缺陷趋势摘要</div>
-                  <div class="item-detail">
-                    发现 {{ reportData.report_standard.defect_summary.trend_summary.discovered }} 个 /
-                    已关闭 {{ reportData.report_standard.defect_summary.trend_summary.closed }} 个 /
-                    重新激活 {{ reportData.report_standard.defect_summary.trend_summary.reactivated }} 个 /
-                    复测失败 {{ reportData.report_standard.defect_summary.trend_summary.retest_failed_total }} 次
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="report-section">
-              <div class="section-title">遗留缺陷</div>
-              <a-empty
-                v-if="reportData.report_standard.defect_summary.legacy_defects.length === 0"
-                description="当前无遗留缺陷"
-              />
-              <div v-else class="item-list compact-item-list">
-                <div
-                  v-for="item in reportData.report_standard.defect_summary.legacy_defects"
-                  :key="item.id"
-                  class="item-card"
-                >
-                  <div class="item-header">
-                    <span class="item-title">BUG#{{ item.id }} {{ item.title }}</span>
-                    <a-tag color="red">{{ item.severity }}</a-tag>
-                  </div>
-                  <div class="item-detail">
-                    状态：{{ item.status }} / 模块：{{ item.module }} / 计划修复：{{ item.planned_fix_version }}
-                  </div>
-                  <div class="item-detail">影响范围：{{ item.impact_scope }}</div>
-                  <div class="item-detail">复现步骤：{{ item.repro_steps }}</div>
-                  <div class="item-detail">风险接受理由：{{ item.risk_acceptance }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="report-section">
-            <div class="section-title">测试结论</div>
-            <div class="tag-flow">
-              <a-tag :color="getQualityRatingColor(reportData.report_standard.quality_conclusion.rating)">
-                质量评级 {{ reportData.report_standard.quality_conclusion.rating }}
-              </a-tag>
-              <a-tag :color="getReleaseRecommendationColor(reportData.report_standard.quality_conclusion.release_recommendation)">
+          <div class="decision-focus-grid">
+            <div class="decision-focus-card">
+              <div class="decision-focus-label">当前发布判断</div>
+              <div class="decision-focus-value">
                 {{ reportData.report_standard.quality_conclusion.release_recommendation }}
-              </a-tag>
+              </div>
+              <div class="decision-focus-footnote">{{ releaseDecisionFootnote }}</div>
             </div>
-            <p class="section-text">{{ reportData.report_standard.quality_conclusion.conclusion }}</p>
-            <div class="item-list compact-item-list">
-              <div
-                v-for="item in reportData.report_standard.quality_conclusion.criteria"
-                :key="item.name"
-                class="item-card"
-              >
-                <div class="item-header">
-                  <span class="item-title">{{ item.name }}</span>
-                  <a-tag :color="item.passed ? 'green' : 'red'">{{ item.passed ? '达成' : '未达成' }}</a-tag>
-                </div>
-                <div class="item-detail">{{ item.detail }}</div>
+            <div class="decision-focus-card">
+              <div class="decision-focus-label">执行覆盖率</div>
+              <div class="decision-focus-value">{{ executionCoverageRate }}</div>
+              <div class="decision-focus-footnote">
+                已执行 {{ reportData.report_standard.activity_summary.workload.executed_cases }} /
+                {{ reportData.report_standard.activity_summary.workload.total_cases }} 条，当前通过率
+                {{ reportData.report_standard.result_details.case_execution.pass_rate }}%。
+              </div>
+            </div>
+            <div class="decision-focus-card">
+              <div class="decision-focus-label">未关闭缺陷</div>
+              <div class="decision-focus-value">
+                {{ reportData.report_standard.appendices.defect_list_summary.open_total }}
+              </div>
+              <div class="decision-focus-footnote">
+                当前复测失败 {{ reportData.report_standard.defect_summary.trend_summary.retest_failed_total }} 次。
+              </div>
+            </div>
+            <div class="decision-focus-card">
+              <div class="decision-focus-label">完成标准达成</div>
+              <div class="decision-focus-value">{{ criteriaCompletionSummary.value }}</div>
+              <div class="decision-focus-footnote">{{ criteriaCompletionSummary.footnote }}</div>
+            </div>
+          </div>
+
+          <div id="report-basic-info" class="report-section">
+            <div class="section-title">报告基本信息</div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">报告编号与版本</div>
+                <p class="section-text">
+                  编号：{{ reportData.report_standard.basic_info.report_no }}<br />
+                  版本：{{ reportData.report_standard.basic_info.report_version }}
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">报告责任人</div>
+                <p class="section-text">
+                  报告日期：{{ reportData.report_standard.basic_info.report_date }}<br />
+                  编写人：{{ reportData.report_standard.basic_info.author }}<br />
+                  负责人：{{ reportData.report_standard.basic_info.owner }}<br />
+                  审核人：{{ reportData.report_standard.basic_info.reviewer }}
+                </p>
               </div>
             </div>
           </div>
 
-          <div class="report-two-column">
-            <div class="report-section">
-              <div class="section-title">风险与建议</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">测试过程风险</div>
-                  <div class="item-detail">
-                    <div v-for="(item, index) in reportData.report_standard.risk_and_suggestions.process_risks" :key="`process-${index}`">
-                      {{ index + 1 }}. {{ item }}
+          <div id="report-overview" class="report-section">
+            <div class="section-title">测试概述</div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">测试对象</div>
+                <p class="section-text">
+                  测试对象：{{ reportData.report_standard.test_overview.test_object }}<br />
+                  目标版本：{{ reportData.report_standard.test_overview.target_version }}
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">测试范围</div>
+                <p class="section-text">
+                  纳入范围：{{ reportData.report_standard.test_overview.scope_included }}<br />
+                  不在范围：{{ reportData.report_standard.test_overview.scope_excluded }}
+                </p>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="decision-focus-label">测试目标</div>
+              <div class="item-list">
+                <div
+                  v-for="(item, index) in reportData.report_standard.test_overview.objectives"
+                  :key="`objective-${index}`"
+                  class="item-card"
+                >
+                  <div class="item-detail">{{ item }}</div>
+                </div>
+                <div v-if="reportData.report_standard.test_overview.objectives.length === 0" class="item-detail">
+                  当前未记录测试目标
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-environment" class="report-section">
+            <div class="section-title">测试环境</div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">硬件与网络</div>
+                <p class="section-text">{{ reportData.report_standard.environment.hardware_network }}</p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">软件环境</div>
+                <p class="section-text">{{ reportData.report_standard.environment.software_environment }}</p>
+              </div>
+            </div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">测试工具</div>
+                <p class="section-text">
+                  {{ formatDisplayList(reportData.report_standard.environment.test_tools, '当前未记录测试工具') }}
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">第三方依赖</div>
+                <p class="section-text">{{ reportData.report_standard.environment.third_party_services }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-activity" class="report-section">
+            <div class="section-title">测试活动摘要</div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">测试活动</div>
+                <p class="section-text">
+                  测试类型：{{ formatDisplayList(reportData.report_standard.activity_summary.test_types, '-') }}<br />
+                  测试轮次：{{ reportData.report_standard.activity_summary.test_round }}<br />
+                  时间跨度：{{ formatDateTime(reportData.report_standard.activity_summary.time_span.start) }} 至
+                  {{ formatDateTime(reportData.report_standard.activity_summary.time_span.end) }}
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">工作量</div>
+                <p class="section-text">
+                  人日：{{ reportData.report_standard.activity_summary.workload.person_days }}<br />
+                  总用例：{{ reportData.report_standard.activity_summary.workload.total_cases }}<br />
+                  已执行：{{ reportData.report_standard.activity_summary.workload.executed_cases }}<br />
+                  自动化占比：{{ reportData.report_standard.activity_summary.workload.automation_ratio }}<br />
+                  缺陷数：{{ reportData.report_standard.activity_summary.workload.bug_count }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-results" class="report-section">
+            <div class="section-title">测试结果详情</div>
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">用例执行统计</div>
+                <p class="section-text">
+                  总数：{{ reportData.report_standard.result_details.case_execution.total }}<br />
+                  通过：{{ reportData.report_standard.result_details.case_execution.passed }}<br />
+                  失败：{{ reportData.report_standard.result_details.case_execution.failed }}<br />
+                  阻塞：{{ reportData.report_standard.result_details.case_execution.blocked }}<br />
+                  未执行：{{ reportData.report_standard.result_details.case_execution.not_executed }}<br />
+                  通过率：{{ reportData.report_standard.result_details.case_execution.pass_rate }}%
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">执行状态分布</div>
+                <div class="item-list compact-item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.result_details.execution_breakdown"
+                    :key="`execution-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>{{ item.name }}</span>
+                      <strong>{{ item.count }}</strong>
                     </div>
                   </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">剩余风险</div>
-                  <div class="item-detail">
-                    <div v-for="(item, index) in reportData.report_standard.risk_and_suggestions.residual_risks" :key="`residual-${index}`">
-                      {{ index + 1 }}. {{ item }}
-                    </div>
-                  </div>
-                </div>
-                <div class="item-card">
-                  <div class="item-title">后续建议</div>
-                  <div class="item-detail">
-                    <div v-for="(item, index) in reportData.report_standard.risk_and_suggestions.follow_up_actions" :key="`action-${index}`">
-                      {{ index + 1 }}. {{ item }}
-                    </div>
+                  <div v-if="reportData.report_standard.result_details.execution_breakdown.length === 0" class="item-detail">
+                    当前没有执行状态分布数据
                   </div>
                 </div>
               </div>
             </div>
-            <div class="report-section">
-              <div class="section-title">附录与附件</div>
-              <div class="item-list compact-item-list">
-                <div class="item-card">
-                  <div class="item-title">缺陷清单摘要</div>
-                  <div class="item-detail">
-                    缺陷总数 {{ reportData.report_standard.appendices.defect_list_summary.total }} /
-                    未关闭 {{ reportData.report_standard.appendices.defect_list_summary.open_total }}
+          </div>
+
+          <div id="report-defects" class="report-section">
+            <div class="section-title">缺陷统计</div>
+            <div class="report-summary-grid-secondary">
+              <div class="item-card">
+                <div class="decision-focus-label">按严重程度</div>
+                <div class="item-list compact-item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.defect_summary.by_severity"
+                    :key="`severity-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>{{ item.name }}</span>
+                      <strong>{{ item.count }}</strong>
+                    </div>
+                  </div>
+                  <div v-if="reportData.report_standard.defect_summary.by_severity.length === 0" class="item-detail">
+                    当前没有严重程度统计
                   </div>
                 </div>
-                <div class="item-card">
-                  <div class="item-title">需求文档</div>
-                  <div class="item-detail">
-                    <div
-                      v-for="item in reportData.report_standard.appendices.requirement_documents"
-                      :key="`${item.title}-${item.version}`"
-                    >
-                      {{ item.title }} / {{ item.version || '-' }} / {{ item.status || '-' }}
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">按状态</div>
+                <div class="item-list compact-item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.defect_summary.by_status"
+                    :key="`status-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>{{ item.name }}</span>
+                      <strong>{{ item.count }}</strong>
+                    </div>
+                  </div>
+                  <div v-if="reportData.report_standard.defect_summary.by_status.length === 0" class="item-detail">
+                    当前没有缺陷状态统计
+                  </div>
+                </div>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">按模块</div>
+                <div class="item-list compact-item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.defect_summary.by_module"
+                    :key="`module-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>{{ item.name }}</span>
+                      <strong>{{ item.count }}</strong>
+                    </div>
+                  </div>
+                  <div v-if="reportData.report_standard.defect_summary.by_module.length === 0" class="item-detail">
+                    当前没有模块分布数据
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="report-two-column">
+              <div class="item-card">
+                <div class="decision-focus-label">缺陷趋势摘要</div>
+                <p class="section-text">
+                  新发现：{{ reportData.report_standard.defect_summary.trend_summary.discovered }}<br />
+                  已关闭：{{ reportData.report_standard.defect_summary.trend_summary.closed }}<br />
+                  重新激活：{{ reportData.report_standard.defect_summary.trend_summary.reactivated }}<br />
+                  复测失败：{{ reportData.report_standard.defect_summary.trend_summary.retest_failed_total }}
+                </p>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">遗留缺陷</div>
+                <div class="item-list">
+                  <div
+                    v-for="item in reportData.report_standard.defect_summary.legacy_defects"
+                    :key="`legacy-${item.id}`"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>#{{ item.id }} {{ item.title }}</span>
+                      <a-tag size="small" color="red">{{ item.status }}</a-tag>
+                    </div>
+                    <div class="item-detail">
+                      严重程度：{{ item.severity }}，模块：{{ item.module }}
+                    </div>
+                    <div class="item-detail">影响范围：{{ item.impact_scope }}</div>
+                    <div class="item-detail">计划修复版本：{{ item.planned_fix_version }}</div>
+                    <div class="item-detail">风险接受理由：{{ item.risk_acceptance }}</div>
+                  </div>
+                  <div v-if="reportData.report_standard.defect_summary.legacy_defects.length === 0" class="item-detail">
+                    当前没有遗留缺陷
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-conclusion" class="report-section">
+            <div class="section-title">测试结论</div>
+            <div class="conclusion-overview-grid">
+              <div v-for="item in conclusionOverviewCards" :key="item.label" class="conclusion-overview-card">
+                <div class="conclusion-overview-label">{{ item.label }}</div>
+                <div class="conclusion-overview-value">{{ item.value }}</div>
+                <div class="conclusion-overview-footnote">{{ item.footnote }}</div>
+              </div>
+            </div>
+
+            <div class="conclusion-reason-panel">
+              <div class="conclusion-reason-header">
+                <div class="conclusion-reason-title">结论依据</div>
+                <div class="conclusion-reason-subtitle">直接说明哪些数据支撑了当前测试结论。</div>
+              </div>
+              <div class="conclusion-reason-list">
+                <div
+                  v-for="(item, index) in conclusionReasons"
+                  :key="`reason-${index}`"
+                  class="conclusion-reason-item"
+                  :class="item.tone"
+                >
+                  <div class="conclusion-reason-item-top">
+                    <span class="conclusion-reason-item-title">{{ item.title }}</span>
+                    <a-tag size="small" :color="getCriteriaSectionColor(item.tone)">
+                      {{ item.tone === 'danger' ? '高影响' : item.tone === 'warning' ? '需关注' : '已支撑' }}
+                    </a-tag>
+                  </div>
+                  <div class="conclusion-reason-item-detail">{{ item.detail }}</div>
+                </div>
+                <div v-if="conclusionReasons.length === 0" class="item-detail">当前没有额外结论依据</div>
+              </div>
+            </div>
+
+            <div class="report-summary-grid-secondary">
+              <div class="item-card">
+                <div class="decision-focus-label">完成标准判断</div>
+                <div class="criteria-summary-grid">
+                  <div
+                    v-for="item in criteriaSummaryCards"
+                    :key="item.key"
+                    class="item-card"
+                  >
+                    <div class="item-header">
+                      <span>{{ item.title }}</span>
+                      <a-tag size="small" :color="getCriteriaSectionColor(item.tone)">{{ item.count }}</a-tag>
+                    </div>
+                    <div class="item-detail">{{ item.description }}</div>
+                    <div class="item-list compact-item-list">
+                      <div
+                        v-for="(detail, index) in item.items"
+                        :key="`${item.key}-${index}`"
+                        class="item-card"
+                      >
+                        <div class="item-header">
+                          <span>{{ detail.name }}</span>
+                          <a-tag size="small" :color="getCriteriaSectionColor(detail.tone)">
+                            {{ detail.toneLabel }}
+                          </a-tag>
+                        </div>
+                        <div class="item-detail">{{ detail.detail }}</div>
+                      </div>
+                      <div v-if="item.items.length === 0" class="item-detail">{{ item.emptyText }}</div>
                     </div>
                   </div>
                 </div>
-                <div class="item-card">
-                  <div class="item-title">测试数据说明</div>
-                  <div class="item-detail">{{ reportData.report_standard.appendices.test_data_note }}</div>
+              </div>
+
+              <div class="item-card">
+                <div class="decision-focus-label">发布前待办</div>
+                <div class="report-section-intro">按优先级列出当前最值得先处理的事项。</div>
+                <div class="item-list">
+                  <div v-for="(item, index) in releaseChecklist" :key="`todo-${index}`" class="item-card">
+                    <div class="item-header">
+                      <span>{{ item.title }}</span>
+                      <a-tag
+                        size="small"
+                        :color="item.priority === 'high' ? 'red' : item.priority === 'medium' ? 'orange' : 'arcoblue'"
+                      >
+                        {{ getPriorityLabel(item.priority) }}
+                      </a-tag>
+                    </div>
+                    <div class="item-detail">{{ item.detail }}</div>
+                  </div>
+                  <div v-if="releaseChecklist.length === 0" class="item-detail">当前没有额外待办事项</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="item-card">
+              <div class="decision-focus-label">结论陈述</div>
+              <p class="section-text">{{ reportData.report_standard.quality_conclusion.conclusion }}</p>
+            </div>
+          </div>
+
+          <div id="report-risk" class="report-section">
+            <div class="section-title">风险与建议</div>
+            <div class="report-section-intro">
+              这里归纳当前测试阶段仍需关注的执行风险、发布剩余风险和后续闭环动作，供版本评审和上线决策参考。
+            </div>
+
+            <div class="risk-overview-grid">
+              <div v-for="item in riskOverviewCards" :key="item.label" class="risk-overview-card">
+                <div class="risk-overview-label">{{ item.label }}</div>
+                <div class="risk-overview-value">{{ item.value }}</div>
+                <div class="risk-overview-footnote">{{ item.footnote }}</div>
+              </div>
+            </div>
+
+            <div class="report-summary-grid-secondary">
+              <div class="item-card">
+                <div class="decision-focus-label">测试过程风险</div>
+                <div class="item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.risk_and_suggestions.process_risks"
+                    :key="`process-risk-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-detail">{{ item }}</div>
+                  </div>
+                  <div v-if="reportData.report_standard.risk_and_suggestions.process_risks.length === 0" class="item-detail">
+                    当前没有额外测试过程风险
+                  </div>
+                </div>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">剩余风险</div>
+                <div class="item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.risk_and_suggestions.residual_risks"
+                    :key="`residual-risk-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-detail">{{ item }}</div>
+                  </div>
+                  <div v-if="reportData.report_standard.risk_and_suggestions.residual_risks.length === 0" class="item-detail">
+                    当前没有剩余风险项
+                  </div>
+                </div>
+              </div>
+              <div class="item-card">
+                <div class="decision-focus-label">后续建议</div>
+                <div class="item-list">
+                  <div
+                    v-for="(item, index) in reportData.report_standard.risk_and_suggestions.follow_up_actions"
+                    :key="`follow-action-${index}`"
+                    class="item-card"
+                  >
+                    <div class="item-detail">{{ item }}</div>
+                  </div>
+                  <div v-if="reportData.report_standard.risk_and_suggestions.follow_up_actions.length === 0" class="item-detail">
+                    当前没有额外后续建议
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-appendix" class="report-section">
+            <div class="section-title">补充分析</div>
+            <div class="report-section-intro">
+              这里补充展示需求覆盖、缺陷修复闭环和测试证据，用于说明当前发布结论背后的事实依据。
+            </div>
+
+            <div class="support-summary-strip">
+              <div v-for="item in supportSummaryItems" :key="item.label" class="support-summary-item">
+                <div class="support-summary-label">{{ item.label }}</div>
+                <div class="support-summary-value">{{ item.value }}</div>
+              </div>
+            </div>
+
+            <div class="support-analysis-grid">
+              <div class="support-analysis-card">
+                <div class="support-analysis-title">需求覆盖证据</div>
+                <div class="support-analysis-metrics compact">
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">覆盖文档</span>
+                    <span class="support-analysis-value">{{ reportData.requirement_summary.linked_document_count }}</span>
+                  </div>
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">追踪用例</span>
+                    <span class="support-analysis-value">{{ reportData.requirement_summary.traceable_testcase_count }}</span>
+                  </div>
+                </div>
+                <div class="item-detail support-evidence-copy">
+                  <template v-if="reportData.requirement_summary.linked_document_count > 0">
+                    当前已建立 {{ reportData.requirement_summary.linked_module_count }} 个模块的需求追踪关系，仍有
+                    {{ reportData.requirement_summary.unlinked_testcase_count }} 条测试用例未补齐来源需求。
+                  </template>
+                  <template v-else>当前未记录可追踪的需求文档</template>
+                </div>
+                <div class="item-detail">
+                  {{ formatDisplayList(reportData.report_standard.appendices.requirement_documents.map((item) => `${item.title} ${item.version}`), '当前未记录需求文档') }}
+                </div>
+              </div>
+
+              <div class="support-analysis-card">
+                <div class="support-analysis-title">BUG 闭环证据</div>
+                <div class="support-analysis-metrics compact">
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">已关闭</span>
+                    <span class="support-analysis-value">{{ reportData.bug_workflow_summary.closed_bug_count }}</span>
+                  </div>
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">复测失败</span>
+                    <span class="support-analysis-value">{{ reportData.bug_workflow_summary.retest_failed_total_count }}</span>
+                  </div>
+                </div>
+                <div class="item-detail support-evidence-copy">
+                  已修复 {{ reportData.bug_workflow_summary.fixed_bug_count }} 个，待复测
+                  {{ reportData.bug_workflow_summary.submitted_retest_bug_count }} 个，重新激活
+                  {{ reportData.bug_workflow_summary.reactivated_bug_count }} 个，反映当前缺陷闭环稳定性。
+                </div>
+                <div class="item-detail">
+                  <div
+                    v-for="item in reportData.bug_workflow_summary.top_retest_failed_bugs.slice(0, 4)"
+                    :key="`top-bug-${item.id}`"
+                  >
+                    #{{ item.id }} {{ item.title }}，复测失败 {{ item.failed_retest_count }} 次
+                  </div>
+                  <div v-if="reportData.bug_workflow_summary.top_retest_failed_bugs.length === 0">
+                    当前没有高频复测失败的 BUG
+                  </div>
+                </div>
+              </div>
+
+              <div class="support-analysis-card">
+                <div class="support-analysis-title">附录与证据</div>
+                <div class="support-analysis-metrics compact">
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">关联缺陷</span>
+                    <span class="support-analysis-value">{{ reportData.report_standard.appendices.defect_list_summary.total }}</span>
+                  </div>
+                  <div class="support-analysis-metric">
+                    <span class="support-analysis-label">证据条目</span>
+                    <span class="support-analysis-value">{{ reportData.evidence.length }}</span>
+                  </div>
+                </div>
+                <div class="item-detail support-evidence-copy">
+                  当前报告共引用缺陷 {{ reportData.report_standard.appendices.defect_list_summary.total }} 个，其中未关闭
+                  {{ reportData.report_standard.appendices.defect_list_summary.open_total }} 个，补充证据
+                  {{ reportData.evidence.length }} 条。
+                </div>
+                <div class="item-detail">
+                  测试数据说明：{{ reportData.report_standard.appendices.test_data_note }}
+                </div>
+                <div class="item-detail">
+                  <div v-for="item in reportData.evidence.slice(0, 4)" :key="`${item.label}-${item.detail}`">
+                    {{ item.label }}：{{ item.detail }}
+                  </div>
+                  <div v-if="reportData.evidence.length === 0">当前未记录额外测试证据</div>
                 </div>
               </div>
             </div>
@@ -567,6 +921,7 @@
     </div>
   </div>
 </template>
+
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
@@ -599,7 +954,60 @@ type ReportSnapshot = {
   isPinned: boolean;
   generatedAt: string;
   generatedAtText: string;
+  sourcePriority: number;
   report: AiIterationTestReport;
+};
+
+type SnapshotSummaryMeta = {
+  sourceLabel: string;
+  statusText: string;
+  durationText: string;
+};
+
+type GenerationRecordSummary = {
+  generatedAtText: string;
+  source: 'ai' | 'rule' | 'fallback';
+  sourceLabel: string;
+  statusText: string;
+  durationText: string;
+  selectedSuiteCount: number;
+  suiteCount: number;
+  note: string;
+};
+
+type SnapshotCompareItem = {
+  label: string;
+  current: string;
+  previous: string;
+  delta: string;
+  trend: 'up' | 'down' | 'flat';
+  impact: 'positive' | 'negative' | 'neutral';
+  judgement: string;
+};
+
+type CriteriaSummaryItem = {
+  name: string;
+  detail: string;
+  passed: boolean;
+  tone: 'danger' | 'warning' | 'success';
+  toneLabel: string;
+};
+
+type ConclusionReasonItem = {
+  title: string;
+  detail: string;
+  tone: 'danger' | 'warning' | 'success';
+};
+
+type ReleaseChecklistItem = {
+  title: string;
+  detail: string;
+  priority: 'high' | 'medium' | 'low';
+};
+
+type ReportSectionNavItem = {
+  id: string;
+  label: string;
 };
 
 const projectStore = useProjectStore();
@@ -610,6 +1018,8 @@ const suiteLoading = ref(false);
 const reportLoading = ref(false);
 const searchKeyword = ref('');
 const snapshotKeyword = ref('');
+const snapshotSourceFilter = ref<'all' | 'ai' | 'fallback' | 'rule' | 'pinned'>('all');
+const selectedCompareSnapshotId = ref<number | 'auto'>('auto');
 const suites = ref<TestSuite[]>([]);
 const checkedKeys = ref<(number | string)[]>([]);
 const expandedKeys = ref<(number | string)[]>([]);
@@ -618,17 +1028,34 @@ const reportSnapshots = ref<ReportSnapshot[]>([]);
 const activeSnapshotId = ref<number | null>(null);
 const editingSnapshotId = ref<number | null>(null);
 const editingSnapshotTitle = ref('');
+const reportSectionNavItems: ReportSectionNavItem[] = [
+  { id: 'report-basic-info', label: '基本信息' },
+  { id: 'report-overview', label: '测试概述' },
+  { id: 'report-environment', label: '测试环境' },
+  { id: 'report-activity', label: '活动摘要' },
+  { id: 'report-results', label: '结果详情' },
+  { id: 'report-defects', label: '缺陷统计' },
+  { id: 'report-conclusion', label: '测试结论' },
+  { id: 'report-risk', label: '风险建议' },
+  { id: 'report-appendix', label: '附录附件' },
+];
 
 const checkedSuiteIds = computed(() =>
-  checkedKeys.value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+  Array.from(
+    new Set(checkedKeys.value.map((item) => Number(item)).filter((item) => Number.isFinite(item)))
+  )
 );
 
 const filteredReportSnapshots = computed(() => {
   const keyword = snapshotKeyword.value.trim().toLowerCase();
-  if (!keyword) {
-    return reportSnapshots.value;
-  }
   return reportSnapshots.value.filter((item) => {
+    const matchedFilter = matchSnapshotSourceFilter(item, snapshotSourceFilter.value);
+    if (!matchedFilter) {
+      return false;
+    }
+    if (!keyword) {
+      return true;
+    }
     return (
       item.title.toLowerCase().includes(keyword) ||
       item.generatedAtText.toLowerCase().includes(keyword) ||
@@ -637,10 +1064,151 @@ const filteredReportSnapshots = computed(() => {
   });
 });
 
+const currentGenerateButtonText = computed(() => {
+  if (reportLoading.value) {
+    return '正在生成测试报告...';
+  }
+  return 'AI生成测试报告';
+});
+
+const latestGenerationRecord = computed<GenerationRecordSummary | null>(() => {
+  const report =
+    reportData.value ||
+    (reportSnapshots.value.length > 0 ? reportSnapshots.value[0].report : null);
+  if (!report) {
+    return null;
+  }
+  return {
+    generatedAtText: formatDateTime(report.generated_at),
+    source: report.generation_source || (report.used_ai ? 'ai' : 'rule'),
+    sourceLabel: getGenerationSourceLabel(report),
+    statusText: getGenerationStatusText(report),
+    durationText: formatDuration(report.generation_duration_ms),
+    selectedSuiteCount: Number(report.selected_suite_count || 0),
+    suiteCount: Number(report.suite_count || 0),
+    note: report.note || '当前未记录额外生成说明。',
+  };
+});
+
+const compareSnapshotOptions = computed(() =>
+  reportSnapshots.value.filter((item) => item.id !== activeSnapshotId.value)
+);
+
+const compareSnapshot = computed<ReportSnapshot | null>(() => {
+  if (selectedCompareSnapshotId.value !== 'auto') {
+    return (
+      reportSnapshots.value.find((item) => item.id === selectedCompareSnapshotId.value) || null
+    );
+  }
+  return findNearestComparableSnapshot();
+});
+
+const compareSnapshotDescription = computed(() => {
+  if (!compareSnapshot.value) {
+    return '暂无可对比快照';
+  }
+  if (selectedCompareSnapshotId.value === 'auto') {
+    return `自动匹配上一版：${compareSnapshot.value.title}`;
+  }
+  return compareSnapshot.value.title;
+});
+
+const snapshotCompareItems = computed<SnapshotCompareItem[]>(() => {
+  const current = reportData.value;
+  if (!current) {
+    return [];
+  }
+
+  const previous = compareSnapshot.value?.report;
+  if (!previous) {
+    return [];
+  }
+
+  const buildDelta = (
+    currentValue: number,
+    previousValue: number,
+    suffix = '',
+    higherIsBetter = true
+  ) => {
+    const diff = currentValue - previousValue;
+    if (diff === 0) {
+      return {
+        delta: `0${suffix}`,
+        trend: 'flat' as const,
+        impact: 'neutral' as const,
+        judgement: '与对比快照持平',
+      };
+    }
+    const improved = higherIsBetter ? diff > 0 : diff < 0;
+    return {
+      delta: `${diff > 0 ? '+' : ''}${diff}${suffix}`,
+      trend: diff > 0 ? ('up' as const) : ('down' as const),
+      impact: improved ? ('positive' as const) : ('negative' as const),
+      judgement: improved ? '较对比快照改善' : '较对比快照变差',
+    };
+  };
+
+  const currentPassRate = Number(current.report_standard.result_details.case_execution.pass_rate || 0);
+  const previousPassRate = Number(previous.report_standard.result_details.case_execution.pass_rate || 0);
+  const currentOpenBug = Number(current.report_standard.appendices.defect_list_summary.open_total || 0);
+  const previousOpenBug = Number(previous.report_standard.appendices.defect_list_summary.open_total || 0);
+  const currentRetestFailed = Number(current.report_standard.defect_summary.trend_summary.retest_failed_total || 0);
+  const previousRetestFailed = Number(previous.report_standard.defect_summary.trend_summary.retest_failed_total || 0);
+  const currentNotExecuted = Number(current.report_standard.result_details.case_execution.not_executed || 0);
+  const previousNotExecuted = Number(previous.report_standard.result_details.case_execution.not_executed || 0);
+
+  const passRateDelta = buildDelta(currentPassRate, previousPassRate, '%', true);
+  const openBugDelta = buildDelta(currentOpenBug, previousOpenBug, '', false);
+  const retestDelta = buildDelta(currentRetestFailed, previousRetestFailed, '', false);
+  const notExecutedDelta = buildDelta(currentNotExecuted, previousNotExecuted, '', false);
+
+  return [
+    {
+      label: '执行通过率',
+      current: `${currentPassRate}%`,
+      previous: `${previousPassRate}%`,
+      delta: passRateDelta.delta,
+      trend: passRateDelta.trend,
+      impact: passRateDelta.impact,
+      judgement: passRateDelta.judgement,
+    },
+    {
+      label: '遗留BUG',
+      current: `${currentOpenBug}`,
+      previous: `${previousOpenBug}`,
+      delta: openBugDelta.delta,
+      trend: openBugDelta.trend,
+      impact: openBugDelta.impact,
+      judgement: openBugDelta.judgement,
+    },
+    {
+      label: '复测失败',
+      current: `${currentRetestFailed}`,
+      previous: `${previousRetestFailed}`,
+      delta: retestDelta.delta,
+      trend: retestDelta.trend,
+      impact: retestDelta.impact,
+      judgement: retestDelta.judgement,
+    },
+    {
+      label: '未执行用例',
+      current: `${currentNotExecuted}`,
+      previous: `${previousNotExecuted}`,
+      delta: notExecutedDelta.delta,
+      trend: notExecutedDelta.trend,
+      impact: notExecutedDelta.impact,
+      judgement: notExecutedDelta.judgement,
+    },
+  ];
+});
+
 const normalizeSnapshots = (items: ReportSnapshot[]) =>
   [...items].sort((left, right) => {
     if (left.isPinned !== right.isPinned) {
       return left.isPinned ? -1 : 1;
+    }
+    if (left.sourcePriority !== right.sourcePriority) {
+      return left.sourcePriority - right.sourcePriority;
     }
     return new Date(right.generatedAt).getTime() - new Date(left.generatedAt).getTime();
   });
@@ -834,6 +1402,16 @@ const buildFallbackStandardReport = (report: any) => {
   };
 };
 
+const normalizeArray = <T>(value: T[] | undefined | null): T[] => (Array.isArray(value) ? value : []);
+const normalizeString = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
+const normalizeNumber = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const normalizeBoolean = (value: unknown, fallback = false): boolean =>
+  typeof value === 'boolean' ? value : fallback;
+
 const normalizeReportPayload = (payload: any): AiIterationTestReport => {
   let current = payload;
   while (
@@ -848,6 +1426,164 @@ const normalizeReportPayload = (payload: any): AiIterationTestReport => {
     current = {
       ...current,
       report_standard: buildFallbackStandardReport(current),
+    };
+  }
+  if (current && typeof current === 'object') {
+    const requirementSummary = current.requirement_summary || {};
+    const bugWorkflowSummary = current.bug_workflow_summary || {};
+    const standard = current.report_standard || {};
+    const basicInfo = standard.basic_info || {};
+    const testOverview = standard.test_overview || {};
+    const environment = standard.environment || {};
+    const activitySummary = standard.activity_summary || {};
+    const activityTimeSpan = activitySummary.time_span || {};
+    const activityWorkload = activitySummary.workload || {};
+    const resultDetails = standard.result_details || {};
+    const caseExecution = resultDetails.case_execution || {};
+    const defectSummary = standard.defect_summary || {};
+    const defectTrendSummary = defectSummary.trend_summary || {};
+    const qualityConclusion = standard.quality_conclusion || {};
+    const appendices = standard.appendices || {};
+    const defectListSummary = appendices.defect_list_summary || {};
+    const riskAndSuggestions = standard.risk_and_suggestions || {};
+    current = {
+      ...current,
+      suite_ids: normalizeArray(current.suite_ids),
+      suite_count: normalizeNumber(current.suite_count),
+      selected_suite_count: normalizeNumber(current.selected_suite_count),
+      testcase_count: normalizeNumber(current.testcase_count),
+      bug_count: normalizeNumber(current.bug_count),
+      generated_at: normalizeString(current.generated_at),
+      used_ai: normalizeBoolean(current.used_ai),
+      note: normalizeString(current.note),
+      summary: normalizeString(current.summary),
+      quality_overview: normalizeString(current.quality_overview),
+      risk_overview: normalizeString(current.risk_overview),
+      generation_source:
+        current.generation_source || (current.used_ai ? 'ai' : 'rule'),
+      generation_status: current.generation_status || 'completed',
+      generation_duration_ms: normalizeNumber(current.generation_duration_ms),
+      fallback_reason: normalizeString(current.fallback_reason),
+      evidence: normalizeArray(current.evidence),
+      findings: normalizeArray(current.findings),
+      recommendations: normalizeArray(current.recommendations),
+      suite_breakdown: normalizeArray(current.suite_breakdown),
+      execution_status_distribution:
+        current.execution_status_distribution && typeof current.execution_status_distribution === 'object'
+          ? current.execution_status_distribution
+          : {},
+      bug_status_distribution:
+        current.bug_status_distribution && typeof current.bug_status_distribution === 'object'
+          ? current.bug_status_distribution
+          : {},
+      review_status_distribution:
+        current.review_status_distribution && typeof current.review_status_distribution === 'object'
+          ? current.review_status_distribution
+          : {},
+      requirement_summary: {
+        testcase_count: Number(requirementSummary.testcase_count || 0),
+        linked_document_count: Number(requirementSummary.linked_document_count || 0),
+        linked_module_count: Number(requirementSummary.linked_module_count || 0),
+        traceable_testcase_count: Number(requirementSummary.traceable_testcase_count || 0),
+        unlinked_testcase_count: Number(requirementSummary.unlinked_testcase_count || 0),
+        project_latest_document_count: Number(requirementSummary.project_latest_document_count || 0),
+        documents: normalizeArray(requirementSummary.documents),
+        modules: normalizeArray(requirementSummary.modules),
+      },
+      bug_workflow_summary: {
+        bug_count: Number(bugWorkflowSummary.bug_count || 0),
+        fixed_bug_count: Number(bugWorkflowSummary.fixed_bug_count || 0),
+        submitted_retest_bug_count: Number(bugWorkflowSummary.submitted_retest_bug_count || 0),
+        closed_bug_count: Number(bugWorkflowSummary.closed_bug_count || 0),
+        confirmed_bug_count: Number(bugWorkflowSummary.confirmed_bug_count || 0),
+        reactivated_bug_count: Number(bugWorkflowSummary.reactivated_bug_count || 0),
+        retest_failed_total_count: Number(bugWorkflowSummary.retest_failed_total_count || 0),
+        bugs_with_failed_retest: normalizeArray(bugWorkflowSummary.bugs_with_failed_retest),
+        top_retest_failed_bugs: normalizeArray(bugWorkflowSummary.top_retest_failed_bugs),
+      },
+      report_standard: {
+        ...standard,
+        basic_info: {
+          report_no: normalizeString(basicInfo.report_no, '-'),
+          report_version: normalizeString(basicInfo.report_version, '-'),
+          report_date: normalizeString(basicInfo.report_date, '-'),
+          author: normalizeString(basicInfo.author, '-'),
+          owner: normalizeString(basicInfo.owner, '-'),
+          reviewer: normalizeString(basicInfo.reviewer, '-'),
+        },
+        test_overview: {
+          test_object: normalizeString(testOverview.test_object, '-'),
+          target_version: normalizeString(testOverview.target_version, '-'),
+          scope_included: normalizeString(testOverview.scope_included, '-'),
+          scope_excluded: normalizeString(testOverview.scope_excluded, '-'),
+          objectives: normalizeArray(testOverview.objectives),
+        },
+        environment: {
+          hardware_network: normalizeString(environment.hardware_network, '-'),
+          software_environment: normalizeString(environment.software_environment, '-'),
+          test_tools: normalizeArray(environment.test_tools),
+          third_party_services: normalizeString(environment.third_party_services, '-'),
+        },
+        activity_summary: {
+          test_types: normalizeArray(activitySummary.test_types),
+          test_round: normalizeString(activitySummary.test_round, '-'),
+          time_span: {
+            start: activityTimeSpan.start || null,
+            end: activityTimeSpan.end || null,
+          },
+          workload: {
+            person_days: normalizeString(activityWorkload.person_days, '-'),
+            total_cases: normalizeNumber(activityWorkload.total_cases),
+            executed_cases: normalizeNumber(activityWorkload.executed_cases),
+            automation_ratio: normalizeString(activityWorkload.automation_ratio, '-'),
+            bug_count: normalizeNumber(activityWorkload.bug_count),
+          },
+        },
+        result_details: {
+          case_execution: {
+            total: normalizeNumber(caseExecution.total),
+            passed: normalizeNumber(caseExecution.passed),
+            failed: normalizeNumber(caseExecution.failed),
+            blocked: normalizeNumber(caseExecution.blocked),
+            not_executed: normalizeNumber(caseExecution.not_executed),
+            pass_rate: normalizeNumber(caseExecution.pass_rate),
+          },
+          execution_breakdown: normalizeArray(resultDetails.execution_breakdown),
+        },
+        defect_summary: {
+          by_severity: normalizeArray(defectSummary.by_severity),
+          by_status: normalizeArray(defectSummary.by_status),
+          by_module: normalizeArray(defectSummary.by_module),
+          trend_summary: {
+            discovered: normalizeNumber(defectTrendSummary.discovered),
+            closed: normalizeNumber(defectTrendSummary.closed),
+            reactivated: normalizeNumber(defectTrendSummary.reactivated),
+            retest_failed_total: normalizeNumber(defectTrendSummary.retest_failed_total),
+          },
+          legacy_defects: normalizeArray(defectSummary.legacy_defects),
+        },
+        quality_conclusion: {
+          rating: normalizeString(qualityConclusion.rating, '-'),
+          release_recommendation: normalizeString(qualityConclusion.release_recommendation, '-'),
+          criteria: normalizeArray(qualityConclusion.criteria),
+          conclusion: normalizeString(qualityConclusion.conclusion, '-'),
+        },
+        risk_and_suggestions: {
+          process_risks: normalizeArray(riskAndSuggestions.process_risks),
+          residual_risks: normalizeArray(riskAndSuggestions.residual_risks),
+          follow_up_actions: normalizeArray(riskAndSuggestions.follow_up_actions),
+        },
+        appendices: {
+          defect_list_summary: {
+            total: normalizeNumber(defectListSummary.total),
+            open_total: normalizeNumber(defectListSummary.open_total),
+            items: normalizeArray(defectListSummary.items),
+          },
+          key_testcases: normalizeArray(appendices.key_testcases),
+          requirement_documents: normalizeArray(appendices.requirement_documents),
+          test_data_note: normalizeString(appendices.test_data_note, '-'),
+        },
+      },
     };
   }
   return current as AiIterationTestReport;
@@ -873,9 +1609,16 @@ const toSnapshot = (item: {
     isPinned: Boolean(item.is_pinned),
     generatedAt: report?.generated_at || item.created_at,
     generatedAtText: formatDateTime(report?.generated_at || item.created_at),
+    sourcePriority: getGenerationSourcePriority(report),
     report,
   };
 };
+
+const getSnapshotSummaryMeta = (snapshot: ReportSnapshot): SnapshotSummaryMeta => ({
+  sourceLabel: getGenerationSourceLabel(snapshot.report),
+  statusText: getGenerationStatusText(snapshot.report),
+  durationText: formatDuration(snapshot.report.generation_duration_ms),
+});
 
 const buildTree = (parentId: number | null = null): SuiteTreeNode[] =>
   suites.value
@@ -895,36 +1638,271 @@ const overviewCards = computed(() => {
     return [];
   }
   const standard = reportData.value.report_standard;
+  const traceableCount = Number(reportData.value.requirement_summary.traceable_testcase_count || 0);
+  const totalCases = Number(reportData.value.testcase_count || 0);
+  const unlinkedCount = Number(reportData.value.requirement_summary.unlinked_testcase_count || 0);
+  const closedBugCount = Number(reportData.value.bug_workflow_summary.closed_bug_count || 0);
+  const totalBugCount = Number(reportData.value.bug_count || 0);
+  const criteria = standard.quality_conclusion.criteria || [];
+  const passedCriteria = criteria.filter((item: { passed: boolean }) => item.passed).length;
+  const blockers = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && isBlockingCriteria(item.name)).length;
+  const conditions = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && !isBlockingCriteria(item.name)).length;
+
   return [
     {
-      kicker: 'QUALITY',
-      label: '质量评级',
-      value: standard.quality_conclusion.rating,
-      footnote: `发布建议：${standard.quality_conclusion.release_recommendation}`,
+      kicker: 'GATE',
+      label: '发布门槛',
+      value: `${passedCriteria}/${criteria.length || 0}`,
+      footnote:
+        blockers > 0
+          ? `当前仍有 ${blockers} 项阻断因素未消除`
+          : conditions > 0
+            ? `当前仍有 ${conditions} 项条件因素待跟进`
+            : '当前关键完成标准已全部满足',
       compact: false,
     },
     {
-      kicker: 'PROGRESS',
-      label: '执行通过率',
-      value: `${standard.result_details.case_execution.pass_rate}%`,
-      footnote: `通过 ${standard.result_details.case_execution.passed} / 总计 ${standard.result_details.case_execution.total}`,
+      kicker: 'TRACEABILITY',
+      label: '需求追踪',
+      value: `${traceableCount}/${totalCases}`,
+      footnote:
+        unlinkedCount > 0 ? `仍有 ${unlinkedCount} 条用例未建立需求追踪` : '需求追踪关系已完整建立',
       compact: false,
     },
     {
-      kicker: 'DEFECT',
-      label: '遗留风险',
-      value: `${standard.appendices.defect_list_summary.open_total}`,
-      footnote: `复测失败 ${standard.defect_summary.trend_summary.retest_failed_total} 次`,
+      kicker: 'CLOSURE',
+      label: '缺陷闭环',
+      value: `${closedBugCount}/${totalBugCount}`,
+      footnote:
+        standard.appendices.defect_list_summary.open_total > 0
+          ? `已关闭 ${closedBugCount} 个，仍有 ${standard.appendices.defect_list_summary.open_total} 个未关闭`
+          : '当前缺陷已全部进入关闭状态',
       compact: false,
     },
     {
       kicker: 'SCOPE',
-      label: '测试范围',
-      value: standard.test_overview.scope_included || '-',
-      footnote: `不在范围：${standard.test_overview.scope_excluded}`,
-      compact: true,
+      label: '覆盖套件',
+      value: `${reportData.value.suite_count}`,
+      footnote: `由 ${reportData.value.selected_suite_count} 个根套件联动汇总本轮测试范围`,
+      compact: false,
     },
   ];
+});
+
+const executionCoverageRate = computed(() => {
+  if (!reportData.value) {
+    return '0%';
+  }
+  const workload = reportData.value.report_standard.activity_summary.workload;
+  const totalCases = Number(workload.total_cases || 0);
+  const executedCases = Number(workload.executed_cases || 0);
+  if (totalCases <= 0) {
+    return '0%';
+  }
+  const coverage = (executedCases / totalCases) * 100;
+  return Number.isInteger(coverage) ? `${coverage}%` : `${coverage.toFixed(1)}%`;
+});
+
+const criteriaCompletionSummary = computed(() => {
+  if (!reportData.value) {
+    return {
+      value: '0/0',
+      footnote: '当前暂无完成标准数据',
+    };
+  }
+  const criteria = reportData.value.report_standard.quality_conclusion.criteria || [];
+  const passed = criteria.filter((item: { passed: boolean }) => item.passed).length;
+  const blockers = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && isBlockingCriteria(item.name)).length;
+  const conditions = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && !isBlockingCriteria(item.name)).length;
+
+  let footnote = '当前关键完成标准已全部满足';
+  if (blockers > 0) {
+    footnote = `仍有 ${blockers} 项阻断项需要先关闭`;
+  } else if (conditions > 0) {
+    footnote = `仍有 ${conditions} 项条件项需要同步跟进`;
+  }
+
+  return {
+    value: `${passed}/${criteria.length}`,
+    footnote,
+  };
+});
+
+const releaseDecisionFootnote = computed(() => {
+  if (!reportData.value) {
+    return '';
+  }
+  const criteria = reportData.value.report_standard.quality_conclusion.criteria || [];
+  const blockers = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && isBlockingCriteria(item.name)).length;
+  const conditions = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && !isBlockingCriteria(item.name)).length;
+  const rating = reportData.value.report_standard.quality_conclusion.rating;
+  if (blockers > 0) {
+    return `质量评级 ${rating}，当前仍有 ${blockers} 项阻断因素未消除。`;
+  }
+  if (conditions > 0) {
+    return `质量评级 ${rating}，当前仍有 ${conditions} 项条件因素待跟进。`;
+  }
+  return `质量评级 ${rating}，当前关键完成标准已全部满足。`;
+});
+
+const generationInsight = computed(() => {
+  if (!reportData.value) {
+    return null;
+  }
+  const report = reportData.value;
+  return {
+    status: getGenerationAlertStatus(report),
+    title: getGenerationAlertTitle(report),
+    description:
+      report.note ||
+      `${getGenerationSourceLabel(report)}，耗时 ${formatDuration(report.generation_duration_ms)}。`,
+  };
+});
+
+const criteriaSummary = computed(() => {
+  if (!reportData.value) {
+    return {
+      blockers: [] as CriteriaSummaryItem[],
+      conditions: [] as CriteriaSummaryItem[],
+      passed: [] as CriteriaSummaryItem[],
+    };
+  }
+
+  const criteria = reportData.value.report_standard.quality_conclusion.criteria || [];
+  const blockers: CriteriaSummaryItem[] = [];
+  const conditions: CriteriaSummaryItem[] = [];
+  const passed: CriteriaSummaryItem[] = [];
+
+  criteria.forEach((item: { name: string; detail: string; passed: boolean }) => {
+    if (item.passed) {
+      passed.push({ ...item, tone: 'success', toneLabel: '已达成' });
+    } else if (isBlockingCriteria(item.name)) {
+      blockers.push({ ...item, tone: 'danger', toneLabel: '阻断发布' });
+    } else {
+      conditions.push({ ...item, tone: 'warning', toneLabel: '需补齐' });
+    }
+  });
+
+  return { blockers, conditions, passed };
+});
+
+const criteriaSummaryCards = computed(() => [
+  {
+    key: 'blockers',
+    title: '阻断项',
+    count: criteriaSummary.value.blockers.length,
+    tone: 'danger' as const,
+    description: '这些项未达成时，当前版本不应进入发布阶段。',
+    items: criteriaSummary.value.blockers,
+    emptyText: '当前没有阻断项',
+  },
+  {
+    key: 'conditions',
+    title: '条件项',
+    count: criteriaSummary.value.conditions.length,
+    tone: 'warning' as const,
+    description: '这些项会影响发布条件与遗留风险说明。',
+    items: criteriaSummary.value.conditions,
+    emptyText: '当前没有条件项',
+  },
+  {
+    key: 'passed',
+    title: '已达成',
+    count: criteriaSummary.value.passed.length,
+    tone: 'success' as const,
+    description: '这些项已满足，可作为当前测试结论的正向依据。',
+    items: criteriaSummary.value.passed,
+    emptyText: '当前没有已达成项',
+  },
+]);
+
+const conclusionOverviewCards = computed(() => {
+  if (!reportData.value) {
+    return [];
+  }
+  const criteria = reportData.value.report_standard.quality_conclusion.criteria || [];
+  const blockers = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && isBlockingCriteria(item.name));
+  const conditions = criteria.filter((item: { name: string; passed: boolean }) => !item.passed && !isBlockingCriteria(item.name));
+  const passed = criteria.filter((item: { passed: boolean }) => item.passed);
+  const openBugTotal = Number(reportData.value.report_standard.appendices.defect_list_summary.open_total || 0);
+  const retestFailedTotal = Number(reportData.value.report_standard.defect_summary.trend_summary.retest_failed_total || 0);
+  const pendingCount = blockers.length + conditions.length;
+
+  return [
+    {
+      label: '完成标准',
+      value: `${passed.length}/${criteria.length}`,
+      footnote: criteria.length > 0 ? `当前已达成 ${passed.length} 项完成标准` : '当前暂无完成标准数据',
+    },
+    {
+      label: '待跟进项',
+      value: `${pendingCount}`,
+      footnote:
+        blockers.length > 0
+          ? `其中阻断项 ${blockers.length} 个，需优先关闭`
+          : conditions.length > 0
+            ? `当前有 ${conditions.length} 个条件项待补齐`
+            : '当前无额外待跟进项',
+    },
+    {
+      label: '遗留缺陷',
+      value: `${openBugTotal}`,
+      footnote: `未关闭 BUG ${openBugTotal} 个，复测失败 ${retestFailedTotal} 次`,
+    },
+  ];
+});
+
+const riskOverviewCards = computed(() => {
+  if (!reportData.value) {
+    return [];
+  }
+  const risk = reportData.value.report_standard.risk_and_suggestions;
+  return [
+    {
+      label: '过程风险',
+      value: `${risk.process_risks.length}`,
+      footnote: risk.process_risks.length > 0 ? '测试执行过程中仍有不确定因素需要关注' : '当前测试过程已相对稳定',
+    },
+    {
+      label: '剩余风险',
+      value: `${risk.residual_risks.length}`,
+      footnote: risk.residual_risks.length > 0 ? '上线后仍需接受或持续跟进的风险项' : '当前未识别额外剩余风险',
+    },
+    {
+      label: '后续动作',
+      value: `${risk.follow_up_actions.length}`,
+      footnote: risk.follow_up_actions.length > 0 ? '建议按优先级推进后续闭环动作' : '当前暂无新增后续动作',
+    },
+  ];
+});
+
+const supportSummaryItems = computed(() => {
+  if (!reportData.value) {
+    return [];
+  }
+  return [
+    { label: '需求文档覆盖', value: `${reportData.value.requirement_summary.linked_document_count}` },
+    { label: '未追踪用例', value: `${reportData.value.requirement_summary.unlinked_testcase_count}` },
+    { label: '复测失败 BUG', value: `${reportData.value.bug_workflow_summary.retest_failed_total_count}` },
+  ];
+});
+
+const conclusionReasons = computed<ConclusionReasonItem[]>(() => {
+  if (!reportData.value) {
+    return [];
+  }
+  return buildConclusionReasonsSnapshot(reportData.value);
+});
+
+const releaseChecklist = computed<ReleaseChecklistItem[]>(() => {
+  if (!reportData.value) {
+    return [];
+  }
+  return buildExecutiveSummarySnapshot(reportData.value).releaseChecklist.map((item) => ({
+    title: item.title,
+    detail: item.detail,
+    priority: item.priority,
+  }));
 });
 
 function formatDateTime(value?: string | null) {
@@ -936,6 +1914,143 @@ function formatDateTime(value?: string | null) {
     return value;
   }
   return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatDuration(value?: number | null) {
+  const durationMs = Number(value || 0);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return '耗时未记录';
+  }
+  if (durationMs < 1000) {
+    return `${durationMs} ms`;
+  }
+  return `${(durationMs / 1000).toFixed(durationMs >= 10000 ? 0 : 1)} 秒`;
+}
+
+function formatDisplayList(items?: Array<string | null | undefined>, fallback = '-') {
+  const normalized = normalizeArray(items).map((item) => `${item ?? ''}`.trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized.join('、') : fallback;
+}
+
+function getGenerationSourceLabel(report: AiIterationTestReport) {
+  if (report.generation_source === 'fallback') return 'AI失败后回退';
+  if (report.generation_source === 'ai' || report.used_ai) return 'AI生成';
+  return '规则生成';
+}
+
+function getGenerationSourceColor(report: AiIterationTestReport) {
+  if (report.generation_source === 'fallback') return 'orange';
+  if (report.generation_source === 'ai' || report.used_ai) return 'arcoblue';
+  return 'gold';
+}
+
+function getGenerationSourcePriority(report: AiIterationTestReport) {
+  if (report.generation_source === 'ai' || report.used_ai) return 0;
+  if (report.generation_source === 'fallback') return 1;
+  return 2;
+}
+
+function matchSnapshotSourceFilter(
+  snapshot: ReportSnapshot,
+  filter: 'all' | 'ai' | 'fallback' | 'rule' | 'pinned'
+) {
+  if (filter === 'all') return true;
+  if (filter === 'pinned') return snapshot.isPinned;
+  if (filter === 'ai') return snapshot.report.generation_source === 'ai' || snapshot.report.used_ai;
+  if (filter === 'fallback') return snapshot.report.generation_source === 'fallback';
+  return snapshot.report.generation_source === 'rule' && !snapshot.report.used_ai;
+}
+
+function getSnapshotTimestamp(snapshot: ReportSnapshot) {
+  const timestamp = new Date(snapshot.generatedAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function findNearestComparableSnapshot() {
+  const candidates = reportSnapshots.value.filter((item) => item.id !== activeSnapshotId.value);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const currentTimestamp = reportData.value ? new Date(reportData.value.generated_at).getTime() : NaN;
+  if (!Number.isFinite(currentTimestamp)) {
+    return candidates[0];
+  }
+
+  const olderCandidates = candidates
+    .filter((item) => getSnapshotTimestamp(item) <= currentTimestamp)
+    .sort((left, right) => getSnapshotTimestamp(right) - getSnapshotTimestamp(left));
+  if (olderCandidates.length > 0) {
+    return olderCandidates[0];
+  }
+
+  return [...candidates].sort((left, right) => {
+    return Math.abs(getSnapshotTimestamp(left) - currentTimestamp) - Math.abs(getSnapshotTimestamp(right) - currentTimestamp);
+  })[0];
+}
+
+function buildSnapshotTitle(report: AiIterationTestReport, suites: TestSuite[], mode: 'auto' | 'manual') {
+  const selectedIds = Array.isArray(report.suite_ids) ? report.suite_ids : [];
+  const selectedSuites = suites.filter((suite) => selectedIds.includes(suite.id));
+  const suiteLabel =
+    selectedSuites.length === 0
+      ? `${Number(report.selected_suite_count || 0)}个套件`
+      : selectedSuites.length === 1
+        ? selectedSuites[0].name
+        : `${selectedSuites[0].name}等${selectedSuites.length}个套件`;
+  const sourceLabel = getGenerationSourceLabel(report);
+  const generatedAt = formatDateTime(report.generated_at).replace(/\//g, '-');
+  return mode === 'manual'
+    ? `手动保存 ${suiteLabel} ${generatedAt}`
+    : `${sourceLabel} ${suiteLabel} ${generatedAt}`;
+}
+
+function getGenerationStatusText(report: AiIterationTestReport) {
+  if (report.generation_source === 'fallback') {
+    return 'AI调用失败，已自动回退';
+  }
+  if (report.generation_source === 'ai' || report.used_ai) {
+    return '已完成 AI 分析';
+  }
+  return report.model_name ? '未走 AI，直接按规则生成' : '当前未配置可用模型，按规则生成';
+}
+
+function getGenerationAlertStatus(report: AiIterationTestReport): 'success' | 'warning' | 'normal' {
+  if (report.generation_source === 'fallback') return 'warning';
+  if (report.generation_source === 'ai' || report.used_ai) return 'success';
+  return 'normal';
+}
+
+function getGenerationAlertTitle(report: AiIterationTestReport) {
+  if (report.generation_source === 'fallback') return '本次 AI 分析失败，已自动切换为规则生成';
+  if (report.generation_source === 'ai' || report.used_ai) return '本次测试报告已通过 AI 分析生成';
+  return report.model_name ? '本次测试报告未采用 AI 结果' : '当前未配置可用模型，已按规则生成报告';
+}
+
+function isBlockingCriteria(name: string) {
+  return [
+    '测试范围内至少已有有效执行结果',
+    '无未关闭致命/严重缺陷',
+    '核心测试执行失败数为 0',
+    '测试用例均已审核通过',
+  ].includes(name);
+}
+
+function getCriteriaSectionColor(tone: 'danger' | 'warning' | 'success'): 'danger' | 'warning' | 'success' {
+  if (tone === 'danger') return 'danger';
+  if (tone === 'warning') return 'warning';
+  return 'success';
+}
+
+function scrollToReportSection(id: string) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const target = document.getElementById(id);
+  if (!target) {
+    return;
+  }
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function loadReportSnapshots() {
@@ -979,10 +2094,7 @@ async function createReportSnapshot(
     return null;
   }
 
-  const timestamp = new Date();
-  const title = useCurrentTitle
-    ? `测试报告 ${timestamp.toLocaleString('zh-CN', { hour12: false })}`
-    : `手动保存 ${timestamp.toLocaleString('zh-CN', { hour12: false })}`;
+  const title = buildSnapshotTitle(report, suites.value, useCurrentTitle ? 'auto' : 'manual');
 
   const response = await createTestReportSnapshot(currentProjectId.value, {
     title,
@@ -1008,7 +2120,7 @@ async function createReportSnapshot(
 function persistReportSnapshotInBackground(report: AiIterationTestReport) {
   void createReportSnapshot(report, true, { silent: true }).catch((error) => {
     console.error('自动保存报告快照失败:', error);
-    Message.warning('\u6d4b\u8bd5\u62a5\u544a\u5df2\u751f\u6210\uff0c\u4f46\u81ea\u52a8\u4fdd\u5b58\u5feb\u7167\u5931\u8d25\uff0c\u53ef\u624b\u52a8\u70b9\u51fb\u4fdd\u5b58');
+    Message.warning('测试报告已生成，但自动保存快照失败，可手动点击保存');
   });
 }
 function applyReportSnapshot(snapshot: ReportSnapshot, showMessage = true) {
@@ -1207,7 +2319,6 @@ async function fetchSuites() {
     if (response.success && response.data) {
       suites.value = response.data;
       expandedKeys.value = response.data.map((item) => item.id);
-      checkedKeys.value = checkedKeys.value.filter((item) => response.data?.some((suite) => suite.id === Number(item)));
       applySuiteSelectionFromRoute();
       return;
     }
@@ -1251,7 +2362,17 @@ async function handleGenerateReport() {
     if (response.success && response.data) {
       reportData.value = response.data;
       persistReportSnapshotInBackground(response.data);
-      Message.success(response.data.used_ai ? '测试报告生成完成' : '测试报告已生成（统计版）');
+      if (response.data.generation_source === 'fallback') {
+        Message.warning('AI 分析失败，已自动回退为规则生成');
+      } else if (response.data.generation_source === 'ai' || response.data.used_ai) {
+        Message.success('AI 测试报告生成完成');
+      } else {
+        Message.success(
+          response.data.model_name
+            ? '未采用 AI 结果，已按规则生成测试报告'
+            : '当前未配置可用模型，已按规则生成测试报告'
+        );
+      }
       return;
     }
     Message.error(response.error || '生成测试报告失败');
@@ -1288,33 +2409,205 @@ function getPriorityLabel(value: string) {
   return '中优先级';
 }
 
+function buildExecutiveSummarySnapshot(report: AiIterationTestReport) {
+  const standard = report.report_standard;
+  const execution = standard.result_details.case_execution;
+  const openBugTotal = Number(standard.appendices.defect_list_summary.open_total || 0);
+  const retestFailedTotal = Number(standard.defect_summary.trend_summary.retest_failed_total || 0);
+  const criteria = standard.quality_conclusion.criteria || [];
+  const blockers = criteria.filter((item) => !item.passed && isBlockingCriteria(item.name));
+  const conditions = criteria.filter((item) => !item.passed && !isBlockingCriteria(item.name));
+  const actions = standard.risk_and_suggestions.follow_up_actions || [];
+  const releaseRecommendation = standard.quality_conclusion.release_recommendation;
+  const rating = standard.quality_conclusion.rating;
+  const releaseChecklist: Array<{
+    title: string;
+    detail: string;
+    priority: 'high' | 'medium' | 'low';
+    priorityLabel: string;
+  }> = [];
+
+  blockers.slice(0, 3).forEach((item) => {
+    releaseChecklist.push({
+      title: item.name,
+      detail: item.detail,
+      priority: 'high',
+      priorityLabel: '高优先级',
+    });
+  });
+
+  conditions.slice(0, 2).forEach((item) => {
+    releaseChecklist.push({
+      title: item.name,
+      detail: item.detail,
+      priority: 'medium',
+      priorityLabel: '中优先级',
+    });
+  });
+
+  actions.forEach((item) => {
+    if (releaseChecklist.length >= 5) return;
+    if (releaseChecklist.some((existing) => existing.detail === item || existing.title === item)) return;
+    const priority = blockers.length > 0 ? 'high' : conditions.length > 0 ? 'medium' : 'low';
+    releaseChecklist.push({
+      title: '跟进动作',
+      detail: item,
+      priority,
+      priorityLabel: priority === 'high' ? '高优先级' : priority === 'medium' ? '中优先级' : '低优先级',
+    });
+  });
+
+  if (releaseChecklist.length === 0) {
+    releaseChecklist.push({
+      title: '可以进入发布评审',
+      detail: '当前没有阻断项或额外条件项，建议按正常发布流程继续推进。',
+      priority: 'low',
+      priorityLabel: '低优先级',
+    });
+  }
+
+  const summaryText =
+    releaseRecommendation === '不建议发布'
+      ? `当前存在 ${blockers.length} 项阻断因素，建议优先处理高风险问题后再进入发布评审。`
+      : releaseRecommendation === '有条件发布'
+        ? `当前不存在硬性阻断，但仍有 ${conditions.length} 项条件因素需要跟进，建议在明确责任人与时间后再推进发布。`
+        : '当前关键完成标准已满足，可按正常流程进入发布评审或上线验证。';
+
+  return {
+    releaseRecommendation,
+    rating,
+    summaryText,
+    passRate: execution.pass_rate,
+    openBugTotal,
+    retestFailedTotal,
+    notExecuted: execution.not_executed,
+    releaseChecklist: releaseChecklist.slice(0, 5),
+  };
+}
+
+function buildConclusionReasonsSnapshot(report: AiIterationTestReport) {
+  const standard = report.report_standard;
+  const reasons: ConclusionReasonItem[] = [];
+  const caseExecution = standard.result_details.case_execution;
+  const defectSummary = standard.defect_summary.trend_summary;
+  const openBugTotal = standard.appendices.defect_list_summary.open_total;
+  const rating = standard.quality_conclusion.rating;
+  const recommendation = standard.quality_conclusion.release_recommendation;
+  const criteria = standard.quality_conclusion.criteria || [];
+  const blockers = criteria.filter((item) => !item.passed && isBlockingCriteria(item.name));
+  const conditions = criteria.filter((item) => !item.passed && !isBlockingCriteria(item.name));
+  const passed = criteria.filter((item) => item.passed);
+
+  blockers.forEach((item) => {
+    reasons.push({
+      title: `阻断因素：${item.name}`,
+      detail: item.detail,
+      tone: 'danger',
+    });
+  });
+
+  conditions.forEach((item) => {
+    reasons.push({
+      title: `条件因素：${item.name}`,
+      detail: item.detail,
+      tone: 'warning',
+    });
+  });
+
+  if (reasons.length === 0) {
+    reasons.push({
+      title: '结论依据完整',
+      detail: '当前完成标准已全部达成，测试结果、需求追踪和缺陷闭环均支持当前发布结论。',
+      tone: 'success',
+    });
+  } else {
+    reasons.unshift({
+      title: `当前结论为 ${rating} / ${recommendation}`,
+      detail: `执行通过率 ${caseExecution.pass_rate}%，未关闭 BUG ${openBugTotal} 个，复测失败累计 ${defectSummary.retest_failed_total} 次。`,
+      tone: recommendation === '不建议发布' ? 'danger' : 'warning',
+    });
+  }
+
+  if (passed.length > 0) {
+    const passedNames = passed.slice(0, 3).map((item) => item.name).join('、');
+    reasons.push({
+      title: '正向依据',
+      detail: `已达成 ${passed.length} 项完成标准，当前已满足：${passedNames}${passed.length > 3 ? ' 等' : ''}。`,
+      tone: 'success',
+    });
+  }
+
+  return reasons;
+}
+
 function buildReportMarkdown(report: AiIterationTestReport) {
+  const summary = buildExecutiveSummarySnapshot(report);
+  const conclusionReasons = buildConclusionReasonsSnapshot(report);
+  const basicInfo = report.report_standard.basic_info;
+  const overview = report.report_standard.test_overview;
+  const execution = report.report_standard.result_details.case_execution;
+  const pushPrefixedList = (items: string[], prefix: string) => {
+    if (items.length === 0) {
+      lines.push(`- ${prefix}：无`);
+      return;
+    }
+    items.forEach((item) => {
+      lines.push(`- ${prefix}：${item}`);
+    });
+  };
   const lines: string[] = [
     '# 测试报告',
     '',
+    `> 报告编号：${basicInfo.report_no}`,
+    `> 报告版本：${basicInfo.report_version}`,
+    `> 测试对象：${overview.test_object}`,
+    `> 目标版本：${overview.target_version}`,
+    `> 报告日期：${basicInfo.report_date}`,
+    '',
+    '## 封面摘要',
+    `- 编写人：${basicInfo.author}`,
+    `- 负责人：${basicInfo.owner}`,
+    `- 审核人：${basicInfo.reviewer}`,
+    `- 测试范围：${overview.scope_included}`,
+    `- 发布建议：${summary.releaseRecommendation}`,
+    `- 质量评级：${summary.rating}`,
+    '',
+    '## 管理摘要',
+    '| 指标 | 结果 |',
+    '| --- | --- |',
+    `| 发布建议 | ${summary.releaseRecommendation} |`,
+    `| 质量评级 | ${summary.rating} |`,
+    `| 执行通过率 | ${summary.passRate}% |`,
+    `| 未关闭 BUG | ${summary.openBugTotal} |`,
+    `| 复测失败 | ${summary.retestFailedTotal} |`,
+    `| 未执行用例 | ${summary.notExecuted} |`,
+    '',
+    `- 摘要说明：${summary.summaryText}`,
+    `- 一句话结论：本轮共执行 ${execution.total} 条测试用例，当前通过率 ${summary.passRate}%，未关闭 BUG ${summary.openBugTotal} 个。`,
+    '',
     '## 报告基本信息',
-    `- 报告编号：${report.report_standard.basic_info.report_no}`,
-    `- 报告版本：${report.report_standard.basic_info.report_version}`,
-    `- 报告日期：${report.report_standard.basic_info.report_date}`,
-    `- 编写人：${report.report_standard.basic_info.author}`,
-    `- 负责人：${report.report_standard.basic_info.owner}`,
-    `- 审核人：${report.report_standard.basic_info.reviewer}`,
+    `- 报告编号：${basicInfo.report_no}`,
+    `- 报告版本：${basicInfo.report_version}`,
+    `- 报告日期：${basicInfo.report_date}`,
+    `- 编写人：${basicInfo.author}`,
+    `- 负责人：${basicInfo.owner}`,
+    `- 审核人：${basicInfo.reviewer}`,
     '',
     '## 测试概述',
-    `- 测试对象：${report.report_standard.test_overview.test_object}`,
-    `- 目标版本：${report.report_standard.test_overview.target_version}`,
-    `- 测试范围：${report.report_standard.test_overview.scope_included}`,
-    `- 不在范围：${report.report_standard.test_overview.scope_excluded}`,
-    ...report.report_standard.test_overview.objectives.map((item) => `- 测试目标：${item}`),
+    `- 测试对象：${overview.test_object}`,
+    `- 目标版本：${overview.target_version}`,
+    `- 测试范围：${overview.scope_included}`,
+    `- 不在范围：${overview.scope_excluded}`,
+    ...(overview.objectives.length > 0 ? overview.objectives.map((item) => `- 测试目标：${item}`) : ['- 测试目标：无']),
     '',
     '## 测试环境',
     `- 硬件/网络：${report.report_standard.environment.hardware_network}`,
     `- 软件环境：${report.report_standard.environment.software_environment}`,
     `- 第三方依赖：${report.report_standard.environment.third_party_services}`,
-    `- 测试工具：${report.report_standard.environment.test_tools.join('、')}`,
+    `- 测试工具：${formatDisplayList(report.report_standard.environment.test_tools)}`,
     '',
     '## 测试活动摘要',
-    `- 测试类型：${report.report_standard.activity_summary.test_types.join('、')}`,
+    `- 测试类型：${formatDisplayList(report.report_standard.activity_summary.test_types)}`,
     `- 测试轮次：${report.report_standard.activity_summary.test_round}`,
     `- 时间跨度：${formatDateTime(report.report_standard.activity_summary.time_span.start)} 至 ${formatDateTime(report.report_standard.activity_summary.time_span.end)}`,
     `- 工作量（人日）：${report.report_standard.activity_summary.workload.person_days}`,
@@ -1329,34 +2622,56 @@ function buildReportMarkdown(report: AiIterationTestReport) {
     `- 阻塞/无需执行数：${report.report_standard.result_details.case_execution.blocked}`,
     `- 未执行数：${report.report_standard.result_details.case_execution.not_executed}`,
     `- 通过率：${report.report_standard.result_details.case_execution.pass_rate}%`,
-    ...report.report_standard.result_details.execution_breakdown.map((item) => `- 执行状态 ${item.name}：${item.count}`),
+    ...(
+      report.report_standard.result_details.execution_breakdown.length > 0
+        ? report.report_standard.result_details.execution_breakdown.map((item) => `- 执行状态 ${item.name}：${item.count}`)
+        : ['- 执行状态明细：无']
+    ),
     '',
     '## 缺陷统计',
-    ...report.report_standard.defect_summary.by_severity.map((item) => `- 按严重程度 ${item.name}：${item.count}`),
-    ...report.report_standard.defect_summary.by_status.map((item) => `- 按状态 ${item.name}：${item.count}`),
-    ...report.report_standard.defect_summary.by_module.map((item) => `- 按模块 ${item.name}：${item.count}`),
+    ...(report.report_standard.defect_summary.by_severity.length > 0
+      ? report.report_standard.defect_summary.by_severity.map((item) => `- 按严重程度 ${item.name}：${item.count}`)
+      : ['- 按严重程度：无']),
+    ...(report.report_standard.defect_summary.by_status.length > 0
+      ? report.report_standard.defect_summary.by_status.map((item) => `- 按状态 ${item.name}：${item.count}`)
+      : ['- 按状态：无']),
+    ...(report.report_standard.defect_summary.by_module.length > 0
+      ? report.report_standard.defect_summary.by_module.map((item) => `- 按模块 ${item.name}：${item.count}`)
+      : ['- 按模块：无']),
     `- 缺陷趋势摘要：发现 ${report.report_standard.defect_summary.trend_summary.discovered} / 已关闭 ${report.report_standard.defect_summary.trend_summary.closed} / 重新激活 ${report.report_standard.defect_summary.trend_summary.reactivated} / 复测失败 ${report.report_standard.defect_summary.trend_summary.retest_failed_total}`,
     '',
     '## 报告生成摘要',
     `- 生成时间：${formatDateTime(report.generated_at)}`,
-    `- 生成方式：${report.used_ai ? 'AI 生成' : '规则生成'}`,
+    `- 生成方式：${getGenerationSourceLabel(report)}`,
+    `- 生成状态：${getGenerationStatusText(report)}`,
+    `- 生成耗时：${formatDuration(report.generation_duration_ms)}`,
+    ...(report.fallback_reason ? [`- 回退原因：${report.fallback_reason}`] : []),
     `- 套件总数：${report.suite_count}`,
     `- 测试用例总数：${report.testcase_count}`,
     `- BUG 总数：${report.bug_count}`,
     `- 本次选择套件数：${report.selected_suite_count}`,
     '',
     '## 执行摘要',
-    report.summary,
+    report.summary || '-',
     '',
     '## 质量概览',
-    report.quality_overview,
+    report.quality_overview || '-',
     '',
     '## 风险概览',
-    report.risk_overview,
+    report.risk_overview || '-',
     '',
-    '## 关键发现',
+    '## 结论依据',
   ];
 
+  if (conclusionReasons.length === 0) {
+    lines.push('- 无');
+  } else {
+    conclusionReasons.forEach((item) => {
+      lines.push(`- ${item.title}：${item.detail}`);
+    });
+  }
+
+  lines.push('', '## 关键发现');
   if (report.findings.length === 0) {
     lines.push('- 无');
   } else {
@@ -1370,9 +2685,7 @@ function buildReportMarkdown(report: AiIterationTestReport) {
     lines.push('- 当前无遗留缺陷');
   } else {
     report.report_standard.defect_summary.legacy_defects.forEach((item) => {
-      lines.push(
-        `- BUG#${item.id} ${item.title}：${item.severity} / ${item.status} / 模块 ${item.module} / 计划修复 ${item.planned_fix_version} / 风险接受理由 ${item.risk_acceptance}`
-      );
+      lines.push(`- BUG#${item.id} ${item.title}：${item.severity} / ${item.status} / 模块 ${item.module} / 计划修复 ${item.planned_fix_version} / 风险接受理由 ${item.risk_acceptance}`);
       lines.push(`  - 影响范围：${item.impact_scope}`);
       lines.push(`  - 复现步骤：${item.repro_steps}`);
     });
@@ -1387,6 +2700,15 @@ function buildReportMarkdown(report: AiIterationTestReport) {
     });
   }
 
+  lines.push('', '## 发布前待办');
+  if (summary.releaseChecklist.length === 0) {
+    lines.push('- 无');
+  } else {
+    summary.releaseChecklist.forEach((item, index) => {
+      lines.push(`${index + 1}. [${item.priorityLabel}] ${item.title}：${item.detail}`);
+    });
+  }
+
   lines.push('', '## 需求覆盖情况');
   lines.push(
     `- 关联需求文档数：${report.requirement_summary.linked_document_count}`,
@@ -1396,20 +2718,18 @@ function buildReportMarkdown(report: AiIterationTestReport) {
   );
   if (report.requirement_summary.documents.length > 0) {
     report.requirement_summary.documents.forEach((item) => {
-      lines.push(
-        `- 文档 ${item.title}：版本 ${item.version || '-'} / 状态 ${item.status || '-'} / 关联用例 ${item.linked_testcase_count} / 模块 ${item.module_count}`
-      );
+      lines.push(`- 文档 ${item.title}：版本 ${item.version || '-'} / 状态 ${item.status || '-'} / 关联用例 ${item.linked_testcase_count} / 模块 ${item.module_count}`);
     });
+  } else {
+    lines.push('- 需求文档明细：无');
   }
   if (report.requirement_summary.modules.length > 0) {
     lines.push('', '### 需求模块');
     report.requirement_summary.modules.forEach((item) => {
-      lines.push(
-        `- ${item.document_title} / ${item.title}：关联用例 ${item.matched_testcase_count}${
-          item.content_excerpt ? ` / 摘要 ${item.content_excerpt}` : ''
-        }`
-      );
+      lines.push(`- ${item.document_title} / ${item.title}：关联用例 ${item.matched_testcase_count}${item.content_excerpt ? ` / 摘要 ${item.content_excerpt}` : ''}`);
     });
+  } else {
+    lines.push('- 需求模块明细：无');
   }
 
   lines.push('', '## BUG 流程摘要');
@@ -1424,48 +2744,54 @@ function buildReportMarkdown(report: AiIterationTestReport) {
   if (report.bug_workflow_summary.top_retest_failed_bugs.length > 0) {
     lines.push('', '### 复测失败 TOP BUG');
     report.bug_workflow_summary.top_retest_failed_bugs.forEach((item) => {
-      lines.push(
-        `- ${item.title}：复测失败 ${item.failed_retest_count} 次 / 当前状态 ${item.status} / 套件 ${item.suite || '-'} / 修复次数 ${item.fix_count} / 解决次数 ${item.resolve_count}`
-      );
+      lines.push(`- ${item.title}：复测失败 ${item.failed_retest_count} 次 / 当前状态 ${item.status} / 套件 ${item.suite || '-'} / 修复次数 ${item.fix_count} / 解决次数 ${item.resolve_count}`);
     });
+  } else {
+    lines.push('- 复测失败 TOP BUG：无');
   }
 
   lines.push('', '## 测试结论');
   lines.push(`- 质量评级：${report.report_standard.quality_conclusion.rating}`);
   lines.push(`- 发布建议：${report.report_standard.quality_conclusion.release_recommendation}`);
   lines.push(`- 结论陈述：${report.report_standard.quality_conclusion.conclusion}`);
-  report.report_standard.quality_conclusion.criteria.forEach((item) => {
-    lines.push(`- 完成标准 ${item.name}：${item.passed ? '达成' : '未达成'}；${item.detail}`);
-  });
+  if (report.report_standard.quality_conclusion.criteria.length === 0) {
+    lines.push('- 完成标准：无');
+  } else {
+    report.report_standard.quality_conclusion.criteria.forEach((item) => {
+      lines.push(`- 完成标准 ${item.name}：${item.passed ? '达成' : '未达成'}，${item.detail}`);
+    });
+  }
 
   lines.push('', '## 风险与建议');
-  report.report_standard.risk_and_suggestions.process_risks.forEach((item) => {
-    lines.push(`- 测试过程风险：${item}`);
-  });
-  report.report_standard.risk_and_suggestions.residual_risks.forEach((item) => {
-    lines.push(`- 剩余风险：${item}`);
-  });
-  report.report_standard.risk_and_suggestions.follow_up_actions.forEach((item) => {
-    lines.push(`- 后续行动建议：${item}`);
-  });
+  pushPrefixedList(report.report_standard.risk_and_suggestions.process_risks, '测试过程风险');
+  pushPrefixedList(report.report_standard.risk_and_suggestions.residual_risks, '剩余风险');
+  pushPrefixedList(report.report_standard.risk_and_suggestions.follow_up_actions, '后续行动建议');
 
   lines.push('', '## 套件覆盖详情');
-  report.suite_breakdown.forEach((item) => {
-    lines.push(
-      `- ${item.path}：测试用例 ${item.testcase_count} / 已审核 ${item.approved_testcase_count} / 失败 ${item.failed_testcase_count} / 未执行 ${item.not_executed_testcase_count} / BUG ${item.bug_count} / 待复测 ${item.pending_retest_bug_count}`
-    );
-  });
+  if (report.suite_breakdown.length === 0) {
+    lines.push('- 当前无套件覆盖详情');
+  } else {
+    report.suite_breakdown.forEach((item) => {
+      lines.push(`- ${item.path}：测试用例 ${item.testcase_count} / 已审核 ${item.approved_testcase_count} / 失败 ${item.failed_testcase_count} / 未执行 ${item.not_executed_testcase_count} / BUG ${item.bug_count} / 待复测 ${item.pending_retest_bug_count}`);
+    });
+  }
 
   lines.push('', '## 附录与附件');
-  lines.push(
-    `- 缺陷清单摘要：总数 ${report.report_standard.appendices.defect_list_summary.total} / 未关闭 ${report.report_standard.appendices.defect_list_summary.open_total}`
-  );
-  report.report_standard.appendices.key_testcases.forEach((item) => {
-    lines.push(`- 关键测试用例 ${item.name}：${item.module || '-'} / ${item.test_type} / ${item.execution_status}`);
-  });
-  report.report_standard.appendices.requirement_documents.forEach((item) => {
-    lines.push(`- 需求文档 ${item.title}：${item.version || '-'} / ${item.status || '-'}`);
-  });
+  lines.push(`- 缺陷清单摘要：总数 ${report.report_standard.appendices.defect_list_summary.total} / 未关闭 ${report.report_standard.appendices.defect_list_summary.open_total}`);
+  if (report.report_standard.appendices.key_testcases.length === 0) {
+    lines.push('- 关键测试用例：无');
+  } else {
+    report.report_standard.appendices.key_testcases.forEach((item) => {
+      lines.push(`- 关键测试用例 ${item.name}：${item.module || '-'} / ${item.test_type} / ${item.execution_status}`);
+    });
+  }
+  if (report.report_standard.appendices.requirement_documents.length === 0) {
+    lines.push('- 需求文档：无');
+  } else {
+    report.report_standard.appendices.requirement_documents.forEach((item) => {
+      lines.push(`- 需求文档 ${item.title}：${item.version || '-'} / ${item.status || '-'}`);
+    });
+  }
   lines.push(`- 测试数据说明：${report.report_standard.appendices.test_data_note}`);
 
   lines.push('', '## 证据与附件');
@@ -1476,6 +2802,12 @@ function buildReportMarkdown(report: AiIterationTestReport) {
       lines.push(`- ${item.label}：${item.detail}`);
     });
   }
+
+  lines.push('', '## 报告结语');
+  lines.push(`- 最终发布建议：${summary.releaseRecommendation}`);
+  lines.push(`- 最终质量评级：${summary.rating}`);
+  lines.push(`- 结论摘要：${summary.summaryText}`);
+  lines.push('- 评审说明：建议结合发布前待办、未关闭 BUG、复测失败记录与剩余风险说明，完成本轮版本发布评审。');
 
   return lines.join('\n');
 }
@@ -1520,9 +2852,7 @@ function handleExportReport() {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   const date = new Date();
-  const fileName = `测试报告_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(
-    date.getDate()
-  ).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.md`;
+  const fileName = `测试报告_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}_${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.md`;
   link.href = url;
   link.download = fileName;
   document.body.appendChild(link);
@@ -1559,6 +2889,21 @@ watch(
   () => route.query.suiteId,
   () => {
     applySuiteSelectionFromRoute();
+  }
+);
+
+watch(
+  () => [reportSnapshots.value.map((item) => item.id).join(','), activeSnapshotId.value],
+  () => {
+    if (
+      selectedCompareSnapshotId.value !== 'auto' &&
+      !reportSnapshots.value.some((item) => item.id === selectedCompareSnapshotId.value) 
+    ) {
+      selectedCompareSnapshotId.value = 'auto';
+    }
+    if (selectedCompareSnapshotId.value === activeSnapshotId.value) {
+      selectedCompareSnapshotId.value = 'auto';
+    }
   }
 );
 </script>
@@ -1618,11 +2963,12 @@ watch(
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 10px 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
   border: 1px solid rgba(229, 230, 235, 0.9);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
 }
 
 .sidebar-title,
@@ -1692,6 +3038,153 @@ watch(
   gap: 10px;
 }
 
+.generation-record-panel {
+  border: 1px solid #e5e6eb;
+  border-radius: 14px;
+  padding: 12px;
+  background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%);
+}
+
+.generation-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generation-record-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.generation-record-time {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #86909c;
+}
+
+.generation-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.generation-record-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(247, 248, 250, 0.9);
+}
+
+.generation-record-label {
+  font-size: 12px;
+  color: #86909c;
+}
+
+.generation-record-value {
+  font-size: 13px;
+  color: #1d2129;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.generation-record-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.compare-panel-note {
+  font-size: 12px;
+  color: #86909c;
+}
+
+.compare-panel-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.compare-target-select {
+  width: 220px;
+}
+
+.compare-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.compare-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(247, 248, 250, 0.9);
+}
+
+.compare-item-top,
+.compare-item-values {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compare-item-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d2129;
+}
+
+.compare-item-delta {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compare-item-delta.up {
+  color: #165dff;
+}
+
+.compare-item-delta.down {
+  color: #f53f3f;
+}
+
+.compare-item-delta.flat {
+  color: #86909c;
+}
+
+.compare-item-values {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.compare-item-judgement {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #4e5969;
+}
+
+.compare-item-delta.positive {
+  color: #00b42a;
+}
+
+.compare-item-delta.negative {
+  color: #f53f3f;
+}
+
+.compare-item-delta.neutral {
+  color: #86909c;
+}
+
 .snapshot-panel {
   border: 1px solid #e5e6eb;
   border-radius: 14px;
@@ -1715,6 +3208,12 @@ watch(
 
 .snapshot-search {
   margin-bottom: 8px;
+}
+
+.snapshot-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .snapshot-summary {
@@ -1786,6 +3285,16 @@ watch(
   gap: 8px;
 }
 
+.snapshot-report-meta {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .snapshot-actions {
   display: flex;
   flex-direction: column;
@@ -1804,16 +3313,50 @@ watch(
   gap: 18px;
 }
 
+.generation-alert {
+  border-radius: 14px;
+}
+
+.report-nav-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5e6eb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.report-nav-title {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.report-nav-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.report-nav-button {
+  border-radius: 999px;
+}
+
 .report-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
-  gap: 18px;
-  padding: 22px;
-  border-radius: 20px;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 18px;
   border: 1px solid rgba(199, 210, 254, 0.7);
   background:
     linear-gradient(135deg, rgba(236, 242, 255, 0.96) 0%, rgba(255, 255, 255, 0.96) 42%, rgba(238, 244, 255, 0.96) 100%);
-  box-shadow: 0 18px 40px rgba(59, 130, 246, 0.08);
+  box-shadow: 0 14px 32px rgba(59, 130, 246, 0.07);
 }
 
 .hero-main,
@@ -1869,11 +3412,10 @@ watch(
 }
 
 .hero-meta-item,
-.hero-status-card,
-.hero-highlight-card {
-  border-radius: 14px;
+.hero-status-card {
+  border-radius: 12px;
   border: 1px solid rgba(226, 232, 240, 0.95);
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .hero-meta-item {
@@ -1903,7 +3445,7 @@ watch(
 }
 
 .hero-status-card {
-  padding: 16px;
+  padding: 14px;
 }
 
 .hero-status-value {
@@ -1914,28 +3456,304 @@ watch(
   margin-top: 10px;
 }
 
-.hero-highlight-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.hero-highlight-card {
-  padding: 14px;
-}
-
-.hero-highlight-value {
-  margin-top: 10px;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1;
-  color: #111827;
-}
-
 .report-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-summary-caption {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+
+.criteria-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  margin: 14px 0;
+}
+
+.conclusion-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.conclusion-overview-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.conclusion-overview-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.conclusion-overview-value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #111827;
+}
+
+.conclusion-overview-footnote {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
+}
+
+.risk-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.risk-overview-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+}
+
+.risk-overview-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.risk-overview-value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #111827;
+}
+
+.risk-overview-footnote {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
+}
+
+.conclusion-reason-panel {
+  margin: 12px 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%);
+}
+
+.conclusion-reason-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conclusion-reason-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.conclusion-reason-subtitle {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+
+.conclusion-reason-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.conclusion-reason-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(229, 230, 235, 0.9);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.conclusion-reason-item.danger {
+  background: rgba(255, 247, 247, 0.92);
+  border-color: rgba(245, 63, 63, 0.2);
+}
+
+.conclusion-reason-item.warning {
+  background: rgba(255, 250, 240, 0.92);
+  border-color: rgba(255, 125, 0, 0.2);
+}
+
+.conclusion-reason-item.success {
+  background: rgba(243, 255, 247, 0.92);
+  border-color: rgba(0, 180, 42, 0.16);
+}
+
+.conclusion-reason-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conclusion-reason-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.conclusion-reason-item-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
+}
+
+.release-checklist-panel {
+  margin: 12px 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+}
+
+.release-checklist-header,
+.release-checklist-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.release-checklist-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.release-checklist-subtitle,
+.release-checklist-item-detail {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+
+.release-checklist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.release-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(229, 230, 235, 0.85);
+}
+
+.release-checklist-index {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #eff4ff;
+  color: #165dff;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.release-checklist-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.release-checklist-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.criteria-summary-card {
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  padding: 16px;
+}
+
+.criteria-summary-card.danger {
+  background: linear-gradient(180deg, rgba(255, 247, 247, 0.96) 0%, #ffffff 100%);
+  border-color: rgba(245, 63, 63, 0.2);
+}
+
+.criteria-summary-card.warning {
+  background: linear-gradient(180deg, rgba(255, 250, 240, 0.96) 0%, #ffffff 100%);
+  border-color: rgba(255, 125, 0, 0.2);
+}
+
+.criteria-summary-card.success {
+  background: linear-gradient(180deg, rgba(243, 255, 247, 0.96) 0%, #ffffff 100%);
+  border-color: rgba(0, 180, 42, 0.18);
+}
+
+.criteria-summary-header,
+.criteria-summary-item-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.criteria-summary-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.criteria-summary-description,
+.criteria-summary-item-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #6b7280;
+}
+
+.criteria-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.criteria-summary-item {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(229, 230, 235, 0.8);
+}
+
+.criteria-summary-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d2129;
 }
 
 .report-summary-grid-secondary {
@@ -1953,12 +3771,48 @@ watch(
 }
 
 .summary-card {
-  padding: 18px;
+  padding: 16px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
 }
 
 .summary-card-soft {
   background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%);
+}
+
+.decision-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.decision-focus-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(229, 230, 235, 0.95);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.decision-focus-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.decision-focus-value {
+  margin-top: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #111827;
+  word-break: break-word;
+}
+
+.decision-focus-footnote {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #4e5969;
 }
 
 .summary-label {
@@ -1992,7 +3846,102 @@ watch(
 .report-header-card,
 .report-section,
 .item-card {
-  padding: 18px;
+  padding: 16px;
+}
+
+.support-section-intro {
+  margin-bottom: 14px;
+}
+
+.support-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.support-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(247, 248, 250, 0.92);
+  border: 1px solid rgba(229, 230, 235, 0.85);
+}
+
+.support-summary-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.support-summary-value {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #111827;
+}
+
+.support-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.support-analysis-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 230, 235, 0.88);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+}
+
+.report-section-intro {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.support-evidence-copy {
+  color: var(--color-text-2);
+  line-height: 1.7;
+}
+
+.support-analysis-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d2129;
+}
+
+.support-analysis-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.support-analysis-metrics.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.support-analysis-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(247, 248, 250, 0.9);
+}
+
+.support-analysis-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.support-analysis-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .report-two-column {
@@ -2091,13 +4040,18 @@ watch(
   }
 
   .report-hero,
+  .decision-focus-grid,
   .report-summary-grid,
+  .conclusion-overview-grid,
+  .risk-overview-grid,
+  .support-summary-strip,
+  .support-analysis-grid,
+  .criteria-summary-grid,
   .report-two-column {
     grid-template-columns: 1fr;
   }
 
-  .hero-meta-grid,
-  .hero-highlight-grid {
+  .hero-meta-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -2114,6 +4068,15 @@ watch(
 
   .snapshot-title-input {
     width: 100%;
+  }
+
+  .report-nav-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-nav-list {
+    justify-content: flex-start;
   }
 }
 
@@ -2136,8 +4099,7 @@ watch(
     align-items: flex-start;
   }
 
-  .hero-meta-grid,
-  .hero-highlight-grid {
+  .hero-meta-grid {
     grid-template-columns: 1fr;
   }
 

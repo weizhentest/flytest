@@ -408,6 +408,10 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         payload = response.data["data"]
         self.assertFalse(payload["used_ai"])
+        self.assertEqual(payload["generation_source"], "rule")
+        self.assertEqual(payload["generation_status"], "completed")
+        self.assertGreaterEqual(payload["generation_duration_ms"], 0)
+        self.assertEqual(payload["fallback_reason"], "")
         self.assertEqual(payload["selected_suite_count"], 1)
         self.assertEqual(payload["suite_count"], 2)
         self.assertEqual(payload["testcase_count"], 2)
@@ -476,6 +480,299 @@ class TestSuiteExecutionTests(TestCase):
         self.assertEqual(payload["bug_workflow_summary"]["retest_failed_total_count"], 0)
         self.assertEqual(payload["bug_workflow_summary"]["reactivated_bug_count"], 0)
 
+    def test_ai_report_marks_release_as_conditional_when_only_residual_risks_remain(self):
+        admin_user = User.objects.create_superuser(
+            username="reportconditionaladmin",
+            email="reportconditionaladmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        requirement_document = RequirementDocument.objects.create(
+            project=self.project,
+            title="登录需求",
+            document_type="md",
+            status="review_completed",
+            version="V2.0",
+            is_latest=True,
+            uploader=admin_user,
+            content="验证登录与账号安全相关流程。",
+        )
+        requirement_module = RequirementModule.objects.create(
+            document=requirement_document,
+            title="登录主流程",
+            content="登录成功、登录失败、会话验证。",
+            order=1,
+        )
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.notes = (
+            f"来源需求文档ID: {requirement_document.id}\n"
+            f"来源需求模块ID: {requirement_module.id}"
+        )
+        self.testcase.save(update_fields=["review_status", "execution_status", "notes"])
+        self.suite.testcases.add(self.testcase)
+
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Residual Bug",
+            status=TestBug.STATUS_PENDING_RETEST,
+            severity="3",
+            opened_by=admin_user,
+        )
+        bug.related_testcases.add(self.testcase)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        standard = response.data["data"]["report_standard"]
+        self.assertEqual(standard["quality_conclusion"]["rating"], "良")
+        self.assertEqual(standard["quality_conclusion"]["release_recommendation"], "有条件发布")
+        self.assertIn("有条件发布", standard["quality_conclusion"]["conclusion"])
+
+    def test_ai_report_blocks_release_when_all_cases_are_approved_but_not_executed(self):
+        admin_user = User.objects.create_superuser(
+            username="reportapprovednotexecuted",
+            email="reportapprovednotexecuted@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "not_executed"
+        self.testcase.save(update_fields=["review_status", "execution_status"])
+        self.suite.testcases.add(self.testcase)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        standard = response.data["data"]["report_standard"]
+        self.assertEqual(standard["quality_conclusion"]["rating"], "不合格")
+        self.assertEqual(standard["quality_conclusion"]["release_recommendation"], "不建议发布")
+        self.assertIn("尚未执行", standard["quality_conclusion"]["conclusion"])
+        execution_criteria = next(
+            item for item in standard["quality_conclusion"]["criteria"] if item["name"] == "测试范围内用例已全部执行"
+        )
+        self.assertFalse(execution_criteria["passed"])
+        self.assertEqual(standard["result_details"]["case_execution"]["total"], 1)
+        self.assertEqual(standard["result_details"]["case_execution"]["passed"], 0)
+        self.assertEqual(standard["result_details"]["case_execution"]["failed"], 0)
+        self.assertEqual(standard["result_details"]["case_execution"]["not_executed"], 1)
+
+    def test_ai_report_marks_release_as_conditional_when_traceability_is_incomplete(self):
+        admin_user = User.objects.create_superuser(
+            username="reporttraceabilityadmin",
+            email="reporttraceabilityadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.save(update_fields=["review_status", "execution_status"])
+        self.suite.testcases.add(self.testcase)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        standard = payload["report_standard"]
+        self.assertEqual(standard["quality_conclusion"]["rating"], "良")
+        self.assertEqual(standard["quality_conclusion"]["release_recommendation"], "有条件发布")
+        self.assertEqual(payload["requirement_summary"]["unlinked_testcase_count"], 1)
+        self.assertTrue(
+            any("未完成需求追踪映射" in item for item in standard["risk_and_suggestions"]["residual_risks"])
+        )
+
+    def test_ai_report_marks_release_as_conditional_when_retest_failures_still_exist(self):
+        admin_user = User.objects.create_superuser(
+            username="reportretestadmin",
+            email="reportretestadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        requirement_document = RequirementDocument.objects.create(
+            project=self.project,
+            title="回归需求",
+            document_type="md",
+            status="review_completed",
+            version="V2.1",
+            is_latest=True,
+            uploader=admin_user,
+            content="回归验证和缺陷闭环追踪要求。",
+        )
+        requirement_module = RequirementModule.objects.create(
+            document=requirement_document,
+            title="回归主流程",
+            content="验证缺陷修复后的再次执行结果。",
+            order=1,
+        )
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.notes = (
+            f"来源需求文档ID: {requirement_document.id}\n"
+            f"来源需求模块ID: {requirement_module.id}"
+        )
+        self.testcase.save(update_fields=["review_status", "execution_status", "notes"])
+        self.suite.testcases.add(self.testcase)
+
+        bug = TestBug.objects.create(
+            project=self.project,
+            suite=self.suite,
+            testcase=self.testcase,
+            title="Retest Failed Bug",
+            status=TestBug.STATUS_CLOSED,
+            severity="3",
+            opened_by=admin_user,
+        )
+        bug.related_testcases.add(self.testcase)
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=TestBugActivity.ACTION_ACTIVATE,
+            content="复测失败",
+            operator=admin_user,
+        )
+        TestBugActivity.objects.create(
+            bug=bug,
+            action=TestBugActivity.ACTION_CLOSE,
+            content="最终验证通过后关闭",
+            operator=admin_user,
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        standard = payload["report_standard"]
+        self.assertEqual(standard["quality_conclusion"]["rating"], "良")
+        self.assertEqual(standard["quality_conclusion"]["release_recommendation"], "有条件发布")
+        self.assertEqual(payload["bug_workflow_summary"]["retest_failed_total_count"], 1)
+        self.assertTrue(
+            any("复测失败累计 1 次" in item for item in standard["risk_and_suggestions"]["residual_risks"])
+        )
+        self.assertIn("复测失败累计 1 次", standard["quality_conclusion"]["conclusion"])
+
+    def test_ai_report_recommends_release_only_when_all_criteria_pass(self):
+        admin_user = User.objects.create_superuser(
+            username="reportreadyadmin",
+            email="reportreadyadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        requirement_document = RequirementDocument.objects.create(
+            project=self.project,
+            title="支付需求",
+            document_type="md",
+            status="review_completed",
+            version="V3.0",
+            is_latest=True,
+            uploader=admin_user,
+            content="支付闭环功能验证。",
+        )
+        requirement_module = RequirementModule.objects.create(
+            document=requirement_document,
+            title="支付核心流程",
+            content="支付发起、结果确认、异常回退。",
+            order=1,
+        )
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.notes = (
+            f"来源需求文档ID: {requirement_document.id}\n"
+            f"来源需求模块ID: {requirement_module.id}"
+        )
+        self.testcase.save(update_fields=["review_status", "execution_status", "notes"])
+        self.suite.testcases.add(self.testcase)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        standard = response.data["data"]["report_standard"]
+        self.assertEqual(standard["quality_conclusion"]["rating"], "优")
+        self.assertEqual(standard["quality_conclusion"]["release_recommendation"], "建议发布")
+        self.assertTrue(all(item["passed"] for item in standard["quality_conclusion"]["criteria"]))
+        self.assertIn("支持进入发布", standard["quality_conclusion"]["conclusion"])
+
+    def test_ai_report_payload_contains_complete_standard_sections(self):
+        admin_user = User.objects.create_superuser(
+            username="reportcontractadmin",
+            email="reportcontractadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.test_type = "functional"
+        self.testcase.save(update_fields=["review_status", "execution_status", "test_type"])
+        self.suite.testcases.add(self.testcase)
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        standard = payload["report_standard"]
+
+        self.assertIn("requirement_summary", payload)
+        self.assertIn("bug_workflow_summary", payload)
+        self.assertIsInstance(payload["requirement_summary"]["documents"], list)
+        self.assertIsInstance(payload["requirement_summary"]["modules"], list)
+        self.assertIsInstance(payload["bug_workflow_summary"]["bugs_with_failed_retest"], list)
+        self.assertIsInstance(payload["bug_workflow_summary"]["top_retest_failed_bugs"], list)
+
+        self.assertIsInstance(standard["test_overview"]["objectives"], list)
+        self.assertIsInstance(standard["environment"]["test_tools"], list)
+        self.assertGreater(len(standard["environment"]["test_tools"]), 0)
+        self.assertIsInstance(standard["activity_summary"]["test_types"], list)
+        self.assertGreater(len(standard["activity_summary"]["test_types"]), 0)
+        self.assertIsInstance(standard["result_details"]["execution_breakdown"], list)
+        self.assertIsInstance(standard["defect_summary"]["by_severity"], list)
+        self.assertIsInstance(standard["defect_summary"]["by_status"], list)
+        self.assertIsInstance(standard["defect_summary"]["by_module"], list)
+        self.assertIsInstance(standard["defect_summary"]["legacy_defects"], list)
+        self.assertIsInstance(standard["quality_conclusion"]["criteria"], list)
+        self.assertIsInstance(standard["risk_and_suggestions"]["process_risks"], list)
+        self.assertIsInstance(standard["risk_and_suggestions"]["residual_risks"], list)
+        self.assertIsInstance(standard["risk_and_suggestions"]["follow_up_actions"], list)
+        self.assertIsInstance(standard["appendices"]["defect_list_summary"]["items"], list)
+        self.assertIsInstance(standard["appendices"]["key_testcases"], list)
+        self.assertIsInstance(standard["appendices"]["requirement_documents"], list)
+        self.assertTrue(standard["appendices"]["test_data_note"])
+
     def test_ai_report_requires_suite_selection(self):
         admin_user = User.objects.create_superuser(
             username="reportemptyadmin",
@@ -493,6 +790,125 @@ class TestSuiteExecutionTests(TestCase):
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(response.data["error"], "请至少选择一个测试套件")
+
+    @patch("testcases.views.generate_iteration_test_report")
+    def test_ai_report_context_keeps_suite_scoped_assignment_details(self, mock_generate_iteration_test_report):
+        admin_user = User.objects.create_superuser(
+            username="reportscopeadmin",
+            email="reportscopeadmin@example.com",
+            password="password",
+        )
+        assignee = User.objects.create_user(username="scopeassignee", password="password")
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        ProjectMember.objects.create(project=self.project, user=assignee, role="member")
+
+        sibling_suite = TestSuite.objects.create(
+            project=self.project,
+            name="Sibling Suite",
+            creator=self.user,
+        )
+        shared_case = TestCaseModel.objects.create(
+            project=self.project,
+            module=self.module,
+            name="Shared Report Case",
+            creator=self.user,
+            review_status="approved",
+            execution_status="passed",
+        )
+        self.suite.testcases.add(shared_case)
+        sibling_suite.testcases.add(shared_case)
+        TestCaseAssignment.objects.create(
+            testcase=shared_case,
+            suite=self.suite,
+            assignee=assignee,
+            assigned_by=admin_user,
+        )
+
+        mock_generate_iteration_test_report.return_value = SimpleNamespace(
+            used_ai=False,
+            note="",
+            model_name=None,
+            generation_source="rule",
+            generation_status="completed",
+            generation_duration_ms=12,
+            fallback_reason="",
+            summary="summary",
+            quality_overview="quality",
+            risk_overview="risk",
+            findings=[],
+            recommendations=[],
+            evidence=[],
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id, sibling_suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        report_context = mock_generate_iteration_test_report.call_args.kwargs["report_context"]
+        testcase_payload = next(item for item in report_context["testcases"] if item["id"] == shared_case.id)
+        self.assertEqual(testcase_payload["assignee"], assignee.username)
+        self.assertEqual(len(testcase_payload["assignments"]), 1)
+        self.assertEqual(testcase_payload["assignments"][0]["suite_id"], self.suite.id)
+        self.assertEqual(testcase_payload["assignments"][0]["assignee"], assignee.username)
+
+    @patch("testcases.views.generate_iteration_test_report")
+    def test_ai_report_response_sanitizes_invalid_report_items(self, mock_generate_iteration_test_report):
+        admin_user = User.objects.create_superuser(
+            username="reportsanitizeadmin",
+            email="reportsanitizeadmin@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.testcase.review_status = "approved"
+        self.testcase.execution_status = "passed"
+        self.testcase.save(update_fields=["review_status", "execution_status"])
+        self.suite.testcases.add(self.testcase)
+
+        mock_generate_iteration_test_report.return_value = SimpleNamespace(
+            used_ai=True,
+            note="ok",
+            model_name="proxy-key",
+            generation_source="ai",
+            generation_status="completed",
+            generation_duration_ms=23,
+            fallback_reason="",
+            summary="  summary text  ",
+            quality_overview="  quality text  ",
+            risk_overview="  risk text  ",
+            findings=[
+                {"title": "  有效发现  ", "detail": "  有效说明  ", "severity": "HIGH"},
+                {"title": "无详情", "detail": "   ", "severity": "low"},
+                "invalid",
+            ],
+            recommendations=[
+                {"title": "  有效建议  ", "detail": "  有效动作  ", "priority": "HIGH"},
+                {"title": "", "detail": "缺标题", "priority": "low"},
+            ],
+            evidence=[
+                {"label": "  有效证据  ", "detail": "  证据说明  "},
+                {"label": "", "detail": "无标签"},
+            ],
+        )
+
+        self.api_client.force_authenticate(user=admin_user)
+        response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/ai-report/",
+            {"suite_ids": [self.suite.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data["data"]
+        self.assertEqual(payload["summary"], "summary text")
+        self.assertEqual(payload["quality_overview"], "quality text")
+        self.assertEqual(payload["risk_overview"], "risk text")
+        self.assertEqual(payload["findings"], [{"title": "有效发现", "detail": "有效说明", "severity": "high"}])
+        self.assertEqual(payload["recommendations"], [{"title": "有效建议", "detail": "有效动作", "priority": "high"}])
+        self.assertEqual(payload["evidence"], [{"label": "有效证据", "detail": "证据说明"}])
 
     @patch("testcases.ai_test_report_generator.invoke_plain_text_llm")
     @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
@@ -534,9 +950,64 @@ class TestSuiteExecutionTests(TestCase):
 
         self.assertTrue(result.used_ai)
         self.assertEqual(result.model_name, "proxy-key")
+        self.assertEqual(result.generation_source, "ai")
+        self.assertEqual(result.generation_status, "completed")
+        self.assertGreaterEqual(result.generation_duration_ms, 0)
+        self.assertEqual(result.fallback_reason, "")
         self.assertEqual(result.summary, "AI总结")
         self.assertEqual(result.findings[0]["title"], "发现1")
         mock_invoke_plain_text_llm.assert_called_once()
+
+    @patch("testcases.ai_test_report_generator.invoke_plain_text_llm")
+    @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
+    def test_iteration_report_falls_back_to_rule_content_when_ai_payload_is_incomplete(
+        self, mock_get_config, mock_invoke_plain_text_llm
+    ):
+        mock_get_config.return_value = SimpleNamespace(name="proxy-key")
+        mock_invoke_plain_text_llm.return_value = """
+        {
+          "summary": "",
+          "quality_overview": "",
+          "risk_overview": "",
+          "findings": [{"title": "", "detail": "缺少标题", "severity": "unknown"}],
+          "recommendations": [{"title": "   ", "detail": "", "priority": "bad"}],
+          "evidence": ["invalid"]
+        }
+        """
+
+        result = generate_iteration_test_report(
+            user=self.user,
+            report_context={
+                "project": {"id": self.project.id, "name": self.project.name},
+                "selected_suite_ids": [self.suite.id],
+                "selected_suite_names": [self.suite.name],
+                "generated_at": "2026-05-02T12:00:00+08:00",
+                "totals": {
+                    "suite_count": 1,
+                    "selected_suite_count": 1,
+                    "testcase_count": 1,
+                    "approved_testcase_count": 0,
+                    "bug_count": 0,
+                },
+                "execution_status_distribution": {"not_executed": 1},
+                "review_status_distribution": {"pending_review": 1},
+                "bug_status_distribution": {},
+                "requirement_summary": {},
+                "bug_workflow_summary": {},
+                "suite_breakdown": [],
+            },
+        )
+
+        self.assertTrue(result.used_ai)
+        self.assertEqual(result.generation_source, "ai")
+        self.assertTrue(result.summary)
+        self.assertTrue(result.quality_overview)
+        self.assertTrue(result.risk_overview)
+        self.assertGreater(len(result.findings), 0)
+        self.assertGreater(len(result.recommendations), 0)
+        self.assertGreater(len(result.evidence), 0)
+        self.assertNotEqual(result.summary, "")
+        self.assertNotEqual(result.findings, [])
 
     @patch("testcases.ai_test_report_generator.invoke_plain_text_llm", side_effect=RuntimeError("Service error"))
     @patch("testcases.ai_test_report_generator.get_user_active_llm_config")
@@ -568,6 +1039,10 @@ class TestSuiteExecutionTests(TestCase):
 
         self.assertFalse(result.used_ai)
         self.assertEqual(result.model_name, "proxy-key")
+        self.assertEqual(result.generation_source, "fallback")
+        self.assertEqual(result.generation_status, "fallback")
+        self.assertGreaterEqual(result.generation_duration_ms, 0)
+        self.assertEqual(result.fallback_reason, "Service error")
         self.assertIn("AI 分析接口调用失败", result.note)
         self.assertIn("45 秒", result.note)
 
@@ -609,6 +1084,28 @@ class TestSuiteExecutionTests(TestCase):
         self.assertTrue(list_response.data["success"])
         self.assertEqual(len(list_response.data["data"]), 1)
         self.assertEqual(list_response.data["data"][0]["title"], payload["title"])
+
+    def test_report_snapshot_rejects_invalid_suite_ids_on_create(self):
+        admin_user = User.objects.create_superuser(
+            username="snapshotinvalidcreate",
+            email="snapshotinvalidcreate@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        create_response = self.api_client.post(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/",
+            {
+                "title": "Invalid Snapshot",
+                "suite_ids": [self.suite.id, 999999],
+                "report_data": {"summary": "invalid"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 400, create_response.data)
+        self.assertIn("不存在或不属于当前项目", create_response.data["error"])
 
     def test_report_snapshot_can_be_renamed_and_pinned(self):
         admin_user = User.objects.create_superuser(
@@ -660,11 +1157,42 @@ class TestSuiteExecutionTests(TestCase):
         self.assertTrue(list_response.data["data"][0]["is_pinned"])
         self.assertEqual(list_response.data["data"][1]["id"], second_snapshot.id)
 
+    def test_report_snapshot_rejects_invalid_suite_ids_on_update(self):
+        admin_user = User.objects.create_superuser(
+            username="snapshotinvalidupdate",
+            email="snapshotinvalidupdate@example.com",
+            password="password",
+        )
+        ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
+        self.api_client.force_authenticate(user=admin_user)
+
+        snapshot = TestReportSnapshot.objects.create(
+            project=self.project,
+            title="Snapshot To Update",
+            suite_ids=[self.suite.id],
+            report_data={"summary": "before"},
+            creator=admin_user,
+        )
+
+        update_response = self.api_client.patch(
+            f"/api/projects/{self.project.id}/test-executions/report-snapshots/{snapshot.id}/update/",
+            {"suite_ids": [self.suite.id, 999999]},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 400, update_response.data)
+        self.assertIn("不存在或不属于当前项目", update_response.data["error"])
+
     def test_report_snapshot_can_be_overwritten_with_new_report_content(self):
         admin_user = User.objects.create_superuser(
             username="snapshotwriter",
             email="snapshotwriter@example.com",
             password="password",
+        )
+        second_suite = TestSuite.objects.create(
+            project=self.project,
+            name="Second Snapshot Suite",
+            creator=self.user,
         )
         ProjectMember.objects.create(project=self.project, user=admin_user, role="admin")
         self.api_client.force_authenticate(user=admin_user)
@@ -684,7 +1212,7 @@ class TestSuiteExecutionTests(TestCase):
         update_response = self.api_client.patch(
             f"/api/projects/{self.project.id}/test-executions/report-snapshots/{snapshot.id}/update/",
             {
-                "suite_ids": [self.suite.id, 999],
+                "suite_ids": [self.suite.id, second_suite.id],
                 "report_data": {
                     "generated_at": "2026-05-01T14:00:00+08:00",
                     "summary": "new summary",
@@ -700,11 +1228,11 @@ class TestSuiteExecutionTests(TestCase):
 
         self.assertEqual(update_response.status_code, 200, update_response.data)
         self.assertTrue(update_response.data["success"])
-        self.assertEqual(update_response.data["data"]["suite_ids"], [self.suite.id, 999])
+        self.assertEqual(update_response.data["data"]["suite_ids"], [self.suite.id, second_suite.id])
         self.assertEqual(update_response.data["data"]["report_data"]["summary"], "new summary")
 
         snapshot.refresh_from_db()
-        self.assertEqual(snapshot.suite_ids, [self.suite.id, 999])
+        self.assertEqual(snapshot.suite_ids, [self.suite.id, second_suite.id])
         self.assertEqual(snapshot.report_data["summary"], "new summary")
         self.assertEqual(snapshot.report_data["suite_count"], 2)
 

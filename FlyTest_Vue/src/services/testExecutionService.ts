@@ -575,6 +575,10 @@ export interface AiIterationTestReport {
   used_ai: boolean;
   note: string;
   model_name?: string | null;
+  generation_source?: 'ai' | 'rule' | 'fallback';
+  generation_status?: 'completed' | 'fallback';
+  generation_duration_ms?: number;
+  fallback_reason?: string;
   summary: string;
   quality_overview: string;
   risk_overview: string;
