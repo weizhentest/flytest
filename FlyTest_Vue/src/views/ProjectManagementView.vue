@@ -1001,6 +1001,7 @@ const deleteProject = (project: Project, event?: Event) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  gap: 14px;
 }
 
 .action-buttons {
@@ -1019,6 +1020,7 @@ const deleteProject = (project: Project, event?: Event) => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 16px;
+  padding: 10px 0 2px;
 }
 
 .no-data {
@@ -1172,36 +1174,64 @@ const deleteProject = (project: Project, event?: Event) => {
 
 .page-header {
   padding: 20px 22px;
-  border-radius: 24px;
+  border-radius: 16px;
   background:
     radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(246, 249, 253, 0.9));
-  border: 1px solid rgba(149, 161, 187, 0.14);
-  box-shadow: var(--theme-card-shadow);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 :deep(.arco-table) {
-  border-radius: 24px;
+  border-radius: 16px;
   overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+:deep(.arco-table-container) {
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+:deep(.arco-table-th) {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
+:deep(.arco-table-body) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+:deep(.arco-table-body::-webkit-scrollbar) {
+  width: 8px;
+  height: 8px;
+}
+
+:deep(.arco-table-body::-webkit-scrollbar-thumb) {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
 }
 
 .no-permission-content {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 253, 0.9));
-  border: 1px solid rgba(149, 161, 187, 0.14);
-  box-shadow: var(--theme-card-shadow);
-  border-radius: 24px;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
+  border-radius: 14px;
 }
 
 .workspace-hero--project-command {
   gap: 14px;
   padding: 16px 18px;
-  border-radius: 24px;
-  border: 1px solid var(--theme-card-border);
+  border-radius: 14px;
+  border: 1px solid var(--ui-panel-border);
   background:
-    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 249, 253, 0.78));
-  box-shadow: var(--theme-card-shadow);
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 253, 0.86));
+  box-shadow: var(--ui-panel-shadow);
   backdrop-filter: blur(16px);
 }
 
@@ -1274,7 +1304,7 @@ const deleteProject = (project: Project, event?: Event) => {
   min-height: 92px;
   gap: 6px;
   padding: 12px 14px;
-  border-radius: 18px;
+  border-radius: 10px;
   border-color: rgba(var(--theme-accent-rgb), 0.12);
   background:
     linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.62));
@@ -1303,10 +1333,33 @@ const deleteProject = (project: Project, event?: Event) => {
     radial-gradient(circle at 50% 50%, rgba(var(--theme-accent-rgb), 0.16), transparent 72%);
 }
 
+.ellipsis-text {
+  color: var(--color-text-1);
+}
+
+:deep(.arco-modal-content) {
+  border-radius: 16px;
+}
+
+:deep(.arco-modal-header) {
+  border-bottom-color: var(--ui-toolbar-border);
+}
+
+:deep(.arco-modal-body) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 253, 0.92));
+}
+
+:deep(.arco-select-view),
+:deep(.arco-input-wrapper),
+:deep(.arco-textarea-wrapper),
+:deep(.arco-btn) {
+  border-radius: 10px;
+}
+
 @media (max-width: 768px) {
   .workspace-hero--project-command {
     padding: 14px;
-    border-radius: 20px;
+    border-radius: 12px;
   }
 
   .workspace-hero--project-command .workspace-hero-title {

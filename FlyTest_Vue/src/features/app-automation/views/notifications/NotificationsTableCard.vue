@@ -92,10 +92,10 @@ const emit = defineEmits<NotificationsTableCardEmits>()
 
 <style scoped>
 .table-card {
-  border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: var(--theme-card-bg);
-  box-shadow: var(--theme-card-shadow);
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .meta-stack {
@@ -118,6 +118,30 @@ const emit = defineEmits<NotificationsTableCardEmits>()
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.table-card :deep(.arco-card-body) {
+  padding: 18px 20px;
+}
+
+.table-card :deep(.arco-table) {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.table-card :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.table-card :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.table-card :deep(.arco-btn),
+.table-card :deep(.arco-pagination) {
+  border-radius: 10px;
 }
 
 @media (max-width: 900px) {

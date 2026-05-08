@@ -245,7 +245,10 @@ const handleSubmit = async () => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: linear-gradient(135deg, #f8f9fc 0%, #e9ecf3 100%);
+  background:
+    radial-gradient(circle at 16% 18%, rgba(var(--theme-accent-rgb), 0.12), transparent 22%),
+    radial-gradient(circle at 84% 14%, rgba(56, 189, 248, 0.12), transparent 18%),
+    linear-gradient(180deg, #eef4fb 0%, #f8fafd 42%, #eef3f8 100%);
   position: relative;
   overflow: hidden;
   box-sizing: border-box;
@@ -300,15 +303,16 @@ const handleSubmit = async () => {
 }
 
 .register-card {
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.08), 0 15px 25px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(247, 250, 253, 0.94));
+  border-radius: 16px;
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.1);
   padding: 40px 45px;
   width: 100%;
   max-width: 480px;
   position: relative;
   z-index: 2;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(149, 161, 187, 0.16);
+  backdrop-filter: blur(16px);
   animation: slideUp 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -337,13 +341,13 @@ const handleSubmit = async () => {
 .brand-title {
   font-size: 28px;
   font-weight: 700;
-  color: #333333;
+  color: #1f2937;
   margin: 0 0 6px 0;
 }
 
 .brand-subtitle {
   font-size: 15px;
-  color: #6b7280;
+  color: #64748b;
   margin: 0;
   font-weight: 500;
 }
@@ -375,21 +379,22 @@ const handleSubmit = async () => {
 .form-input {
   width: 100%;
   padding: 16px 20px 16px 54px;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 14px;
+  border: 1px solid rgba(149, 161, 187, 0.18);
+  border-radius: 10px;
   font-size: 16px;
   color: #374151;
-  background: #fafafa;
+  background: rgba(255, 255, 255, 0.92);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-sizing: border-box;
   min-height: 52px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
 .form-input:focus {
   outline: none;
   border-color: var(--theme-accent);
   background: #ffffff;
-  box-shadow: 0 0 0 4px rgba(var(--theme-accent-rgb), 0.08);
+  box-shadow: 0 0 0 4px rgba(var(--theme-accent-rgb), 0.08), 0 10px 24px rgba(var(--theme-accent-rgb), 0.08);
 }
 
 .input-tip {
@@ -416,14 +421,22 @@ const handleSubmit = async () => {
 .register-button {
   width: 100%;
   padding: 12px 24px;
-  background: var(--theme-accent);
+  background: linear-gradient(135deg, var(--theme-accent), #2563eb);
   border: none;
-  border-radius: 14px;
+  border-radius: 10px;
   color: #ffffff;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   min-height: 48px;
+  box-shadow: 0 14px 30px rgba(var(--theme-accent-rgb), 0.22);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.register-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(var(--theme-accent-rgb), 0.26);
+  filter: brightness(1.03);
 }
 
 .register-button:disabled {
@@ -463,10 +476,11 @@ const handleSubmit = async () => {
 }
 
 .register-tip {
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(var(--theme-accent-rgb), 0.08);
-  color: #4b5563;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.84));
+  color: #475569;
   font-size: 14px;
   line-height: 1.6;
 }

@@ -365,7 +365,10 @@ onMounted(() => {
 
 <style scoped>
 .llm-config-management {
-  padding: 20px 20px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .llm-config-management :deep(.arco-table-container) {
@@ -376,17 +379,67 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--ui-panel-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .page-header h1 {
-  font-size: 1.5rem;
+  font-size: 1.45rem;
   font-weight: 600;
-  margin-bottom: 0;
+  margin: 0;
+  color: var(--theme-text);
 }
 
 .header-actions {
   display: flex;
   gap: 12px;
+}
+
+.llm-config-management :deep(.arco-btn) {
+  border-radius: 10px;
+}
+
+.llm-config-management :deep(.arco-card),
+.llm-config-management :deep(.arco-table),
+.llm-config-management :deep(.arco-modal-content) {
+  border-radius: 16px;
+}
+
+.llm-config-management :deep(.arco-table) {
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.llm-config-management :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.llm-config-management :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.llm-config-management :deep(.arco-pagination) {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(149, 161, 187, 0.12);
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

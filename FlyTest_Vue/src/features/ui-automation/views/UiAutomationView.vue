@@ -166,18 +166,19 @@ const onModuleUpdated = () => {
 .ui-automation-layout {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
+  align-items: start;
   width: 100%;
-  height: 100%;
+  height: auto;
   min-height: 0;
   gap: 20px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .layout-content {
   min-width: 0;
   min-height: 0;
-  height: 100%;
-  overflow: auto;
+  height: auto;
+  overflow: visible;
   display: block;
 }
 

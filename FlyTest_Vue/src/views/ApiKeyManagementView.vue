@@ -571,21 +571,32 @@ const toggleKeyVisibility = (record: ApiKeyItem) => {
 
 <style scoped>
 .apikey-management {
-  padding: 20px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--ui-panel-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .new-apikey-box {
   margin-top: 16px;
   padding: 16px;
-  background-color: #f2f3f5;
-  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.92));
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .new-apikey-title {
@@ -601,6 +612,17 @@ const toggleKeyVisibility = (record: ApiKeyItem) => {
 .new-apikey-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.apikey-management :deep(.arco-input-wrapper),
+.apikey-management :deep(.arco-select-view),
+.apikey-management :deep(.arco-picker),
+.apikey-management :deep(.arco-input-password) {
+  border-radius: 10px;
+}
+
+.apikey-management :deep(.arco-btn) {
+  border-radius: 10px;
 }
 
 .key-display {
@@ -622,5 +644,63 @@ const toggleKeyVisibility = (record: ApiKeyItem) => {
   display: flex;
   align-items: center;
   white-space: nowrap;
+}
+
+.apikey-management :deep(.arco-table) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.apikey-management :deep(.arco-table-container) {
+  border: 1px solid rgba(149, 161, 187, 0.16);
+  border-radius: 12px;
+}
+
+.apikey-management :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.apikey-management :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.apikey-management :deep(.arco-pagination) {
+  margin-top: 16px;
+  padding: 14px 16px 0;
+  border-top: 1px solid rgba(149, 161, 187, 0.12);
+}
+
+.apikey-management :deep(.arco-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.apikey-management :deep(.arco-modal-header) {
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.apikey-management :deep(.arco-modal-body) {
+  padding: 22px 24px;
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .search-box :deep(.arco-input-wrapper) {
+    width: 100% !important;
+  }
+
+  .key-display {
+    gap: 10px;
+  }
 }
 </style>

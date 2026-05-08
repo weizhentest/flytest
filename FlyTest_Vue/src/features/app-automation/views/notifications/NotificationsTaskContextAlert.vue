@@ -21,9 +21,17 @@ const emit = defineEmits<NotificationsTaskContextAlertEmits>()
 
 <style scoped>
 .context-alert {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.context-alert :deep(.arco-alert-content) {
+  line-height: 1.7;
+}
+
+.context-alert :deep(.arco-btn-text) {
+  border-radius: 10px;
 }
 </style>

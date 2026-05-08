@@ -95,18 +95,18 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
 .log-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .detail-card,
 .detail-panel {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
@@ -115,8 +115,12 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
 .detail-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
+  gap: 10px;
+  min-height: 124px;
+  padding: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    var(--theme-card-bg);
 }
 
 .detail-label,
@@ -126,31 +130,59 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
   font-size: 13px;
 }
 
+.detail-label {
+  letter-spacing: 0.2px;
+}
+
 .detail-card strong,
 .artifact-meta,
 .log-message {
   color: var(--theme-text);
 }
 
+.detail-card strong {
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.detail-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 22px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.detail-panel :deep(.arco-card-header-title) {
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.detail-panel :deep(.arco-card-body) {
+  padding: 22px;
+}
+
 .summary-text {
   color: var(--theme-text);
   line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 .meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  margin-top: 12px;
+  gap: 12px 24px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
 }
 
 .artifact-item,
 .log-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 14px;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -160,7 +192,9 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
   justify-content: space-between;
   gap: 12px;
   border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(var(--theme-accent-rgb), 0.05);
 }
 
 .artifact-meta {
@@ -176,6 +210,16 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
   gap: 12px;
 }
 
+.log-item {
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.1);
+}
+
+.log-message {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .empty-note {
   color: var(--theme-text-secondary);
 }
@@ -186,7 +230,24 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
   align-items: center;
   justify-content: center;
   border: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
-  border-radius: 14px;
+  border-radius: 16px;
+  background: rgba(var(--theme-accent-rgb), 0.04);
+}
+
+:deep(.arco-modal-header) {
+  min-height: 68px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+}
+
+:deep(.arco-modal-title) {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 24px;
 }
 
 @media (max-width: 1200px) {
@@ -203,6 +264,11 @@ const emit = defineEmits<SuiteExecutionDetailDialogEmits>()
   .artifact-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .detail-panel :deep(.arco-card-body),
+  :deep(.arco-modal-body) {
+    padding: 18px;
   }
 }
 </style>

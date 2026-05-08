@@ -1965,6 +1965,119 @@ h4,
   padding: 14px !important;
 }
 
+.content :is(
+  .page-shell,
+  .dashboard-view,
+  .app-automation-shell,
+  .api-automation-shell,
+  .ui-automation-layout,
+  .layout-content,
+  .testcase-management-container,
+  .test-suite-management-view,
+  .test-execution-history-view,
+  .project-management,
+  .knowledge-management,
+  .requirement-management,
+  .permission-management,
+  .automation-script-management,
+  .remote-mcp-management,
+  .apikey-management,
+  .user-management,
+  .organization-management,
+  .skills-management-view,
+  .template-management-view,
+  .llm-config-management,
+  .review-report,
+  .specialized-report-view,
+  .report-detail,
+  .document-detail,
+  .data-factory-view
+) {
+  min-height: 0 !important;
+  box-sizing: border-box;
+}
+
+.content :is(.arco-tabs-content, .arco-tabs-content-list, .arco-tabs-pane) {
+  min-height: 0 !important;
+  box-sizing: border-box;
+}
+
+.content .ui-automation-layout,
+.content .ui-automation-layout .layout-content,
+.content .api-automation-shell,
+.content .api-automation-layout,
+.content .api-automation-layout .layout-content,
+.content .app-automation-shell,
+.content .app-automation-shell .app-automation-layout,
+.content .app-automation-shell .app-tabs,
+.content .app-automation-shell .arco-tabs-content,
+.content .app-automation-shell .arco-tabs-content-list,
+.content .app-automation-shell .arco-tabs-pane,
+.content .chat-layout,
+.content .chat-layout .chat-container {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.content .ui-automation-layout,
+.content .ui-automation-layout .layout-content,
+.content .api-automation-layout,
+.content .api-automation-layout .layout-content,
+.content .app-automation-shell .app-automation-layout,
+.content .app-automation-shell .arco-tabs-content,
+.content .app-automation-shell .arco-tabs-content-list,
+.content .app-automation-shell .arco-tabs-pane,
+.content .chat-layout {
+  overflow: visible !important;
+}
+
+.content .app-automation-shell .app-tabs,
+.content .chat-layout .chat-container {
+  overflow: visible !important;
+}
+
+.content :is(
+  .page-management,
+  .page-step-list,
+  .testcase-list,
+  .execution-record-list,
+  .batch-record-list,
+  .public-data-list,
+  .env-config-list,
+  .actuator-list,
+  .ai-mode-view,
+  .module-tree,
+  .trace-viewer,
+  .dashboard-view,
+  .page-shell
+) {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  box-sizing: border-box;
+}
+
+.content .ui-automation-layout {
+  align-items: start !important;
+}
+
+.content .module-panel-wrapper,
+.content .module-panel,
+.content .module-panel .arco-card-body,
+.content .module-panel-content,
+.content .tree-container {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.content .module-panel-wrapper {
+  align-self: start !important;
+}
+
+.content .tree-container {
+  overflow: visible !important;
+}
+
 .project-management,
 .knowledge-management,
 .requirement-management,
@@ -2689,4 +2802,256 @@ h4,
 
 :root[data-theme='black'] .main-layout ::-webkit-scrollbar-thumb:hover {
   background: var(--theme-scrollbar-thumb-hover);
+}
+
+/* Frontend polish overrides: visual-only, no behavior changes */
+:root {
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 14px;
+  --ui-panel-border: rgba(149, 161, 187, 0.16);
+  --ui-panel-border-strong: rgba(126, 145, 176, 0.22);
+  --ui-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.93));
+  --ui-panel-bg-soft: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(249, 251, 254, 0.88));
+  --ui-panel-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --ui-panel-shadow-hover: 0 24px 54px rgba(15, 23, 42, 0.12);
+  --ui-toolbar-bg: rgba(255, 255, 255, 0.84);
+  --ui-toolbar-border: rgba(149, 161, 187, 0.14);
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
+    radial-gradient(circle at 84% 8%, rgba(15, 126, 168, 0.06), transparent 18%),
+    linear-gradient(180deg, #edf3fb 0%, #f7f9fc 44%, #eef3f8 100%);
+}
+
+.arco-btn,
+.arco-input-wrapper,
+.arco-select-view,
+.arco-textarea-wrapper,
+.arco-picker,
+.arco-input-tag,
+.arco-cascader-view,
+.arco-modal,
+.arco-drawer,
+.arco-card,
+.arco-alert,
+.arco-tag,
+.arco-pagination-item,
+.arco-tabs-tab {
+  border-radius: var(--ui-radius-sm);
+}
+
+.arco-input-wrapper,
+.arco-select-view,
+.arco-textarea-wrapper,
+.arco-picker,
+.arco-input-tag,
+.arco-cascader-view {
+  background: var(--theme-input-bg) !important;
+  border-color: var(--ui-panel-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.arco-input-wrapper:hover,
+.arco-select-view:hover,
+.arco-textarea-wrapper:hover,
+.arco-picker:hover,
+.arco-input-tag:hover,
+.arco-cascader-view:hover {
+  border-color: var(--ui-panel-border-strong) !important;
+}
+
+.arco-table {
+  border-radius: var(--ui-radius-md);
+  overflow: hidden;
+}
+
+.arco-table-th {
+  background: rgba(244, 247, 251, 0.92) !important;
+  color: var(--theme-text-secondary) !important;
+  font-weight: 700 !important;
+  border-bottom-color: rgba(149, 161, 187, 0.14) !important;
+}
+
+.arco-table-td {
+  border-bottom-color: rgba(149, 161, 187, 0.12) !important;
+}
+
+.arco-table-tr:hover .arco-table-td,
+.arco-table-tbody > .arco-table-tr:hover > .arco-table-td {
+  background: rgba(var(--theme-accent-rgb), 0.03) !important;
+}
+
+.arco-modal-content,
+.arco-drawer-content,
+.arco-dropdown-content,
+.arco-popover-content,
+.arco-trigger-popup {
+  border-radius: var(--ui-radius-md) !important;
+}
+
+.arco-modal-content,
+.arco-drawer-content,
+.arco-dropdown-content,
+.arco-popover-content {
+  border: 1px solid var(--ui-panel-border) !important;
+  box-shadow: var(--theme-overlay-shadow) !important;
+}
+
+.arco-card,
+.arco-list-bordered,
+.arco-descriptions-bordered,
+.arco-collapse-item {
+  border-color: var(--ui-panel-border) !important;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.arco-card-header,
+.arco-collapse-item-header,
+.arco-descriptions-bordered .arco-descriptions-item-label-block,
+.arco-descriptions-bordered .arco-descriptions-item-label-inline {
+  border-bottom-color: var(--ui-toolbar-border) !important;
+  background: rgba(248, 250, 252, 0.86) !important;
+}
+
+.arco-pagination {
+  gap: 6px;
+}
+
+.arco-pagination .arco-pagination-item,
+.arco-pagination .arco-pagination-jumper-input,
+.arco-pagination .arco-pagination-jumper-prepend,
+.arco-pagination .arco-pagination-jumper-append,
+.arco-pagination .arco-pagination-prev,
+.arco-pagination .arco-pagination-next {
+  border-radius: var(--ui-radius-sm) !important;
+}
+
+.arco-empty {
+  padding: 18px 12px;
+}
+
+.arco-empty-description,
+.arco-result-subtitle {
+  color: var(--theme-text-secondary) !important;
+}
+
+.page-header {
+  position: relative;
+}
+
+.page-header h1,
+.page-header h2,
+.page-header h3 {
+  color: var(--theme-text);
+  letter-spacing: 0;
+}
+
+.page-header p {
+  color: var(--theme-text-secondary);
+  line-height: 1.65;
+}
+
+.search-box,
+.action-buttons,
+.approval-filter-bar,
+.filter-bar,
+.toolbar,
+.bug-toolbar,
+.report-toolbar,
+.table-toolbar {
+  gap: 10px;
+}
+
+.search-box,
+.action-buttons {
+  flex-wrap: wrap;
+}
+
+.content-card,
+.panel-card,
+.table-card,
+.form-card {
+  border-radius: var(--ui-radius-lg);
+}
+
+.empty-state,
+.no-selection,
+.no-permission-content {
+  border-radius: var(--ui-radius-lg);
+}
+
+.empty-state p,
+.pagination-total {
+  color: var(--theme-text-secondary);
+}
+
+.arco-tabs-nav::before,
+.arco-divider {
+  border-color: var(--ui-toolbar-border) !important;
+}
+
+.arco-tabs-tab {
+  color: var(--theme-text-secondary);
+}
+
+.arco-tabs-tab:hover,
+.arco-tabs-tab-active {
+  color: var(--theme-text);
+}
+
+.arco-tabs-content {
+  padding-top: 4px;
+}
+
+.testcase-management-container,
+.testbug-management-container,
+.test-report-view {
+  position: relative;
+  background: transparent !important;
+}
+
+.testcase-management-container::before,
+.testbug-management-container::before,
+.test-report-view::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 14%),
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 20%);
+}
+
+.testcase-management-container > *,
+.testbug-management-container > *,
+.test-report-view > * {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme='black'] body {
+  background:
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.16), transparent 26%),
+    radial-gradient(circle at 82% 10%, rgba(56, 189, 248, 0.1), transparent 22%),
+    linear-gradient(180deg, #091221 0%, #0d1628 42%, #0f172a 100%);
+}
+
+:root[data-theme='black'] {
+  --ui-panel-border: rgba(148, 163, 184, 0.16);
+  --ui-panel-border-strong: rgba(148, 163, 184, 0.26);
+  --ui-panel-bg: linear-gradient(180deg, rgba(19, 30, 47, 0.96), rgba(13, 21, 34, 0.94));
+  --ui-panel-bg-soft: linear-gradient(180deg, rgba(21, 33, 51, 0.9), rgba(15, 23, 42, 0.86));
+  --ui-toolbar-bg: rgba(15, 23, 42, 0.72);
+  --ui-toolbar-border: rgba(148, 163, 184, 0.14);
+}
+
+:root[data-theme='black'] .arco-card-header,
+:root[data-theme='black'] .arco-collapse-item-header,
+:root[data-theme='black'] .arco-descriptions-bordered .arco-descriptions-item-label-block,
+:root[data-theme='black'] .arco-descriptions-bordered .arco-descriptions-item-label-inline {
+  background: rgba(15, 23, 42, 0.72) !important;
 }

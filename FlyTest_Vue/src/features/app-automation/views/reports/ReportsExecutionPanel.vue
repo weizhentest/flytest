@@ -129,12 +129,13 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .stack span,
 .stack small {
   color: var(--theme-text-secondary);
+  line-height: 1.6;
 }
 
 .stack strong,
@@ -145,15 +146,25 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
 .filter-card,
 .table-card,
 .stat-card {
-  border-radius: 16px;
+  overflow: hidden;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.filter-card :deep(.arco-card-body),
+.stat-card :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+.table-card :deep(.arco-card-body) {
+  padding: 0;
+}
+
 .filter-grid {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
 }
 
@@ -168,26 +179,52 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
   gap: 10px;
 }
 
+.filter-actions :deep(.arco-btn),
+.filter-card :deep(.arco-input-wrapper),
+.filter-card :deep(.arco-select-view) {
+  border-radius: 12px;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .stat-card :deep(.arco-card-body) {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-height: 126px;
 }
 
 .stat-label {
   font-size: 13px;
   color: var(--theme-text-secondary);
+  letter-spacing: 0.2px;
 }
 
 .stat-card strong {
   font-size: 30px;
-  line-height: 1;
+  line-height: 1.1;
+}
+
+:deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+:deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.045);
+}
+
+:deep(.arco-btn-text) {
+  padding: 0 6px;
+  border-radius: 10px;
+}
+
+.pagination-row {
+  padding: 16px 20px 20px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.08);
 }
 
 @media (max-width: 1280px) {
@@ -201,6 +238,12 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
   .case-filter-grid,
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-card :deep(.arco-card-body),
+  .stat-card :deep(.arco-card-body),
+  .pagination-row {
+    padding: 16px;
   }
 }
 </style>

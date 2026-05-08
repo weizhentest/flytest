@@ -838,10 +838,11 @@ const deleteUser = (user: User) => {
 
 <style scoped>
 .user-management {
-  background-color: #fff;
-  border-radius: 8px;
+  background: var(--ui-panel-bg);
+  border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
   height: 100%;
   box-sizing: border-box;
 }
@@ -850,6 +851,11 @@ const deleteUser = (user: User) => {
   display: flex;
   align-items: center;
   margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-toolbar-border);
+  background: var(--ui-toolbar-bg);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
 }
 
 .page-header {
@@ -857,6 +863,13 @@ const deleteUser = (user: User) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--ui-toolbar-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .search-box {
@@ -899,5 +912,84 @@ const deleteUser = (user: User) => {
 
 :deep(.arco-space-item:last-child) {
   margin-right: 0 !important;
+}
+
+.user-management :deep(.arco-table) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.user-management :deep(.arco-table-container) {
+  border: 1px solid rgba(149, 161, 187, 0.16);
+  border-radius: 12px;
+}
+
+.user-management :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.user-management :deep(.arco-table-td) {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.user-management :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.user-management :deep(.arco-pagination) {
+  margin-top: 16px;
+  padding: 14px 16px 0;
+  border-top: 1px solid rgba(149, 161, 187, 0.12);
+}
+
+.user-management :deep(.arco-card),
+.user-management :deep(.arco-statistic) {
+  border-radius: 12px;
+}
+
+.user-management :deep(.arco-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.user-management :deep(.arco-modal-header) {
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.user-management :deep(.arco-modal-body) {
+  padding: 22px 24px;
+}
+
+.user-management :deep(.arco-tabs-content) {
+  padding-top: 16px;
+}
+
+.user-management :deep(.arco-input-wrapper),
+.user-management :deep(.arco-input-tag),
+.user-management :deep(.arco-select-view),
+.user-management :deep(.arco-picker),
+.user-management :deep(.arco-textarea-wrapper) {
+  border-radius: 10px;
+}
+
+.user-management :deep(.arco-btn) {
+  border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .search-box :deep(.arco-input-wrapper) {
+    width: 100% !important;
+  }
 }
 </style>

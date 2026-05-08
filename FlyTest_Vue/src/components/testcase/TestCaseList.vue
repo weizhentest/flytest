@@ -1074,10 +1074,11 @@ defineExpose({
 <style scoped>
 .testcase-content {
   flex: 1;
-  background-color: #fff;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.08));
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-lg, 12px);
+  padding: 18px;
+  box-shadow: var(--ui-panel-shadow, 0 10px 24px rgba(15, 23, 42, 0.08));
   height: 100%;
   box-sizing: border-box;
   display: flex;
@@ -1094,13 +1095,18 @@ defineExpose({
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--ui-toolbar-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-toolbar-bg, var(--color-fill-1));
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
 .search-box {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -1182,10 +1188,13 @@ defineExpose({
   min-height: 0;
   display: flex;
   flex-direction: column;
+  border-radius: 14px;
 }
 
 :deep(.test-case-table .arco-table) {
   width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 :deep(.test-case-table .arco-table-content-scroll) {
@@ -1211,6 +1220,10 @@ defineExpose({
   height: 100% !important;
   display: flex;
   flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 /* 寮哄埗鏄剧ず鍗曞厓鏍间笅杈规 */
@@ -1220,12 +1233,25 @@ defineExpose({
 
 :deep(.test-case-table .arco-table-header) {
   flex-shrink: 0;
+  background: #f8fafc;
 }
 
 :deep(.test-case-table .arco-table-body) {
   flex: 1;
   min-height: 0;
   padding-bottom: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+:deep(.test-case-table .arco-table-body::-webkit-scrollbar) {
+  width: 8px;
+  height: 8px;
+}
+
+:deep(.test-case-table .arco-table-body::-webkit-scrollbar-thumb) {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
 }
 
 :deep(.test-case-table .arco-pagination) {
@@ -1238,10 +1264,10 @@ defineExpose({
   gap: 6px;
   position: sticky;
   bottom: 16px;
-  background-color: #fff;
+  background-color: rgba(255, 255, 255, 0.96);
   z-index: 1;
-  padding: 8px 0;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+  padding: 10px 0 2px;
+  box-shadow: 0 -6px 14px rgba(15, 23, 42, 0.04);
 }
 
 :deep(.test-case-table .arco-table-cell-fixed-right) {
@@ -1273,7 +1299,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  color: #1890ff;
+  color: rgb(var(--arcoblue-6));
   cursor: pointer;
   text-decoration: none;
   transition: color 0.2s;
@@ -1283,7 +1309,7 @@ defineExpose({
 }
 
 .testcase-name-link:hover {
-  color: #40a9ff;
+  color: rgb(var(--arcoblue-5));
   text-decoration: underline;
 }
 
@@ -1303,7 +1329,18 @@ defineExpose({
 }
 
 :deep(.test-case-table .generated-case-row td) {
-  background: #f3fbf4;
+  background: linear-gradient(180deg, rgba(240, 253, 244, 0.92), rgba(236, 253, 245, 0.92));
+}
+
+:deep(.test-case-table .arco-table-th) {
+  color: #475569;
+  font-weight: 600;
+}
+
+:deep(.test-case-table .arco-select-view),
+:deep(.test-case-table .arco-input-wrapper),
+:deep(.test-case-table .arco-btn) {
+  border-radius: 10px;
 }
 
 /* 绉婚櫎閲嶅鐨勬牱寮忓畾涔?*/

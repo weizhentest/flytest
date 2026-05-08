@@ -137,10 +137,10 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 .filter-card,
 .table-card,
 .stat-card {
-  border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: var(--theme-card-bg);
-  box-shadow: var(--theme-card-shadow);
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .filter-grid {
@@ -163,10 +163,30 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
   gap: 16px;
 }
 
+.filter-card {
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+}
+
+.filter-card :deep(.arco-card-body),
+.table-card :deep(.arco-card-body) {
+  padding: 18px 20px;
+}
+
+.filter-card :deep(.arco-input-wrapper),
+.filter-card :deep(.arco-select-view),
+.filter-card :deep(.arco-btn),
+.table-card :deep(.arco-btn),
+.table-card :deep(.arco-pagination) {
+  border-radius: 10px;
+}
+
 .stat-card :deep(.arco-card-body) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 18px 20px;
 }
 
 .stat-label {
@@ -175,8 +195,23 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 }
 
 .stat-card strong {
-  font-size: 30px;
+  font-size: 32px;
   line-height: 1;
+}
+
+.table-card :deep(.arco-table) {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.table-card :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.table-card :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
 }
 
 @media (max-width: 1280px) {

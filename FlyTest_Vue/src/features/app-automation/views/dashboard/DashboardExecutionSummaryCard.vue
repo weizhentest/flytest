@@ -32,31 +32,36 @@ defineProps<DashboardExecutionSummaryCardProps>()
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 
 .summary-item {
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(var(--theme-accent-rgb), 0.08);
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(var(--theme-accent-rgb), 0.08);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .summary-item span {
   color: var(--theme-text-secondary);
+  font-size: 13px;
 }
 
 .summary-item strong {
   font-size: 28px;
   color: var(--theme-text);
+  line-height: 1.1;
 }
 
 .summary-item .success {
@@ -65,5 +70,11 @@ defineProps<DashboardExecutionSummaryCardProps>()
 
 .summary-item .danger {
   color: var(--theme-danger);
+}
+
+@media (max-width: 900px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

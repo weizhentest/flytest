@@ -1,5 +1,12 @@
 <template>
   <a-card class="filter-card">
+    <div class="filter-header">
+      <div class="filter-header-copy">
+        <span class="filter-kicker">Task Filter</span>
+        <strong>快速定位调度任务</strong>
+      </div>
+      <span class="filter-summary">支持按任务类型、触发方式与状态组合筛选</span>
+    </div>
     <div class="filter-grid">
       <a-input-search
         v-model="filters.search"
@@ -41,10 +48,47 @@ const emit = defineEmits<ScheduledTaskFilterCardEmits>()
 
 <style scoped>
 .filter-card {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.filter-card :deep(.arco-card-body) {
+  padding: 20px 22px 22px;
+}
+
+.filter-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.filter-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filter-header-copy strong {
+  color: var(--theme-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.filter-summary {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .filter-grid {
@@ -54,10 +98,21 @@ const emit = defineEmits<ScheduledTaskFilterCardEmits>()
   align-items: center;
 }
 
+.filter-grid :deep(.arco-input-wrapper),
+.filter-grid :deep(.arco-select-view),
+.filter-grid :deep(.arco-picker) {
+  border-radius: 12px;
+}
+
 .filter-actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.filter-actions :deep(.arco-btn) {
+  min-width: 88px;
+  border-radius: 12px;
 }
 
 @media (max-width: 1360px) {
@@ -69,6 +124,10 @@ const emit = defineEmits<ScheduledTaskFilterCardEmits>()
 @media (max-width: 900px) {
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-header {
+    flex-direction: column;
   }
 
   .filter-actions {

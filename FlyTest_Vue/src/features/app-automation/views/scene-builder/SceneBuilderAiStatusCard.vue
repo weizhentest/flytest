@@ -104,11 +104,15 @@ const emit = defineEmits<{
 .ai-status-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  border-radius: 16px;
+  gap: 18px;
+  border-radius: 20px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.ai-status-card :deep(.arco-card-body) {
+  padding: 22px;
 }
 
 .ai-status-header,
@@ -137,7 +141,7 @@ const emit = defineEmits<{
 .ai-status-copy strong,
 .ai-activity-copy strong {
   color: var(--theme-text);
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .ai-status-copy p {
@@ -154,16 +158,18 @@ const emit = defineEmits<{
 
 .ai-status-item,
 .ai-activity-panel {
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.04)),
+    rgba(var(--theme-surface-rgb), 0.72);
 }
 
 .ai-status-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
 
 .ai-status-item span {
@@ -183,7 +189,7 @@ const emit = defineEmits<{
 }
 
 .ai-activity-panel {
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -220,7 +226,7 @@ const emit = defineEmits<{
 
 .ai-warning-item,
 .ai-activity-empty {
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid rgba(var(--warning-6), 0.24);
   background: rgba(var(--warning-6), 0.08);
@@ -230,7 +236,9 @@ const emit = defineEmits<{
 
 .ai-activity-empty {
   border-color: rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.04)),
+    rgba(var(--theme-surface-rgb), 0.72);
   color: var(--theme-text-secondary);
 }
 

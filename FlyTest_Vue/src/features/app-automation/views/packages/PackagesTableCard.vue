@@ -85,10 +85,28 @@ const emit = defineEmits<PackagesTableCardEmits>()
 
 <style scoped>
 .table-card {
-  border-radius: 16px;
+  overflow: hidden;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.table-card :deep(.arco-card-body) {
+  padding: 0;
+}
+
+:deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+:deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.045);
+}
+
+:deep(.arco-btn-text) {
+  padding: 0 6px;
+  border-radius: 10px;
 }
 
 .meta-stack {
@@ -99,6 +117,7 @@ const emit = defineEmits<PackagesTableCardEmits>()
 
 .meta-stack strong {
   color: var(--theme-text);
+  font-size: 14px;
 }
 
 .meta-stack span {
@@ -111,7 +130,8 @@ const emit = defineEmits<PackagesTableCardEmits>()
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-top: 16px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.08);
 }
 
 @media (max-width: 768px) {
@@ -119,6 +139,7 @@ const emit = defineEmits<PackagesTableCardEmits>()
     width: 100%;
     justify-content: flex-start;
     flex-wrap: wrap;
+    padding: 14px 16px 16px;
   }
 }
 </style>

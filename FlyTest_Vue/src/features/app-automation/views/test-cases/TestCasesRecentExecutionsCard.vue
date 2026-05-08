@@ -1,6 +1,14 @@
 <template>
   <a-card class="table-card">
-    <template #title>最近执行记录</template>
+    <template #title>
+      <div class="card-title">
+        <div class="card-title-copy">
+          <span class="card-kicker">Execution Feed</span>
+          <strong>最近执行记录</strong>
+        </div>
+        <span class="card-meta">最近 {{ executions.length }} 条</span>
+      </div>
+    </template>
     <a-table :data="executions" :loading="loading" :pagination="false" row-key="id">
       <template #columns>
         <a-table-column title="测试用例" :width="220">
@@ -51,10 +59,58 @@ const emit = defineEmits<TestCasesRecentExecutionsCardEmits>()
 
 <style scoped>
 .table-card {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.table-card :deep(.arco-card-header) {
+  padding: 18px 22px 0;
+  border-bottom: none;
+}
+
+.table-card :deep(.arco-card-body) {
+  padding: 18px 22px 22px;
+}
+
+.table-card :deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+.table-card :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.04);
+}
+
+.card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-title-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.card-title-copy strong {
+  color: var(--theme-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.card-meta {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
 }
 
 .case-copy {
@@ -67,5 +123,11 @@ const emit = defineEmits<TestCasesRecentExecutionsCardEmits>()
 .case-copy small {
   color: var(--theme-text-secondary);
   font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .card-title {
+    flex-direction: column;
+  }
 }
 </style>

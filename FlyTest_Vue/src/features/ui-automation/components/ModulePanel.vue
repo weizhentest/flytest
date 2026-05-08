@@ -345,15 +345,16 @@ defineExpose({
   min-width: 0;
   min-height: 0;
   max-width: 100%;
-  height: 100%;
+  height: auto;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  align-self: start;
 }
 
 .module-panel {
   min-height: 0;
-  height: 100%;
+  height: auto;
   border-radius: 24px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
@@ -365,14 +366,14 @@ defineExpose({
   min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
   padding: 22px;
 }
 
 .module-panel-content {
   display: flex;
   min-height: 0;
-  height: 100%;
+  height: auto;
   flex-direction: column;
   gap: 20px;
 }
@@ -431,11 +432,11 @@ defineExpose({
 }
 
 .tree-container {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   padding: 4px 2px 0 0;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 .tree-container :deep(.arco-tree-node) {

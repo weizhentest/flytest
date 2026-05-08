@@ -106,24 +106,44 @@ const emit = defineEmits<DevicesTableCardEmits>()
 
 <style scoped>
 .table-card {
-  border-radius: 16px;
+  overflow: hidden;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.table-card :deep(.arco-card-body) {
+  padding: 0;
+}
+
+:deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+:deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.045);
+}
+
+:deep(.arco-btn-text) {
+  padding: 0 6px;
+  border-radius: 10px;
+}
+
 .device-copy {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .device-copy strong {
   color: var(--theme-text);
+  font-size: 14px;
 }
 
 .device-copy span,
 .device-copy small {
   color: var(--theme-text-secondary);
+  line-height: 1.6;
 }
 </style>

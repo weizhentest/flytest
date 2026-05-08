@@ -43,31 +43,56 @@ defineProps<DashboardStatsGridProps>()
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .stat-card {
+  position: relative;
+  overflow: hidden;
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%);
+  pointer-events: none;
+}
+
+.stat-card :deep(.arco-card-body) {
+  min-height: 132px;
+  padding: 20px;
 }
 
 .stat-label {
   color: var(--theme-text-secondary);
   font-size: 13px;
+  letter-spacing: 0.2px;
 }
 
 .stat-value {
   margin-top: 10px;
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--theme-text);
+  line-height: 1.1;
 }
 
 .stat-meta {
   margin-top: 8px;
   color: var(--theme-text-tertiary);
   font-size: 12px;
+  line-height: 1.65;
+}
+
+@media (max-width: 900px) {
+  .stat-card :deep(.arco-card-body) {
+    min-height: 112px;
+    padding: 18px;
+  }
 }
 </style>

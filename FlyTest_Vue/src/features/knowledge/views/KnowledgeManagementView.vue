@@ -416,22 +416,37 @@ onMounted(async () => {
   padding: 20px;
   overflow: hidden;
   box-sizing: border-box;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 252, 0.9));
+  border: 1px solid var(--ui-panel-border);
+  border-radius: 18px;
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 0;
   flex-wrap: wrap;
   gap: 12px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .page-title {
   font-size: 24px;
-  font-weight: bold;
+  font-weight: 700;
   margin: 0;
   flex-shrink: 0;
+  color: var(--theme-text);
 }
 
 .header-actions {
@@ -458,6 +473,11 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .detail-panel-full {
@@ -465,6 +485,10 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .list-header {
@@ -474,6 +498,12 @@ onMounted(async () => {
   margin-bottom: 16px;
   flex-wrap: wrap;
   gap: 12px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.94));
 }
 
 .search-bar {
@@ -494,17 +524,49 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+.knowledge-management :deep(.arco-input-wrapper),
+.knowledge-management :deep(.arco-select-view),
+.knowledge-management :deep(.arco-picker),
+.knowledge-management :deep(.arco-btn) {
+  border-radius: 10px;
+}
+
 /* 表格自适应 */
 .knowledge-base-list :deep(.arco-table) {
   width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .knowledge-base-list :deep(.arco-table-container) {
   overflow-x: auto;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 14px;
+}
+
+.knowledge-base-list :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
 }
 
 .knowledge-base-list :deep(.arco-table-td) {
   white-space: nowrap;
+}
+
+.knowledge-base-list :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.knowledge-base-list :deep(.arco-pagination) {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(149, 161, 187, 0.12);
+}
+
+.knowledge-management :deep(.arco-modal-content) {
+  border-radius: 16px;
 }
 
 @media (max-width: 900px) {

@@ -40,10 +40,12 @@ const emit = defineEmits<ExecutionsFilterCardEmits>()
 
 <style scoped>
 .filter-card {
-  border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: var(--theme-card-bg);
-  box-shadow: var(--theme-card-shadow);
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .filter-grid {
@@ -57,6 +59,16 @@ const emit = defineEmits<ExecutionsFilterCardEmits>()
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.filter-card :deep(.arco-card-body) {
+  padding: 18px 20px;
+}
+
+.filter-card :deep(.arco-input-wrapper),
+.filter-card :deep(.arco-select-view),
+.filter-card :deep(.arco-btn) {
+  border-radius: 10px;
 }
 
 @media (max-width: 1280px) {

@@ -272,11 +272,14 @@ onMounted(() => {
 
 <style scoped>
 .permission-management {
-  background-color: #fff;
-  border-radius: 8px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 252, 0.9));
+  border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
-  height: calc(100vh - 87px);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
+  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -292,9 +295,11 @@ onMounted(() => {
 /* 左侧实体面板 */
 .entity-panel {
   width: 265px;
-  background: #f7f8fa;
-  border-radius: 6px;
-  padding: 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.9));
+  border-radius: 14px;
+  border: 1px solid rgba(149, 161, 187, 0.16);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+  padding: 18px;
   display: flex;
   flex-direction: column;
 }
@@ -328,33 +333,39 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.search-section :deep(.arco-input-wrapper) {
+  border-radius: 10px;
+}
+
 .entity-list {
   flex: 1;
   overflow-y: auto;
   margin-bottom: 16px;
+  padding-right: 4px;
 }
 
 .entity-item {
   padding: 16px;
-  border-radius: 6px;
+  border-radius: 12px;
   margin-bottom: 8px;
-  background: #fff;
-  border: 1px solid #e5e6eb;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(149, 161, 187, 0.14);
   cursor: pointer;
   transition: all 0.2s ease;
   box-sizing: border-box;
   display: block;
-  width: 230px;
+  width: 100%;
 }
 
 .entity-item:hover {
-  border-color: #165dff;
-  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.1);
+  border-color: rgba(var(--theme-accent-rgb), 0.3);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .entity-item.active {
-  border-color: #165dff;
-  background: #f2f7ff;
+  border-color: rgba(var(--theme-accent-rgb), 0.34);
+  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.96));
 }
 
 .entity-info {
@@ -369,7 +380,7 @@ onMounted(() => {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #165dff;
+  background: linear-gradient(135deg, var(--theme-accent), #2563eb);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -379,8 +390,8 @@ onMounted(() => {
 }
 
 .entity-item.active .entity-avatar {
-  background: #e8f3ff;
-  color: #165dff;
+  background: rgba(var(--theme-accent-rgb), 0.12);
+  color: var(--theme-accent);
 }
 
 .entity-details {
@@ -409,18 +420,20 @@ onMounted(() => {
 .pagination-section {
   margin-top: auto;
   padding-top: 16px;
-  border-top: 1px solid #e5e6eb;
+  border-top: 1px solid var(--ui-toolbar-border);
 }
 
 /* 右侧权限面板 */
 .permission-panel {
   flex: 1;
-  border: 1px solid #e5e6eb;
-  border-radius: 6px;
+  border: 1px solid var(--ui-panel-border);
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: var(--ui-panel-bg);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .no-selection {
@@ -456,8 +469,10 @@ onMounted(() => {
 
 .details-header {
   padding: 20px;
-  border-bottom: 1px solid #e5e6eb;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--ui-toolbar-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.94));
 }
 
 .details-header .entity-info {
@@ -489,6 +504,47 @@ onMounted(() => {
   overflow: auto;
   min-height: 0;
   padding: 20px;
+}
+
+.permission-management :deep(.arco-card),
+.permission-management :deep(.arco-table),
+.permission-management :deep(.arco-modal-content) {
+  border-radius: 14px;
+}
+
+.permission-management :deep(.arco-radio-group) {
+  gap: 8px;
+}
+
+.permission-management :deep(.arco-radio-button) {
+  border-radius: 10px;
+}
+
+.permission-management :deep(.arco-select-view-single),
+.permission-management :deep(.arco-btn) {
+  border-radius: 10px;
+}
+
+.entity-list::-webkit-scrollbar,
+.permission-tree-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.entity-list::-webkit-scrollbar-thumb,
+.permission-tree-container::-webkit-scrollbar-thumb {
+  background: rgba(149, 161, 187, 0.34);
+  border-radius: 999px;
+}
+
+@media (max-width: 960px) {
+  .permission-content {
+    flex-direction: column;
+  }
+
+  .entity-panel {
+    width: 100%;
+  }
 }
 
 .compact-pagination :deep(.arco-pagination-size-changer) {

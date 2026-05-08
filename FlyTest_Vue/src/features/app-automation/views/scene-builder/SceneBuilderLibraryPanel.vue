@@ -97,10 +97,34 @@ const paletteTabModel = computed({
 <style scoped>
 .library-panel {
   min-height: 560px;
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.library-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 20px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.library-panel :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+.library-panel :deep(.arco-tabs-nav) {
+  margin-bottom: 14px;
+}
+
+.library-panel :deep(.arco-tabs-tab) {
+  min-height: 38px;
+  border-radius: 10px 10px 0 0;
+}
+
+.library-panel :deep(.arco-input-wrapper),
+.library-panel :deep(.arco-btn) {
+  border-radius: 12px;
 }
 
 .component-search {
@@ -109,7 +133,7 @@ const paletteTabModel = computed({
 
 .component-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .component-item {
@@ -117,10 +141,12 @@ const paletteTabModel = computed({
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.06);
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.06);
   cursor: pointer;
   transition:
     transform 0.18s ease,
@@ -129,9 +155,12 @@ const paletteTabModel = computed({
 }
 
 .component-item:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: rgba(var(--theme-accent-rgb), 0.34);
-  background: rgba(var(--theme-accent-rgb), 0.09);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.11), rgba(var(--theme-accent-rgb), 0.05)),
+    rgba(var(--theme-accent-rgb), 0.09);
+  box-shadow: 0 16px 28px rgba(var(--theme-accent-rgb), 0.12);
 }
 
 .component-item-custom {
@@ -161,5 +190,9 @@ const paletteTabModel = computed({
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.component-actions :deep(.arco-btn-text) {
+  border-radius: 10px;
 }
 </style>

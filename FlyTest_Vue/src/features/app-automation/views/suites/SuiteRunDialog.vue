@@ -33,3 +33,45 @@ const visibleModel = defineModel<boolean>('visible', { required: true })
 
 const emit = defineEmits<SuiteRunDialogEmits>()
 </script>
+
+<style scoped>
+:deep(.arco-modal-header) {
+  min-height: 68px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+}
+
+:deep(.arco-modal-title) {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 10px;
+}
+
+:deep(.arco-modal-footer) {
+  padding: 16px 24px 22px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.1);
+}
+
+:deep(.arco-form-item-label-col > label) {
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+:deep(.arco-select-view) {
+  min-height: 42px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+@media (max-width: 900px) {
+  :deep(.arco-modal-body),
+  :deep(.arco-modal-footer) {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+</style>

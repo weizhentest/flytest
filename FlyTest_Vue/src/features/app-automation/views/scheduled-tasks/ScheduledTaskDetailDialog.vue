@@ -129,8 +129,8 @@ const emit = defineEmits<ScheduledTaskDetailDialogEmits>()
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--theme-card-bg);
-  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-accent-rgb), 0.04);
+  border: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
   border-radius: 16px;
   color: var(--theme-text-secondary);
 }
@@ -140,57 +140,80 @@ const emit = defineEmits<ScheduledTaskDetailDialogEmits>()
 }
 
 .detail-panel {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.detail-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 22px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.detail-panel :deep(.arco-card-header-title) {
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.detail-panel :deep(.arco-card-body) {
+  padding: 22px;
 }
 
 .detail-shell,
 .notification-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 18px;
 }
 
 .detail-card,
 .notification-item {
-  padding: 16px;
+  padding: 18px;
   border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.04);
 }
 
 .detail-card strong {
   color: var(--theme-text);
+  font-size: 28px;
+  line-height: 1.15;
 }
 
 .detail-label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--theme-text-secondary);
   font-size: 13px;
+  letter-spacing: 0.2px;
 }
 
 .summary-text {
   color: var(--theme-text);
   line-height: 1.7;
-  margin-bottom: 14px;
+  white-space: pre-wrap;
 }
 
 .meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  margin-bottom: 14px;
+  gap: 12px 24px;
+  margin-top: 14px;
+  padding-top: 14px;
   color: var(--theme-text-secondary);
   font-size: 13px;
+  border-top: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
 }
 
 .detail-alert {
@@ -226,6 +249,22 @@ const emit = defineEmits<ScheduledTaskDetailDialogEmits>()
   word-break: break-word;
 }
 
+:deep(.arco-modal-header) {
+  min-height: 68px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+}
+
+:deep(.arco-modal-title) {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 24px;
+}
+
 @media (max-width: 1360px) {
   .detail-grid {
     grid-template-columns: 1fr 1fr;
@@ -240,6 +279,11 @@ const emit = defineEmits<ScheduledTaskDetailDialogEmits>()
   .notification-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .detail-panel :deep(.arco-card-body),
+  :deep(.arco-modal-body) {
+    padding: 18px;
   }
 }
 </style>

@@ -1,7 +1,19 @@
 <template>
   <div class="environment-list">
-    <div class="page-header api-page-header">
-      <div class="header-left">
+    <div class="page-hero">
+      <div class="hero-copy">
+        <div class="hero-copy__eyebrow">Environment Center</div>
+        <div class="hero-copy__title">执行环境</div>
+        <div class="hero-copy__desc">
+          统一维护接口执行环境、变量、公共请求头和自动鉴权建议，保证接口、用例与报告使用同一套环境上下文。
+        </div>
+        <div class="hero-copy__meta">
+          <span>{{ filteredEnvironments.length }} 个环境</span>
+          <span>{{ environments.filter(item => item.is_default).length }} 个默认环境</span>
+          <span v-if="environmentSuggestions">已检测到最近导入建议</span>
+        </div>
+      </div>
+      <div class="hero-actions">
         <a-input-search
           v-model="searchKeyword"
           class="toolbar-search"
@@ -10,16 +22,14 @@
           @search="loadEnvironments"
           @clear="loadEnvironments"
         />
-      </div>
-      <div class="header-right">
         <a-button type="primary" @click="openCreateModal">新增环境</a-button>
       </div>
     </div>
 
-    <div v-if="environmentSuggestions" class="env-suggestion-panel">
-      <div class="env-suggestion-panel__copy">
-        <div class="env-suggestion-panel__title">最近一次文档导入的环境建议</div>
-        <div class="env-suggestion-panel__meta">
+    <div v-if="environmentSuggestions" class="suggestion-strip">
+      <div class="suggestion-strip__copy">
+        <div class="suggestion-strip__title">最近一次文档导入的环境建议</div>
+        <div class="suggestion-strip__meta">
           <span v-if="primarySuggestedBaseUrl">推荐基础地址：{{ primarySuggestedBaseUrl.base_url }}</span>
           <span v-if="primaryAuthSuggestion">
             推荐登录接口：{{ primaryAuthSuggestion.request_name }} / Token 路径 {{ primaryAuthSuggestion.token_path }}
@@ -29,12 +39,12 @@
           </span>
         </div>
       </div>
-      <div class="env-suggestion-panel__actions">
+      <div class="suggestion-strip__actions">
         <a-button type="primary" @click="openCreateModalWithSuggestions">应用建议并新建环境</a-button>
       </div>
     </div>
 
-    <div class="content-section">
+    <div class="content-card">
       <a-table :data="filteredEnvironments" :loading="loading" :pagination="false" row-key="id" size="large">
         <template #columns>
           <a-table-column title="环境名称" data-index="name" :width="220" />
@@ -73,23 +83,23 @@
       @before-ok="submitEnvironment"
       @cancel="resetEditor"
     >
-      <div v-if="!editingEnvironment && environmentDraft" class="env-prefill-banner">
-        <div class="env-prefill-copy">
-          <div class="env-prefill-title">已根据最近一次文档解析准备环境草稿</div>
-          <div class="env-prefill-description">
+      <div v-if="!editingEnvironment && environmentDraft" class="draft-banner">
+        <div class="draft-banner__copy">
+          <div class="draft-banner__title">已根据最近一次文档解析准备环境草稿</div>
+          <div class="draft-banner__desc">
             {{ draftSummary || '基础地址、公共请求头、变量和 Cookie 已自动回填。' }}
           </div>
         </div>
-        <div class="env-prefill-actions">
+        <div class="draft-banner__actions">
           <a-button @click="fillEnvironmentFromDraft">重新回填</a-button>
           <a-button type="text" @click="clearDrafts">清除草稿</a-button>
         </div>
       </div>
 
-      <div v-if="!editingEnvironment && environmentSuggestions" class="env-suggestion-banner">
-        <div class="env-suggestion-banner__copy">
-          <div class="env-suggestion-banner__title">推荐鉴权与变量配置</div>
-          <div class="env-suggestion-banner__desc">
+      <div v-if="!editingEnvironment && environmentSuggestions" class="draft-banner draft-banner--emerald">
+        <div class="draft-banner__copy">
+          <div class="draft-banner__title">推荐鉴权与变量配置</div>
+          <div class="draft-banner__desc">
             <template v-if="primaryAuthSuggestion">
               建议将“{{ primaryAuthSuggestion.request_name }}”作为自动获取 Token 的引导接口，推荐提取路径为
               <code>{{ primaryAuthSuggestion.token_path }}</code>。
@@ -98,13 +108,13 @@
               已根据导入结果整理出可优先补齐的环境变量。
             </template>
           </div>
-          <div v-if="suggestedVariablePreview.length" class="env-suggestion-banner__chips">
+          <div v-if="suggestedVariablePreview.length" class="draft-banner__chips">
             <a-tag v-for="item in suggestedVariablePreview" :key="item.name" color="arcoblue">
               {{ item.name }}
             </a-tag>
           </div>
         </div>
-        <div class="env-suggestion-banner__actions">
+        <div class="draft-banner__actions">
           <a-button @click="applyEnvironmentSuggestions">应用建议</a-button>
         </div>
       </div>
@@ -142,9 +152,9 @@
 
         <a-alert type="info">
           <template #title>自动获取 Token</template>
-          如果接口里使用了 <code v-pre>{{token}}</code> 且当前环境没有填写 token，系统会尝试自动执行登录接口。
-          可在环境变量里配置 <code>auth_request_name</code> 或 <code>auth_request_id</code> 指定登录接口；
-          如果返回结构特殊，可再配置 <code>auth_token_path</code>，例如 <code>data.token</code>。
+          如果接口中使用了 <code v-pre>{{token}}</code> 且当前环境没有填写 token，系统会尝试自动执行登录接口。
+          可在环境变量中配置 <code>auth_request_name</code> 或 <code>auth_request_id</code> 指定登录接口，
+          如返回结构特殊，可额外配置 <code>auth_token_path</code>，例如 <code>data.token</code>。
         </a-alert>
       </a-form>
     </a-modal>
@@ -407,33 +417,66 @@ defineExpose({
   gap: 22px;
 }
 
-.api-page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 22px 24px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+.page-hero {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(320px, 0.9fr);
+  gap: 22px;
+  align-items: end;
+  padding: 26px 28px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.92));
   border: 1px solid rgba(148, 163, 184, 0.14);
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
 }
 
-.header-left,
-.header-right {
+.hero-copy,
+.hero-actions {
   display: flex;
-  align-items: center;
   gap: 14px;
   flex-wrap: wrap;
 }
 
-.header-left {
-  flex: 1 1 260px;
-  min-width: 220px;
+.hero-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
-.header-right {
+.hero-copy__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+
+.hero-copy__title {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.06;
+  color: #0f172a;
+}
+
+.hero-copy__desc {
+  max-width: 760px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #64748b;
+}
+
+.hero-copy__meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.hero-actions {
   justify-content: flex-end;
+  align-items: center;
 }
 
 .toolbar-search {
@@ -441,84 +484,45 @@ defineExpose({
   max-width: 100%;
 }
 
-.header-left :deep(.arco-input-wrapper),
-.header-right :deep(.arco-btn) {
+.hero-actions :deep(.arco-input-wrapper),
+.hero-actions :deep(.arco-btn) {
   min-height: 42px;
 }
 
-.header-right :deep(.arco-btn) {
+.hero-actions :deep(.arco-btn) {
   padding-inline: 18px;
   border-radius: 14px;
 }
 
-.content-section :deep(.arco-table-container) {
-  border-radius: 24px;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+.suggestion-strip,
+.content-card {
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
 }
 
-.content-section :deep(.arco-table-th) {
-  padding-top: 16px;
-  padding-bottom: 16px;
-}
-
-.content-section :deep(.arco-table-td) {
-  padding-top: 15px;
-  padding-bottom: 15px;
-}
-
-.env-prefill-banner,
-.env-suggestion-panel,
-.env-suggestion-banner {
+.suggestion-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-  border-radius: 22px;
-}
-
-.env-prefill-banner {
-  margin-bottom: 18px;
-  border: 1px solid rgba(59, 130, 246, 0.14);
+  gap: 18px;
+  padding: 20px 22px;
   background:
-    linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(20, 184, 166, 0.08)),
-    rgba(255, 255, 255, 0.92);
+    linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(16, 185, 129, 0.08)),
+    rgba(255, 255, 255, 0.94);
 }
 
-.env-suggestion-panel {
-  border: 1px solid rgba(14, 165, 233, 0.14);
-  background:
-    linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(16, 185, 129, 0.08)),
-    rgba(255, 255, 255, 0.92);
-}
-
-.env-suggestion-banner {
-  margin-bottom: 18px;
-  border: 1px solid rgba(16, 185, 129, 0.14);
-  background:
-    linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08)),
-    rgba(255, 255, 255, 0.92);
-}
-
-.env-prefill-copy,
-.env-suggestion-panel__copy,
-.env-suggestion-banner__copy {
+.suggestion-strip__copy {
   min-width: 0;
 }
 
-.env-prefill-title,
-.env-suggestion-panel__title,
-.env-suggestion-banner__title {
-  font-size: 15px;
+.suggestion-strip__title {
+  font-size: 16px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.env-prefill-description,
-.env-suggestion-panel__meta,
-.env-suggestion-banner__desc {
+.suggestion-strip__meta {
   margin-top: 6px;
   display: flex;
   gap: 12px;
@@ -528,38 +532,100 @@ defineExpose({
   color: #64748b;
 }
 
-.env-prefill-actions,
-.env-suggestion-panel__actions,
-.env-suggestion-banner__actions {
+.content-card {
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+}
+
+.content-card :deep(.arco-table-container) {
+  border-radius: 26px;
+  overflow: hidden;
+}
+
+.content-card :deep(.arco-table-th) {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.content-card :deep(.arco-table-td) {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.draft-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  background:
+    linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(20, 184, 166, 0.08)),
+    rgba(255, 255, 255, 0.92);
+}
+
+.draft-banner--emerald {
+  border-color: rgba(16, 185, 129, 0.14);
+  background:
+    linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08)),
+    rgba(255, 255, 255, 0.92);
+}
+
+.draft-banner__copy {
+  min-width: 0;
+}
+
+.draft-banner__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.draft-banner__desc {
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+.draft-banner__chips,
+.draft-banner__actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.env-suggestion-banner__chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
+@media (max-width: 1024px) {
+  .page-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 768px) {
-  .api-page-header,
-  .env-prefill-banner,
-  .env-suggestion-panel,
-  .env-suggestion-banner {
+  .page-hero,
+  .suggestion-strip,
+  .draft-banner {
+    padding: 20px;
     align-items: stretch;
   }
 
-  .header-left,
-  .header-right,
-  .toolbar-search {
-    width: 100%;
+  .hero-copy__title {
+    font-size: 26px;
   }
 
-  .header-right {
-    justify-content: flex-start;
+  .hero-actions,
+  .toolbar-search {
+    width: 100%;
   }
 }
 </style>

@@ -113,16 +113,35 @@ const emit = defineEmits<ExecutionsTableCardEmits>()
 
 <style scoped>
 .table-card {
-  border-radius: 16px;
+  overflow: hidden;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+:deep(.arco-card-body) {
+  padding: 0;
+}
+
+:deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+:deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.045);
+}
+
+:deep(.arco-btn-text) {
+  padding: 0 6px;
+  border-radius: 10px;
+}
+
 .pagination-row {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.08);
 }
 
 .name-cell,
@@ -130,13 +149,17 @@ const emit = defineEmits<ExecutionsTableCardEmits>()
 .stats-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .name-cell strong,
 .meta-stack span,
 .stats-cell span {
   color: var(--theme-text);
+}
+
+.name-cell strong {
+  font-size: 14px;
 }
 
 .name-cell span,
@@ -150,7 +173,7 @@ const emit = defineEmits<ExecutionsTableCardEmits>()
 .progress-cell {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .progress-head {
@@ -169,7 +192,7 @@ const emit = defineEmits<ExecutionsTableCardEmits>()
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: rgba(var(--theme-accent-rgb), 0.08);
+  background: rgba(var(--theme-accent-rgb), 0.1);
   overflow: hidden;
 }
 
@@ -190,6 +213,7 @@ const emit = defineEmits<ExecutionsTableCardEmits>()
 @media (max-width: 900px) {
   .pagination-row {
     justify-content: flex-start;
+    padding: 14px 16px 16px;
   }
 }
 </style>

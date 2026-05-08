@@ -211,24 +211,55 @@ onMounted(() => {
 .template-management-view {
   padding: 20px 24px;
   min-height: 100%;
-  background: var(--color-bg-1);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 252, 0.9));
 }
 
 .template-list-card {
   margin-top: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .filter-bar {
   margin-bottom: 20px;
   padding: 16px 20px;
-  background: var(--color-fill-1);
-  border-radius: 6px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.94));
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.template-management-view :deep(.arco-page-header) {
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--ui-panel-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: var(--ui-panel-shadow);
+}
+
+.template-management-view :deep(.arco-page-header-wrapper) {
+  padding: 0;
+}
+
+.template-management-view :deep(.arco-page-header-title) {
+  color: var(--theme-text);
+  font-weight: 700;
+}
+
+.template-management-view :deep(.arco-select-view),
+.template-management-view :deep(.arco-btn),
+.template-management-view :deep(.arco-input-wrapper) {
+  border-radius: 10px;
 }
 
 /* 响应式调整 */
@@ -265,17 +296,24 @@ onMounted(() => {
 
 /* 表格优化 */
 .template-list-card :deep(.arco-table) {
-  border-radius: 6px;
+  border-radius: 14px;
   overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.template-list-card :deep(.arco-table-container) {
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 14px;
 }
 
 .template-list-card :deep(.arco-table-th) {
-  background: var(--color-fill-2);
+  background: rgba(248, 250, 252, 0.92);
   font-weight: 600;
+  color: #42526d;
 }
 
 .template-list-card :deep(.arco-table-tr:hover .arco-table-td) {
-  background: var(--color-fill-1);
+  background: rgba(var(--theme-accent-rgb), 0.035);
 }
 
 /* 操作按钮组优化 */
@@ -305,5 +343,9 @@ onMounted(() => {
   margin: 0;
   font-size: 13px;
   color: var(--color-text-3);
+}
+
+.template-list-card :deep(.arco-card-body) {
+  padding: 20px;
 }
 </style>

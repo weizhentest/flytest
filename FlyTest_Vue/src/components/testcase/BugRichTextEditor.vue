@@ -195,19 +195,21 @@ const handleFileChange = (event: Event) => {
 .bug-rich-editor {
   width: 100%;
   max-width: 100%;
-  border: 1px solid var(--color-neutral-3);
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-lg, 12px);
+  background: var(--ui-panel-bg, #fff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .editor-toolbar {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px;
-  border-bottom: 1px solid var(--color-neutral-3);
-  background: var(--color-fill-1);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  background: linear-gradient(180deg, rgba(var(--arcoblue-6), 0.04), rgba(var(--arcoblue-6), 0.01));
 }
 
 .editor-toolbar-left,
@@ -215,17 +217,19 @@ const handleFileChange = (event: Event) => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
 }
 
 .editor-surface {
   width: 100%;
   box-sizing: border-box;
-  min-height: 180px;
-  padding: 12px;
+  min-height: 220px;
+  padding: 16px 18px;
   outline: none;
   line-height: 1.7;
   word-break: break-word;
   text-align: left;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.18));
 }
 
 .editor-surface:empty::before {
@@ -253,15 +257,17 @@ const handleFileChange = (event: Event) => {
 
 .attachment-list {
   display: grid;
-  gap: 10px;
-  padding: 0 12px 12px;
+  gap: 12px;
+  padding: 0 16px 16px;
+  background: linear-gradient(180deg, rgba(var(--arcoblue-6), 0.015), rgba(var(--arcoblue-6), 0.03));
 }
 
 .attachment-item {
-  padding: 10px;
-  border: 1px solid var(--color-neutral-3);
-  border-radius: 8px;
-  background: var(--color-fill-1);
+  padding: 12px;
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--color-bg-2);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
 }
 
 .attachment-image,
@@ -278,7 +284,7 @@ const handleFileChange = (event: Event) => {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .attachment-name,
@@ -286,6 +292,11 @@ const handleFileChange = (event: Event) => {
   min-width: 0;
   color: var(--color-text-1);
   word-break: break-all;
+}
+
+:deep(.editor-toolbar .arco-btn) {
+  min-width: 34px;
+  border-radius: 8px;
 }
 
 @media (max-width: 768px) {

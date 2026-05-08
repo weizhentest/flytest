@@ -433,10 +433,11 @@ const deleteOrganization = (organization: Organization, event?: Event) => {
 
 <style scoped>
 .organization-management {
-  background-color: #fff;
-  border-radius: 8px;
+  background: var(--ui-panel-bg);
+  border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
   height: 100%;
   box-sizing: border-box;
 }
@@ -446,6 +447,13 @@ const deleteOrganization = (organization: Organization, event?: Event) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--ui-toolbar-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .search-box {
@@ -456,6 +464,58 @@ const deleteOrganization = (organization: Organization, event?: Event) => {
 .action-buttons {
   display: flex;
   gap: 10px;
+}
+
+.organization-management :deep(.arco-table) {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+.organization-management :deep(.arco-table-container) {
+  border: 1px solid rgba(149, 161, 187, 0.16);
+  border-radius: 12px;
+}
+
+.organization-management :deep(.arco-table-th) {
+  background: rgba(248, 250, 252, 0.92);
+  color: #42526d;
+  font-weight: 600;
+}
+
+.organization-management :deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.organization-management :deep(.arco-pagination) {
+  margin-top: 16px;
+  padding: 14px 16px 0;
+  border-top: 1px solid rgba(149, 161, 187, 0.12);
+}
+
+.organization-management :deep(.arco-modal-content) {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.organization-management :deep(.arco-modal-header) {
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.organization-management :deep(.arco-modal-body) {
+  padding: 22px 24px;
+}
+
+.organization-management :deep(.arco-input-wrapper),
+.organization-management :deep(.arco-select-view),
+.organization-management :deep(.arco-picker) {
+  border-radius: 10px;
+}
+
+.organization-management :deep(.arco-btn) {
+  border-radius: 10px;
 }
 
 /* 操作按钮样式优化 */
@@ -481,5 +541,17 @@ const deleteOrganization = (organization: Organization, event?: Event) => {
 
 :deep(.arco-space-item:last-child) {
   margin-right: 0 !important;
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .search-box :deep(.arco-input-wrapper) {
+    width: 100% !important;
+  }
 }
 </style>

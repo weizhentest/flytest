@@ -43,10 +43,11 @@ const emit = defineEmits<DashboardRecentExecutionsCardEmits>()
 
 <style scoped>
 .panel-card {
+  overflow: hidden;
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
 .recent-card :deep(.arco-table-th),
@@ -54,7 +55,20 @@ const emit = defineEmits<DashboardRecentExecutionsCardEmits>()
   background: transparent;
 }
 
+.recent-card :deep(.arco-card-body) {
+  padding: 0;
+}
+
+.recent-card :deep(.arco-table-th) {
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
 .recent-card :deep(.arco-table-tr:hover > .arco-table-td) {
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  background: rgba(var(--theme-accent-rgb), 0.045);
+}
+
+.recent-card :deep(.arco-btn-text) {
+  padding: 0 6px;
+  border-radius: 10px;
 }
 </style>

@@ -33,30 +33,44 @@ defineProps<PackagesStatsGridProps>()
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
 .stat-card {
-  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%);
+  pointer-events: none;
+}
+
 .stat-card :deep(.arco-card-body) {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  min-height: 138px;
+  padding: 20px;
 }
 
 .stat-label {
   font-size: 13px;
   color: var(--theme-text-secondary);
+  letter-spacing: 0.2px;
 }
 
 .stat-card strong {
-  font-size: 28px;
+  font-size: 30px;
   color: var(--theme-text);
+  line-height: 1.1;
 }
 
 .stat-desc {
@@ -74,6 +88,11 @@ defineProps<PackagesStatsGridProps>()
 @media (max-width: 768px) {
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .stat-card :deep(.arco-card-body) {
+    min-height: 118px;
+    padding: 18px;
   }
 }
 </style>

@@ -1,7 +1,10 @@
 <template>
   <div v-if="selectedCount" class="batch-bar">
-    <span>已选择 <strong>{{ selectedCount }}</strong> 个用例</span>
-    <a-space wrap>
+    <div class="batch-bar-copy">
+      <span class="batch-bar-kicker">Batch Actions</span>
+      <span>已选择 <strong>{{ selectedCount }}</strong> 个用例</span>
+    </div>
+    <a-space wrap class="batch-bar-actions">
       <a-button type="primary" size="small" @click="emit('open-batch-execute')">
         {{ selectedCount > 1 ? '转到套件执行' : '执行所选' }}
       </a-button>
@@ -24,15 +27,48 @@ const emit = defineEmits<TestCasesBatchBarEmits>()
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.18);
-  background: rgba(var(--theme-accent-rgb), 0.08);
+  gap: 18px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.2);
+  background:
+    linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.14), rgba(var(--theme-accent-rgb), 0.05)),
+    var(--theme-card-bg);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
   color: var(--theme-text);
+}
+
+.batch-bar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.batch-bar-kicker {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .batch-bar strong {
   color: var(--theme-accent);
+}
+
+.batch-bar-actions :deep(.arco-btn) {
+  min-width: 92px;
+  border-radius: 12px;
+}
+
+@media (max-width: 900px) {
+  .batch-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-bar-actions {
+    width: 100%;
+  }
 }
 </style>

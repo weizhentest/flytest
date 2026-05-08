@@ -48,16 +48,20 @@ const emit = defineEmits<NotificationsFilterCardEmits>()
 
 <style scoped>
 .filter-card {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.filter-card :deep(.arco-card-body) {
+  padding: 20px;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: minmax(240px, 1.4fr) 180px 180px 180px 180px auto;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
 }
 
@@ -67,6 +71,13 @@ const emit = defineEmits<NotificationsFilterCardEmits>()
   justify-content: flex-end;
 }
 
+.filter-actions :deep(.arco-btn),
+.filter-card :deep(.arco-input-wrapper),
+.filter-card :deep(.arco-select-view),
+.filter-card :deep(.arco-picker) {
+  border-radius: 12px;
+}
+
 @media (max-width: 1260px) {
   .filter-grid {
     grid-template-columns: 1fr 1fr;
@@ -74,6 +85,10 @@ const emit = defineEmits<NotificationsFilterCardEmits>()
 }
 
 @media (max-width: 900px) {
+  .filter-card :deep(.arco-card-body) {
+    padding: 16px;
+  }
+
   .filter-grid {
     grid-template-columns: 1fr;
   }

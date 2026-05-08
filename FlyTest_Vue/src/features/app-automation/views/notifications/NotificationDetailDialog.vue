@@ -111,16 +111,18 @@ const emit = defineEmits<NotificationDetailDialogEmits>()
 
 .detail-card,
 .detail-panel {
-  border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: var(--theme-card-bg);
-  box-shadow: var(--theme-card-shadow);
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .detail-card {
   padding: 16px;
-  border-radius: 16px;
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.05), rgba(255, 255, 255, 0.94));
 }
 
 .detail-label,
@@ -166,5 +168,31 @@ const emit = defineEmits<NotificationDetailDialogEmits>()
 
 .parsed-label {
   color: var(--theme-text-secondary);
+}
+
+:deep(.arco-modal-content) {
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+:deep(.arco-modal-header) {
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 24px;
+}
+
+.detail-panel :deep(.arco-card-body) {
+  padding: 18px 20px;
+}
+
+.detail-panel :deep(.arco-textarea-wrapper),
+.detail-panel :deep(.arco-btn) {
+  border-radius: 10px;
 }
 </style>

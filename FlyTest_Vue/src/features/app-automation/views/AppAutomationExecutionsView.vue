@@ -110,17 +110,48 @@ const {
 .page-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  min-height: 0;
+  padding: 8px 6px 10px;
 }
 
 .empty-shell {
-  min-height: 220px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--theme-card-bg);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.9));
   border: 1px solid var(--theme-card-border);
-  border-radius: 16px;
+  border-radius: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
   color: var(--theme-text-secondary);
+}
+
+.page-shell :deep(.arco-card),
+.page-shell :deep(.execution-card),
+.page-shell :deep(.stats-card) {
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+}
+
+.page-shell :deep(.arco-card-header) {
+  min-height: 58px;
+}
+
+.page-shell :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+@media (max-width: 900px) {
+  .page-shell {
+    gap: 16px;
+    padding: 4px;
+  }
+
+  .page-shell :deep(.arco-card-body) {
+    padding: 18px;
+  }
 }
 </style>

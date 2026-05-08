@@ -98,6 +98,30 @@ const {
 .page-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  min-height: 0;
+  padding: 8px 6px 10px;
+}
+
+.page-shell :deep(.arco-card),
+.page-shell :deep(.notification-card),
+.page-shell :deep(.stats-card) {
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+}
+
+.page-shell :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+@media (max-width: 900px) {
+  .page-shell {
+    gap: 16px;
+    padding: 4px;
+  }
+
+  .page-shell :deep(.arco-card-body) {
+    padding: 18px;
+  }
 }
 </style>

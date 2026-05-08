@@ -1,5 +1,15 @@
 <template>
   <a-card class="draft-form-card">
+    <template #title>
+      <div class="card-title">
+        <div class="card-title-copy">
+          <span class="card-kicker">Case Draft</span>
+          <strong>场景草稿信息</strong>
+        </div>
+        <span class="card-meta">维护基础信息、应用包与场景变量</span>
+      </div>
+    </template>
+
     <a-form :model="draft" layout="vertical">
       <a-row :gutter="12">
         <a-col :span="8">
@@ -117,23 +127,78 @@ const emit = defineEmits<{
 
 <style scoped>
 .draft-form-card {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.draft-form-card :deep(.arco-card-header) {
+  padding: 18px 22px 0;
+  border-bottom: none;
+}
+
+.draft-form-card :deep(.arco-card-body) {
+  padding: 18px 22px 22px;
+}
+
+.card-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-title-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.card-title-copy strong {
+  color: var(--theme-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.card-meta {
+  color: var(--theme-text-secondary);
+  font-size: 13px;
+}
+
+:deep(.arco-form-item-label-col > label) {
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+:deep(.arco-input-wrapper),
+:deep(.arco-textarea-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number),
+:deep(.arco-btn) {
+  border-radius: 12px;
+}
+
 .variable-list {
   border: 1px dashed rgba(var(--theme-accent-rgb), 0.24);
-  border-radius: 14px;
-  padding: 14px;
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  border-radius: 16px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(var(--theme-accent-rgb), 0.04);
 }
 
 .variable-items {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .variable-row {
@@ -141,6 +206,10 @@ const emit = defineEmits<{
   grid-template-columns: 1.1fr 120px 120px 1.2fr 1.1fr auto;
   gap: 10px;
   align-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
 }
 
 .variable-actions {
@@ -154,8 +223,13 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 960px) {
+  .card-title,
   .variable-row {
     grid-template-columns: 1fr;
+  }
+
+  .card-title {
+    flex-direction: column;
   }
 }
 </style>

@@ -178,10 +178,20 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
 <style scoped>
 .config-panel {
   min-height: 560px;
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.config-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 20px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.config-panel :deep(.arco-card-body) {
+  padding: 20px;
 }
 
 .config-empty,
@@ -192,14 +202,16 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
 .config-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .quick-config-panel {
-  padding: 14px 16px;
-  border-radius: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
   border: 1px solid rgba(var(--theme-accent-rgb), 0.18);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.05);
 }
 
 .quick-config-title {
@@ -214,5 +226,13 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
   background: rgba(var(--theme-surface-rgb), 0.72);
 }
 
-</style>
+:deep(.arco-input-wrapper),
+:deep(.arco-textarea-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number),
+:deep(.arco-btn),
+:deep(.arco-picker) {
+  border-radius: 12px;
+}
 
+</style>

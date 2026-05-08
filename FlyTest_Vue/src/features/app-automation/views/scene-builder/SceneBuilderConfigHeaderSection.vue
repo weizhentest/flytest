@@ -3,26 +3,37 @@
     流程容器步骤的 JSON 同时支持维护 `steps`、`else_steps`、`catch_steps`、`finally_steps`。
   </a-alert>
 
-  <a-form-item label="步骤名称">
-    <a-input v-model="selectedSceneStep!.name" placeholder="请输入步骤名称" />
-  </a-form-item>
-  <a-form-item label="步骤类型">
-    <a-input :model-value="resolveStepMeta(selectedSceneStep)" disabled />
-  </a-form-item>
-  <div class="config-toolbar">
-    <a-button
-      type="outline"
-      size="small"
-      :disabled="!selectedSceneStep"
-      :loading="aiStepSuggesting"
-      @click="emit('open-ai-step-dialog')"
-    >
-      AI 补全当前步骤
-    </a-button>
+  <div class="config-summary-card">
+    <div class="config-summary-copy">
+      <span class="config-kicker">Step Overview</span>
+      <strong>{{ selectedSceneStep?.name || '当前步骤' }}</strong>
+    </div>
+    <div class="config-toolbar">
+      <a-button
+        type="outline"
+        size="small"
+        :disabled="!selectedSceneStep"
+        :loading="aiStepSuggesting"
+        @click="emit('open-ai-step-dialog')"
+      >
+        AI 补全当前步骤
+      </a-button>
+    </div>
+  </div>
+
+  <div class="config-field-card">
+    <a-form-item label="步骤名称">
+      <a-input v-model="selectedSceneStep!.name" placeholder="请输入步骤名称" />
+    </a-form-item>
+  </div>
+  <div class="config-field-card">
+    <a-form-item label="步骤类型">
+      <a-input :model-value="resolveStepMeta(selectedSceneStep)" disabled />
+    </a-form-item>
   </div>
 
   <a-alert v-if="showQuickConfigHelper" class="config-helper-alert">
-    常用图片、OCR 和断言参数可以直接在下方快捷配置；更复杂的字段仍然可以继续在 JSON 中补充。
+    常用图片、OCR 和断言参数可以直接在下方快速配置；更复杂的字段仍然可以继续在 JSON 中补充。
   </a-alert>
 </template>
 
@@ -75,17 +86,69 @@ const showQuickConfigHelper = computed(() => {
 </script>
 
 <style scoped>
+.config-summary-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.18);
+  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.1), rgba(var(--theme-accent-rgb), 0.04));
+}
+
+.config-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-summary-copy strong {
+  color: var(--theme-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.config-field-card {
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-surface-rgb), 0.72);
+}
+
+.config-field-card :deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+
+.config-field-card :deep(.arco-input-wrapper) {
+  border-radius: 12px;
+}
+
 .config-toolbar {
   display: flex;
   justify-content: flex-end;
-  margin-top: -6px;
 }
 
 .config-flow-alert {
-  margin-bottom: 4px;
+  margin-bottom: 14px;
 }
 
 .config-helper-alert {
   margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .config-summary-card {
+    flex-direction: column;
+  }
 }
 </style>

@@ -408,7 +408,7 @@ onMounted(() => {
 
 <style scoped>
 .remote-mcp-management {
-  padding: 16px;
+  padding: 4px;
 }
 
 .page-header {
@@ -416,9 +416,27 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--ui-panel-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .content-card {
   margin-bottom: 16px;
+}
+
+.remote-mcp-management :deep(.arco-card),
+.remote-mcp-management :deep(.arco-table),
+.remote-mcp-management :deep(.arco-modal-content) {
+  border-radius: 14px;
+}
+
+.remote-mcp-management :deep(.arco-card) {
+  border-color: var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
 }
 </style>

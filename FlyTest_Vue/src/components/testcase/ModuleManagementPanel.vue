@@ -726,16 +726,18 @@ defineExpose({
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: -4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
+  background: var(--ui-panel-bg, #fff);
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-lg, 12px);
+  box-shadow: var(--ui-panel-shadow, 0 10px 24px rgba(15, 23, 42, 0.08));
   overflow: hidden;
 }
 
 :deep(.module-panel .arco-card-header) {
-  border-bottom: 1px solid var(--color-border-2);
-  padding: 12px 16px;
+  border-bottom: 1px solid var(--ui-panel-border, var(--color-border-2));
+  padding: 14px 18px;
   flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(var(--arcoblue-6), 0.03), rgba(var(--arcoblue-6), 0));
 }
 
 :deep(.module-panel .arco-card-body) {
@@ -756,13 +758,22 @@ defineExpose({
   flex-grow: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  padding: 14px 12px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
 }
 
 .tree-container::-webkit-scrollbar {
-  display: none;
+  width: 8px;
+}
+
+.tree-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+}
+
+.tree-container::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 :deep(.tree-container .arco-empty) {
@@ -779,14 +790,24 @@ defineExpose({
 
 .module-count {
   color: var(--color-text-3);
-  font-size: 0.85em;
-  margin-left: 4px;
+  font-size: 12px;
+  margin-left: 6px;
 }
 
 .module-node-title {
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
+  min-height: 34px;
+  padding: 0 8px 0 2px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.module-node-title:hover {
+  background: rgba(var(--arcoblue-6), 0.05);
 }
 
 .testcase-transfer-modal {
@@ -800,6 +821,10 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px;
+  background: var(--ui-panel-bg-soft, var(--color-fill-1));
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-md, 10px);
 }
 
 .testcase-transfer-source-group {
@@ -830,23 +855,38 @@ defineExpose({
   min-width: 0;
 }
 
+.testcase-transfer-table {
+  padding: 12px;
+  background: var(--color-bg-2);
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-md, 10px);
+}
+
+.testcase-transfer-target {
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(var(--arcoblue-6), 0.04), rgba(var(--arcoblue-6), 0.01));
+  border: 1px solid rgba(var(--arcoblue-6), 0.12);
+  border-radius: var(--ui-radius-md, 10px);
+}
+
 .testcase-transfer-summary {
   margin-top: 12px;
   color: var(--color-text-2);
   word-break: break-word;
+  line-height: 1.7;
 }
 
 .module-panel-header {
   flex-shrink: 0;
-  padding: 16px;
-  border-bottom: 1px solid var(--color-border-2);
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--ui-panel-border, var(--color-border-2));
+  background: var(--ui-toolbar-bg, var(--color-fill-1));
 }
 
 .module-actions {
   display: flex;
   justify-content: center;
-  margin-top: 8px;
-  margin-bottom: 16px;
+  margin-top: 12px;
 }
 
 .module-dropdown {
@@ -854,14 +894,7 @@ defineExpose({
 }
 
 .module-action-button {
-  width: 80px;
-  background-color: #ffffff;
-  border-color: #ffffff;
-}
-
-.module-action-button:hover {
-  background-color: #ffffff;
-  border-color: #ffffff;
+  width: 100%;
 }
 
 :deep(.arco-dropdown-option) {
@@ -887,6 +920,25 @@ defineExpose({
 :deep(.arco-dropdown-menu) {
   width: 100%;
   padding: 4px 0;
+}
+
+:deep(.module-panel .arco-tree-node-title) {
+  display: block;
+  width: 100%;
+}
+
+:deep(.module-panel .arco-tree-node-selected .module-node-title) {
+  color: rgb(var(--arcoblue-6));
+  background: rgba(var(--arcoblue-6), 0.09);
+}
+
+:deep(.module-panel .arco-tree-node:hover .module-node-title) {
+  color: var(--color-text-1);
+}
+
+:deep(.testcase-transfer-table .arco-table-container) {
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 @media (max-width: 768px) {

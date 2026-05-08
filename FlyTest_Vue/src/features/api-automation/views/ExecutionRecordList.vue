@@ -1,9 +1,12 @@
 <template>
   <div class="execution-record-list">
-    <div class="page-header api-page-header">
+    <div class="page-hero">
       <div class="page-summary">
-        <div class="page-summary__eyebrow">项目 / 执行批次 / 接口 / 用例</div>
+        <div class="page-summary__eyebrow">Project / Batch / Interface / Case</div>
         <div class="page-summary__title">执行历史</div>
+        <div class="page-summary__desc">
+          按执行批次聚合查看接口和测试用例的历史结果，适合快速定位失败批次与异常热点。
+        </div>
         <div class="page-summary__meta">
           <span>{{ projectName }}</span>
           <span>{{ selectedCollectionName || '当前项目全部接口目录' }}</span>
@@ -24,16 +27,16 @@
       </div>
     </div>
 
-    <div v-if="!projectId" class="empty-tip-card">
-      <a-empty description="请先选择项目。" />
+    <div v-if="!projectId" class="state-card">
+      <a-empty description="请先选择项目" />
     </div>
 
-    <div v-else-if="loading" class="loading-card">
+    <div v-else-if="loading" class="state-card">
       <a-spin size="large" />
     </div>
 
-    <div v-else-if="!groupedRuns.length" class="empty-tip-card">
-      <a-empty description="当前筛选条件下还没有执行记录。" />
+    <div v-else-if="!groupedRuns.length" class="state-card">
+      <a-empty description="当前筛选条件下还没有执行记录" />
     </div>
 
     <div v-else class="content-section">
@@ -469,23 +472,23 @@ defineExpose({
   gap: 22px;
 }
 
-.api-page-header {
+.page-hero {
   display: grid;
-  grid-template-columns: minmax(260px, 1.1fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(260px, 1.1fr) minmax(320px, 1fr);
   align-items: end;
-  justify-content: space-between;
   gap: 22px;
-  padding: 24px 26px;
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.9));
+  padding: 26px 28px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.92));
   border: 1px solid rgba(148, 163, 184, 0.14);
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
 }
 
 .page-summary,
 .page-toolbar {
   display: flex;
-  align-items: center;
   gap: 14px;
   flex-wrap: wrap;
 }
@@ -506,10 +509,17 @@ defineExpose({
 }
 
 .page-summary__title {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 800;
-  line-height: 1.08;
+  line-height: 1.06;
   color: #0f172a;
+}
+
+.page-summary__desc {
+  max-width: 700px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #64748b;
 }
 
 .page-summary__meta {
@@ -540,6 +550,7 @@ defineExpose({
 
 .page-toolbar {
   justify-content: flex-end;
+  align-items: center;
 }
 
 .toolbar-search {
@@ -557,8 +568,7 @@ defineExpose({
   border-radius: 14px;
 }
 
-.loading-card,
-.empty-tip-card {
+.state-card {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -577,8 +587,8 @@ defineExpose({
 }
 
 .run-card {
-  padding: 20px;
-  border-radius: 24px;
+  padding: 22px;
+  border-radius: 26px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
   border: 1px solid rgba(148, 163, 184, 0.14);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.05);
@@ -691,24 +701,6 @@ defineExpose({
   word-break: break-word;
 }
 
-.detail-drawer {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.json-block {
-  margin: 0;
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.95);
-  color: #e2e8f0;
-  font-size: 12px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .detail-modal :deep(.arco-modal) {
   max-width: min(1120px, calc(100vw - 32px));
 }
@@ -718,7 +710,7 @@ defineExpose({
 }
 
 @media (max-width: 1200px) {
-  .api-page-header {
+  .page-hero {
     grid-template-columns: 1fr;
   }
 
@@ -728,9 +720,9 @@ defineExpose({
 }
 
 @media (max-width: 768px) {
-  .api-page-header {
+  .page-hero {
     align-items: stretch;
-    padding: 20px;
+    padding: 22px 20px;
   }
 
   .page-summary,
@@ -740,7 +732,7 @@ defineExpose({
   }
 
   .page-summary__title {
-    font-size: 24px;
+    font-size: 26px;
   }
 
   .run-card,

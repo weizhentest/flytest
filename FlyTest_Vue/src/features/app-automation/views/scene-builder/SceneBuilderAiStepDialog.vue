@@ -2,7 +2,7 @@
   <a-modal v-model:visible="visibleModel" width="640px">
     <template #title>AI 补全当前步骤</template>
 
-    <a-form layout="vertical">
+    <div class="dialog-shell">
       <a-alert class="custom-dialog-alert">
         这里会基于当前已选步骤、场景上下文和激活的 LLM 配置补全当前步骤；如果模型不可用，会自动回退到规则补全。
       </a-alert>
@@ -22,14 +22,18 @@
         </div>
       </div>
 
-      <a-form-item field="prompt" label="补全说明">
-        <a-textarea
-          v-model="promptModel"
-          :auto-size="{ minRows: 5, maxRows: 8 }"
-          placeholder="例如：补全为输入登录账号，优先复用已有元素，缺少值时自动生成变量。"
-        />
-      </a-form-item>
-    </a-form>
+      <a-form layout="vertical" class="dialog-form">
+        <div class="field-card">
+          <a-form-item field="prompt" label="补全说明">
+            <a-textarea
+              v-model="promptModel"
+              :auto-size="{ minRows: 5, maxRows: 8 }"
+              placeholder="例如：补全为输入登录账号，优先复用已有元素，缺少值时自动生成变量。"
+            />
+          </a-form-item>
+        </div>
+      </a-form>
+    </div>
 
     <template #footer>
       <a-space>
@@ -59,30 +63,39 @@ const emit = defineEmits<{
 </script>
 
 <style scoped>
+.dialog-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .custom-dialog-alert {
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .ai-dialog-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
 }
 
 .ai-dialog-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
-  border-radius: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
   border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.04)),
+    rgba(var(--theme-surface-rgb), 0.72);
 }
 
 .ai-dialog-item span {
   font-size: 12px;
   color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .ai-dialog-item strong {
@@ -91,9 +104,39 @@ const emit = defineEmits<{
   overflow-wrap: anywhere;
 }
 
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field-card {
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-surface-rgb), 0.72);
+}
+
+.field-card :deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+
+.field-card :deep(.arco-textarea-wrapper) {
+  border-radius: 12px;
+}
+
 @media (max-width: 1480px) {
   .ai-dialog-meta {
     grid-template-columns: 1fr;
   }
+}
+
+:deep(.arco-modal-title) {
+  font-size: 18px;
+}
+
+:deep(.arco-modal-footer .arco-btn) {
+  min-width: 96px;
+  border-radius: 12px;
 }
 </style>

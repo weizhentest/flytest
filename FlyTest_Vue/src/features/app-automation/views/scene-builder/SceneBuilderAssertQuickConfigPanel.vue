@@ -1,10 +1,17 @@
 <template>
   <div class="quick-config-panel">
-    <div class="quick-config-title">断言快捷配置</div>
+    <div class="quick-config-head">
+      <span class="quick-config-kicker">Assertion</span>
+      <div class="quick-config-title">断言快捷配置</div>
+    </div>
+
     <a-row :gutter="12">
       <a-col :span="8">
         <a-form-item label="断言类型">
-          <a-select :model-value="selectedAssertType" @change="value => handleAssertTypeChange(String(value || 'condition'))">
+          <a-select
+            :model-value="selectedAssertType"
+            @change="value => handleAssertTypeChange(String(value || 'condition'))"
+          >
             <a-option v-for="item in assertTypeOptions" :key="item.value" :value="item.value">
               {{ item.label }}
             </a-option>
@@ -133,7 +140,7 @@
       </a-row>
       <a-row :gutter="12">
         <a-col :span="8">
-          <a-form-item label="全屏找图">
+          <a-form-item label="全屏查找">
             <a-switch
               :model-value="readSelectedConfigBoolean('search_full_screen', true)"
               @change="value => updateSelectedStepConfig('search_full_screen', value)"
@@ -146,7 +153,7 @@
     <template v-else-if="selectedAssertQuickMode === 'exists'">
       <a-row :gutter="12">
         <a-col :span="8">
-          <a-form-item label="选择器类型">
+          <a-form-item label="定位方式">
             <a-select
               :model-value="selectedPrimarySelectorType"
               @change="value => updateSelectedStepConfig('selector_type', value || 'element')"
@@ -158,10 +165,10 @@
           </a-form-item>
         </a-col>
         <a-col :span="16">
-          <a-form-item label="选择器内容">
+          <a-form-item label="定位内容">
             <a-input
               :model-value="readSelectedConfigString('selector')"
-              placeholder="元素名、文本或图片路径"
+              placeholder="输入元素、文本或图片路径"
               @input="value => updateSelectedStepConfig('selector', value)"
             />
           </a-form-item>
@@ -196,7 +203,7 @@
           <a-form-item label="期望值">
             <a-input
               :model-value="readSelectedConfigString('expected')"
-              placeholder="期望值或变量表达式"
+              placeholder="输入期望值或变量表达式"
               @input="value => updateSelectedStepConfig('expected', value)"
             />
           </a-form-item>
@@ -228,3 +235,45 @@ interface Props
 
 defineProps<Props>()
 </script>
+
+<style scoped>
+.quick-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-surface-rgb), 0.72);
+}
+
+.quick-config-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-config-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quick-config-title {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+:deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.arco-input-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number) {
+  border-radius: 12px;
+}
+</style>

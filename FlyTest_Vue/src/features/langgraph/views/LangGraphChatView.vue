@@ -2231,8 +2231,14 @@ export default {
 .chat-layout {
   display: flex;
   height: 100%;
-  background-color: #f7f8fa;
-  border-radius: 8px;
+  padding: 14px;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 252, 0.9));
+  border: 1px solid var(--ui-panel-border);
+  border-radius: 22px;
+  box-shadow: var(--ui-panel-shadow);
   overflow: hidden;
 }
 
@@ -2242,7 +2248,10 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: #f7f8fa;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.9));
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
   overflow: hidden;
   position: relative;
 }
@@ -2336,6 +2345,8 @@ export default {
 .chat-sidebar {
   border-radius: 28px;
   overflow: hidden;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .chat-container {
@@ -2490,6 +2501,12 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .chat-layout {
+    padding: 10px;
+    gap: 10px;
+    border-radius: 18px;
+  }
+
   .workspace-hero--chat-command {
     margin: 12px 12px 8px;
     padding: 14px;

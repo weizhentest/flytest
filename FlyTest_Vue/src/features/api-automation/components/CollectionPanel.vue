@@ -3,24 +3,36 @@
     <a-card class="collection-panel" :bordered="false">
       <div class="collection-panel-content">
         <div class="collection-panel-head">
-          <div class="collection-panel-head__eyebrow">Collection Directory</div>
-          <div class="collection-panel-head__title">接口层级</div>
+          <div class="collection-panel-head__eyebrow">API Automation</div>
+          <div class="collection-panel-head__title">接口目录</div>
           <div class="collection-panel-head__desc">
-            左侧按“目录 / 接口”展示结构，点击接口后右侧会直接切换到该接口对应的测试用例。
+            目录与接口在这里统一组织。点击接口后，右侧会自动切换到该接口对应的测试用例与执行视图。
           </div>
         </div>
+
+        <div class="collection-overview">
+          <div class="collection-overview__item">
+            <span class="collection-overview__label">目录数</span>
+            <strong class="collection-overview__value">{{ collectionCount }}</strong>
+          </div>
+          <div class="collection-overview__item">
+            <span class="collection-overview__label">接口数</span>
+            <strong class="collection-overview__value">{{ requestCount }}</strong>
+          </div>
+        </div>
+
         <div class="collection-panel-header">
           <a-input-search
             v-model="searchKeyword"
             class="collection-search"
-            placeholder="搜索目录或接口中文名"
+            placeholder="搜索目录或接口名称"
             allow-clear
             @search="onSearch"
             @input="onSearch"
           />
           <div class="collection-actions">
             <a-dropdown @select="handleAction" trigger="click" position="bottom">
-              <a-button type="primary" size="small" class="collection-action-button">操作</a-button>
+              <a-button type="primary" size="small" class="collection-action-button">目录操作</a-button>
               <template #content>
                 <a-doption value="addRoot">新增根目录</a-doption>
                 <a-doption value="addChild" :disabled="!actionCollectionId">新增子目录</a-doption>
@@ -54,7 +66,7 @@
                   </span>
                 </div>
                 <span v-if="nodeData.type === 'collection'" class="tree-node__count">
-                  {{ nodeData.requestCount || 0 }} 接口
+                  {{ nodeData.requestCount || 0 }} 个接口
                 </span>
               </div>
             </template>
@@ -136,6 +148,9 @@ const formData = ref<ApiCollectionForm>({
 const actionCollectionId = computed(() =>
   currentTreeSelection.value?.type === 'collection' ? currentTreeSelection.value.id : null
 )
+
+const collectionCount = computed(() => collectionMap.value.size)
+const requestCount = computed(() => treeData.value.reduce((total, node) => total + (node.requestCount || 0), 0))
 
 const localeCompareZh = (left: string, right: string) => left.localeCompare(right, 'zh-CN')
 
@@ -490,10 +505,10 @@ defineExpose({
 .collection-panel {
   min-height: 0;
   height: 100%;
-  border-radius: 24px;
+  border-radius: 26px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
   overflow: hidden;
 }
 
@@ -510,7 +525,7 @@ defineExpose({
   min-height: 0;
   height: 100%;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
 .collection-panel-head {
@@ -530,7 +545,7 @@ defineExpose({
 .collection-panel-head__title {
   font-size: 28px;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.08;
   color: #0f172a;
 }
 
@@ -538,6 +553,34 @@ defineExpose({
   font-size: 13px;
   line-height: 1.8;
   color: #64748b;
+}
+
+.collection-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.collection-overview__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.84));
+}
+
+.collection-overview__label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.collection-overview__value {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  color: #0f172a;
 }
 
 .collection-panel-header {
@@ -561,7 +604,7 @@ defineExpose({
 }
 
 .collection-action-button {
-  min-width: 84px;
+  min-width: 96px;
   padding-inline: 18px;
   border-radius: 14px;
 }
@@ -570,7 +613,10 @@ defineExpose({
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px 2px 0 0;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(248, 250, 252, 0.58);
+  padding: 12px 10px 4px;
   overscroll-behavior: contain;
 }
 
@@ -587,10 +633,12 @@ defineExpose({
 
 .tree-container :deep(.arco-tree-node-title:hover) {
   background: rgba(59, 130, 246, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.06);
 }
 
 .tree-container :deep(.arco-tree-node-selected .arco-tree-node-title) {
   background: rgba(59, 130, 246, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
 .tree-node {
@@ -655,6 +703,12 @@ defineExpose({
 
   .collection-panel-head__title {
     font-size: 24px;
+  }
+
+  .collection-overview,
+  .collection-panel-header {
+    grid-template-columns: 1fr;
+    display: grid;
   }
 }
 </style>

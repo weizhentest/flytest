@@ -141,7 +141,7 @@ onUnmounted(() => {
 .testbug-management-container {
   display: flex;
   height: 100%;
-  background-color: var(--color-fill-1);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -150,17 +150,19 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid var(--color-neutral-3);
+  background: var(--ui-panel-bg);
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .list-view-layout {
   display: flex;
   width: 100%;
   height: 100%;
-  gap: 10px;
+  gap: 16px;
   overflow: hidden;
+  padding: 4px;
 }
 
 .suite-panel-resizable-shell {
@@ -169,20 +171,23 @@ onUnmounted(() => {
   max-width: 45vw;
   height: 100%;
   overflow: hidden;
+  border-radius: var(--ui-radius-md);
 }
 
 .suite-panel-resizer {
-  width: 6px;
-  flex: 0 0 6px;
+  width: 8px;
+  flex: 0 0 8px;
   cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(to bottom, rgba(22, 93, 255, 0.08), rgba(22, 93, 255, 0.22));
-  opacity: 0.7;
+  background: linear-gradient(to bottom, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.22));
+  opacity: 0.85;
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 
 .suite-panel-resizer:hover {
-  background: linear-gradient(to bottom, rgba(22, 93, 255, 0.18), rgba(22, 93, 255, 0.36));
+  background: linear-gradient(to bottom, rgba(var(--theme-accent-rgb), 0.14), rgba(var(--theme-accent-rgb), 0.34));
   opacity: 1;
+  transform: scaleX(1.05);
 }
 
 .right-content-area {
@@ -195,11 +200,13 @@ onUnmounted(() => {
 }
 
 .bug-toolbar {
-  margin-bottom: 12px;
-  padding: 16px 18px;
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid var(--color-neutral-3);
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  background: var(--ui-panel-bg);
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
+  backdrop-filter: blur(16px);
 }
 
 .bug-toolbar-info {
@@ -207,14 +214,16 @@ onUnmounted(() => {
 }
 
 .bug-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-1);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--theme-text);
+  letter-spacing: 0;
 }
 
 .bug-subtitle {
-  margin-top: 6px;
-  color: var(--color-text-3);
+  margin-top: 8px;
+  color: var(--theme-text-secondary);
+  line-height: 1.7;
   word-break: break-word;
 }
 
@@ -222,6 +231,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  border-radius: var(--ui-radius-md);
 }
 
 .suite-empty {
@@ -229,9 +239,10 @@ onUnmounted(() => {
   flex: 1;
   justify-content: center;
   align-items: center;
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid var(--color-neutral-3);
+  background: var(--ui-panel-bg);
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 @media (max-width: 768px) {

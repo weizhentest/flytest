@@ -41,22 +41,43 @@ const emit = defineEmits<SuitesHeaderBarEmits>()
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
 }
 
 .page-header h3 {
   margin: 0;
   color: var(--theme-text);
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .page-header p {
   margin: 6px 0 0;
   color: var(--theme-text-secondary);
+  max-width: 620px;
+  line-height: 1.65;
+}
+
+.page-header :deep(.arco-input-wrapper),
+.page-header :deep(.arco-select-view),
+.page-header :deep(.arco-btn) {
+  border-radius: 10px;
 }
 
 @media (max-width: 960px) {
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .page-header :deep(.arco-space) {
+    width: 100%;
   }
 }
 </style>

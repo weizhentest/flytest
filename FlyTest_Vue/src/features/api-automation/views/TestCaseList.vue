@@ -1,10 +1,13 @@
 <template>
   <div class="test-case-list">
-    <div class="page-header">
-      <div class="page-header__copy">
-        <div class="page-header__eyebrow">项目 / 接口 / 用例</div>
-        <div class="page-header__title">测试用例</div>
-        <div class="page-header__meta">
+    <div class="page-hero">
+      <div class="page-hero__copy">
+        <div class="page-hero__eyebrow">Project / Interface / Case</div>
+        <div class="page-hero__title">测试用例</div>
+        <div class="page-hero__desc">
+          面向接口维度统一管理自动化测试用例，支持执行、批量选择、AI 生成与请求覆盖配置。
+        </div>
+        <div class="page-hero__meta">
           <span>{{ projectName }}</span>
           <span>{{ selectedCollectionName || '未选择接口目录' }}</span>
           <span>{{ selectedRequestName || '全部接口' }}</span>
@@ -12,7 +15,7 @@
           <span>{{ filteredTestCases.length }} 条用例</span>
         </div>
       </div>
-      <div class="page-header__tools">
+      <div class="page-hero__tools">
         <a-input-search
           v-model="searchKeyword"
           class="tools-search"
@@ -30,7 +33,7 @@
         >
           <a-option v-for="item in environments" :key="item.id" :value="item.id" :label="item.name" />
         </a-select>
-        <div v-if="selectedRequestId" class="tools-group">
+        <div v-if="selectedRequestId" class="tools-group tools-group--soft">
           <a-button :loading="caseGenerationLoadingMode === 'generate'" :disabled="isCaseGenerationLoading" @click="generateCases('generate')">AI生成</a-button>
           <a-button :loading="caseGenerationLoadingMode === 'regenerate'" :disabled="isCaseGenerationLoading" @click="generateCases('regenerate')">重新生成</a-button>
           <a-button :loading="caseGenerationLoadingMode === 'append'" :disabled="isCaseGenerationLoading" @click="generateCases('append')">追加生成</a-button>
@@ -44,10 +47,14 @@
       </div>
     </div>
 
-    <div v-if="!selectedCollectionId" class="state-card"><a-empty description="请先在左侧选择接口目录或具体接口。" /></div>
-    <div v-else-if="loading" class="state-card"><a-spin size="large" /></div>
+    <div v-if="!selectedCollectionId" class="state-card">
+      <a-empty description="请先在左侧选择接口目录或具体接口" />
+    </div>
+    <div v-else-if="loading" class="state-card">
+      <a-spin size="large" />
+    </div>
     <div v-else-if="!groupedTestCases.length" class="state-card">
-      <a-empty :description="selectedRequestId ? '当前接口下暂无测试用例。' : '当前接口目录下暂无测试用例。'" />
+      <a-empty :description="selectedRequestId ? '当前接口下暂无测试用例' : '当前接口目录下暂无测试用例'" />
     </div>
 
     <div v-else class="group-list">
@@ -65,7 +72,9 @@
             </div>
           </div>
           <div class="tools-group">
-            <a-button size="small" @click="toggleGroupSelection(group)">{{ isGroupFullySelected(group) ? '取消全选' : '全选该接口用例' }}</a-button>
+            <a-button size="small" @click="toggleGroupSelection(group)">
+              {{ isGroupFullySelected(group) ? '取消全选' : '全选该接口用例' }}
+            </a-button>
             <a-button size="small" @click="executeGroupTestCases(group)">执行该接口</a-button>
           </div>
         </div>
@@ -86,10 +95,14 @@
               </template>
             </a-table-column>
             <a-table-column title="状态" :width="120" align="center">
-              <template #cell="{ record }"><a-tag :color="statusColorMap[record.status]">{{ statusLabelMap[record.status] }}</a-tag></template>
+              <template #cell="{ record }">
+                <a-tag :color="statusColorMap[record.status]">{{ statusLabelMap[record.status] }}</a-tag>
+              </template>
             </a-table-column>
             <a-table-column title="标签" :width="120" align="center">
-              <template #cell="{ record }"><a-tag color="cyan">{{ record.tags?.length || 0 }}</a-tag></template>
+              <template #cell="{ record }">
+                <a-tag color="cyan">{{ record.tags?.length || 0 }}</a-tag>
+              </template>
             </a-table-column>
             <a-table-column title="更新时间" :width="180">
               <template #cell="{ record }">{{ formatDate(record.updated_at) }}</template>
@@ -125,7 +138,9 @@
     >
       <a-form :model="formState" layout="vertical">
         <a-row :gutter="16">
-          <a-col :span="12"><a-form-item label="测试用例名称"><a-input v-model="formState.name" /></a-form-item></a-col>
+          <a-col :span="12">
+            <a-form-item label="测试用例名称"><a-input v-model="formState.name" /></a-form-item>
+          </a-col>
           <a-col :span="6">
             <a-form-item label="状态">
               <a-select v-model="formState.status">
@@ -135,9 +150,13 @@
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col :span="6"><a-form-item label="标签"><a-input v-model="formState.tagsText" placeholder="多个标签用逗号分隔" /></a-form-item></a-col>
+          <a-col :span="6">
+            <a-form-item label="标签"><a-input v-model="formState.tagsText" placeholder="多个标签用逗号分隔" /></a-form-item>
+          </a-col>
         </a-row>
-        <a-form-item label="描述"><a-textarea v-model="formState.description" :auto-size="{ minRows: 2, maxRows: 4 }" /></a-form-item>
+        <a-form-item label="描述">
+          <a-textarea v-model="formState.description" :auto-size="{ minRows: 2, maxRows: 4 }" />
+        </a-form-item>
 
         <a-divider orientation="left">主请求覆盖</a-divider>
         <div class="section-note">配置该测试用例对主接口的请求覆盖、断言和提取器。</div>
@@ -154,11 +173,7 @@
               }}
             </div>
           </div>
-          <a-button
-            size="small"
-            :disabled="!requestBodyOverrideState.isCustom"
-            @click="resetRequestBodyToMainRequest"
-          >
+          <a-button size="small" :disabled="!requestBodyOverrideState.isCustom" @click="resetRequestBodyToMainRequest">
             恢复主请求体
           </a-button>
         </div>
@@ -171,17 +186,33 @@
 
         <a-divider orientation="left">工作流步骤</a-divider>
         <div class="section-note">工作流步骤和主请求共用同一次执行上下文、变量和 Cookie 会话。</div>
-        <WorkflowStepEditor v-model="formState.workflow_steps" :requests="availableRequests" :main-request="editingMainRequest" :loading="requestLoading" />
+        <WorkflowStepEditor
+          v-model="formState.workflow_steps"
+          :requests="availableRequests"
+          :main-request="editingMainRequest"
+          :loading="requestLoading"
+        />
       </a-form>
     </a-modal>
 
-    <a-modal v-model:visible="detailVisible" title="测试用例详情" width="1200px" :align-center="true" :footer="false" :body-style="{ maxHeight: '80vh', overflowY: 'auto' }">
+    <a-modal
+      v-model:visible="detailVisible"
+      title="测试用例详情"
+      width="1200px"
+      :align-center="true"
+      :footer="false"
+      :body-style="{ maxHeight: '80vh', overflowY: 'auto' }"
+    >
       <div v-if="currentTestCase" class="detail-panel">
         <a-descriptions :column="2" bordered size="small">
           <a-descriptions-item label="测试用例">{{ currentTestCase.name }}</a-descriptions-item>
-          <a-descriptions-item label="状态"><a-tag :color="statusColorMap[currentTestCase.status]">{{ statusLabelMap[currentTestCase.status] }}</a-tag></a-descriptions-item>
+          <a-descriptions-item label="状态">
+            <a-tag :color="statusColorMap[currentTestCase.status]">{{ statusLabelMap[currentTestCase.status] }}</a-tag>
+          </a-descriptions-item>
           <a-descriptions-item label="接口名称">{{ currentTestCase.request_name || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="请求方法"><a-tag :color="methodColorMap[currentTestCase.request_method || ''] || 'arcoblue'">{{ currentTestCase.request_method || '-' }}</a-tag></a-descriptions-item>
+          <a-descriptions-item label="请求方法">
+            <a-tag :color="methodColorMap[currentTestCase.request_method || ''] || 'arcoblue'">{{ currentTestCase.request_method || '-' }}</a-tag>
+          </a-descriptions-item>
           <a-descriptions-item label="请求地址" :span="2">{{ currentTestCase.request_url || '-' }}</a-descriptions-item>
           <a-descriptions-item label="描述" :span="2">{{ currentTestCase.description || '-' }}</a-descriptions-item>
           <a-descriptions-item label="标签" :span="2">
@@ -203,7 +234,6 @@
     </a-modal>
   </div>
 </template>
-
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -792,32 +822,38 @@ defineExpose({ refresh: loadTestCases })
 </script>
 
 <style scoped>
-.test-case-list { display: flex; flex-direction: column; gap: 20px; }
-.page-header, .state-card, .group-card { border: 1px solid rgba(148,163,184,.16); border-radius: 24px; background: rgba(255,255,255,.92); box-shadow: 0 16px 36px rgba(15,23,42,.05); }
-.page-header { display: grid; grid-template-columns: minmax(260px,1fr) minmax(520px,1.4fr); gap: 18px; padding: 24px; }
-.page-header__copy, .page-header__tools, .tools-group, .group-list, .case-name, .detail-panel { display: flex; }
-.page-header__copy, .group-list, .case-name, .detail-panel { flex-direction: column; }
-.page-header__copy { gap: 8px; }
-.page-header__tools, .tools-group { align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
-.page-header__eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #0f766e; }
-.page-header__title { font-size: 28px; font-weight: 800; color: #0f172a; }
-.page-header__meta, .group-card__meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: #64748b; }
+.test-case-list { display: flex; flex-direction: column; gap: 22px; }
+.page-hero, .state-card, .group-card { border: 1px solid rgba(148,163,184,.16); border-radius: 28px; background: rgba(255,255,255,.94); box-shadow: 0 18px 40px rgba(15,23,42,.06); }
+.page-hero { display: grid; grid-template-columns: minmax(260px,1fr) minmax(560px,1.5fr); gap: 22px; padding: 26px 28px; background: radial-gradient(circle at top right, rgba(59,130,246,.14), transparent 32%), linear-gradient(180deg, rgba(255,255,255,.97), rgba(248,250,252,.92)); }
+.page-hero__copy, .page-hero__tools, .tools-group, .group-list, .case-name, .detail-panel { display: flex; }
+.page-hero__copy, .group-list, .case-name, .detail-panel { flex-direction: column; }
+.page-hero__copy { gap: 8px; }
+.page-hero__tools, .tools-group { align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.page-hero__eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #2563eb; }
+.page-hero__title { font-size: 30px; font-weight: 800; line-height: 1.06; color: #0f172a; }
+.page-hero__desc { max-width: 720px; font-size: 13px; line-height: 1.8; color: #64748b; }
+.page-hero__meta, .group-card__meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: #64748b; }
 .tools-search { width: 320px; max-width: 100%; }
 .tools-select { width: 220px; }
-.state-card { min-height: 220px; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.group-list { gap: 16px; }
-.group-card { padding: 20px; }
-.group-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.tools-group--soft { padding: 8px 10px; border-radius: 18px; background: rgba(248,250,252,.8); border: 1px solid rgba(148,163,184,.12); }
+.state-card { min-height: 220px; display: flex; align-items: center; justify-content: center; padding: 28px; }
+.group-list { gap: 18px; }
+.group-card { padding: 22px; background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.92)); }
+.group-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 .group-card__copy { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .group-card__title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; color: #0f172a; }
 .case-name { gap: 4px; }
 .case-name__title { font-size: 14px; font-weight: 700; color: #0f172a; word-break: break-word; }
 .case-name__desc, .section-note { font-size: 12px; line-height: 1.7; color: #64748b; }
 .section-note { margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; background: rgba(248,250,252,.9); }
+.request-body-hint { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 16px; padding: 14px 16px; border-radius: 18px; border: 1px solid rgba(59,130,246,.12); background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(20,184,166,.06)); }
+.request-body-hint__copy { min-width: 0; }
+.request-body-hint__title { font-size: 14px; font-weight: 700; color: #0f172a; }
+.request-body-hint__desc { margin-top: 4px; font-size: 12px; line-height: 1.7; color: #64748b; }
 .detail-panel { gap: 16px; }
 .json-block { margin: 0; padding: 16px; border-radius: 18px; background: rgba(15,23,42,.95); color: #e2e8f0; font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .group-card :deep(.arco-table-container) { overflow: hidden; border-radius: 18px; border: 1px solid rgba(148,163,184,.12); }
-.page-header :deep(.arco-input-wrapper), .page-header :deep(.arco-select-view), .page-header :deep(.arco-btn) { min-height: 42px; border-radius: 14px; }
-@media (max-width: 1200px) { .page-header { grid-template-columns: 1fr; } .page-header__tools { justify-content: flex-start; } }
-@media (max-width: 768px) { .page-header { padding: 18px; } .page-header__tools, .tools-group, .tools-search, .tools-select { width: 100%; } .group-card__head { flex-direction: column; } }
+.page-hero :deep(.arco-input-wrapper), .page-hero :deep(.arco-select-view), .page-hero :deep(.arco-btn) { min-height: 42px; border-radius: 14px; }
+@media (max-width: 1200px) { .page-hero { grid-template-columns: 1fr; } .page-hero__tools { justify-content: flex-start; } }
+@media (max-width: 768px) { .page-hero { padding: 20px; } .page-hero__title { font-size: 26px; } .page-hero__tools, .tools-group, .tools-search, .tools-select { width: 100%; } .group-card__head, .request-body-hint { flex-direction: column; align-items: stretch; } }
 </style>

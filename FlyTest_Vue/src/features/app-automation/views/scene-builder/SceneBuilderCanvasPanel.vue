@@ -210,10 +210,24 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
 <style scoped>
 .canvas-panel {
   min-height: 560px;
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.canvas-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 20px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.canvas-panel :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+.canvas-panel :deep(.arco-btn) {
+  border-radius: 12px;
 }
 
 .step-list,
@@ -221,7 +235,7 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
 .sub-step-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .step-item-wrapper {
@@ -236,10 +250,12 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--theme-card-border);
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(var(--theme-accent-rgb), 0.04);
   cursor: pointer;
 }
 
@@ -301,9 +317,9 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
 
 .sub-step-shell {
   border: 1px solid rgba(var(--theme-accent-rgb), 0.18);
-  border-radius: 14px;
+  border-radius: 16px;
   background: rgba(var(--theme-accent-rgb), 0.05);
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -313,8 +329,8 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  border-radius: 12px;
+  padding: 14px;
+  border-radius: 14px;
   border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
   background: rgba(var(--theme-accent-rgb), 0.04);
 }
@@ -345,6 +361,10 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+}
+
+.sub-step-toolbar :deep(.arco-select-view) {
+  border-radius: 12px;
 }
 
 @media (max-width: 960px) {

@@ -40,7 +40,7 @@ const emit = defineEmits<DashboardQuickActionsCardEmits>()
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
 .quick-card {
@@ -50,17 +50,19 @@ const emit = defineEmits<DashboardQuickActionsCardEmits>()
 .quick-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .quick-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  border-radius: 14px;
-  background: rgba(var(--theme-accent-rgb), 0.06);
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.06);
   text-align: left;
   cursor: pointer;
   transition:
@@ -70,9 +72,12 @@ const emit = defineEmits<DashboardQuickActionsCardEmits>()
 }
 
 .quick-item:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: rgba(var(--theme-accent-rgb), 0.34);
-  background: rgba(var(--theme-accent-rgb), 0.1);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.11), rgba(var(--theme-accent-rgb), 0.05)),
+    rgba(var(--theme-accent-rgb), 0.1);
+  box-shadow: 0 16px 28px rgba(var(--theme-accent-rgb), 0.12);
 }
 
 .quick-item strong {

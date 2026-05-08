@@ -186,9 +186,11 @@ const emit = defineEmits<ScheduledTaskFormDialogEmits>()
   flex-direction: column;
   gap: 10px;
   min-height: 108px;
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(var(--theme-accent-rgb), 0.06);
+  padding: 18px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.06);
   border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
   color: var(--theme-text-secondary);
 }
@@ -207,5 +209,48 @@ const emit = defineEmits<ScheduledTaskFormDialogEmits>()
   color: var(--theme-text-secondary);
   font-size: 12px;
   line-height: 1.6;
+}
+
+:deep(.arco-modal-header) {
+  min-height: 68px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+}
+
+:deep(.arco-modal-title) {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 12px;
+}
+
+:deep(.arco-modal-footer) {
+  padding: 16px 24px 22px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.1);
+}
+
+:deep(.arco-form-item-label-col > label) {
+  color: var(--theme-text);
+  font-weight: 600;
+}
+
+:deep(.arco-input-wrapper),
+:deep(.arco-textarea-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number),
+:deep(.arco-picker),
+:deep(.arco-radio-group) {
+  border-radius: 12px;
+}
+
+@media (max-width: 900px) {
+  :deep(.arco-modal-body),
+  :deep(.arco-modal-footer) {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 </style>

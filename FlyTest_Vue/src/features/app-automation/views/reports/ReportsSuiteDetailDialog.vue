@@ -61,14 +61,30 @@ const visibleModel = defineModel<boolean>('visible', { required: true })
 .case-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .detail-panel {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+}
+
+.detail-panel :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 22px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.detail-panel :deep(.arco-card-header-title) {
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.detail-panel :deep(.arco-card-body) {
+  padding: 22px;
 }
 
 .detail-card strong,
@@ -79,54 +95,84 @@ const visibleModel = defineModel<boolean>('visible', { required: true })
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 18px;
 }
 
 .detail-card,
 .case-item {
-  padding: 16px;
-  border-radius: 16px;
-  border: 1px solid var(--theme-card-border);
-  background: rgba(var(--theme-accent-rgb), 0.04);
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(var(--theme-accent-rgb), 0.04);
 }
 
 .detail-label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 13px;
   color: var(--theme-text-secondary);
+  letter-spacing: 0.2px;
+}
+
+.detail-card strong {
+  font-size: 28px;
+  line-height: 1.15;
 }
 
 .summary-text {
   color: var(--theme-text);
   line-height: 1.7;
-  margin-bottom: 14px;
+  white-space: pre-wrap;
 }
 
 .meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  margin-bottom: 14px;
+  gap: 12px 24px;
+  margin-top: 14px;
+  padding-top: 14px;
   font-size: 13px;
   color: var(--theme-text-secondary);
+  border-top: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
 }
 
 .case-item span,
 .case-item small {
   color: var(--theme-text-secondary);
+  line-height: 1.6;
 }
 
 .empty-note {
-  min-height: 220px;
+  min-height: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--theme-text-secondary);
+  border-radius: 16px;
+  border: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
+  background: rgba(var(--theme-accent-rgb), 0.04);
 }
 
 .case-list {
-  gap: 10px;
+  gap: 14px;
+}
+
+:deep(.arco-modal-header) {
+  min-height: 68px;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+}
+
+:deep(.arco-modal-title) {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+:deep(.arco-modal-body) {
+  padding: 22px 24px 24px;
 }
 
 @media (max-width: 1280px) {
@@ -138,6 +184,11 @@ const visibleModel = defineModel<boolean>('visible', { required: true })
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-panel :deep(.arco-card-body),
+  :deep(.arco-modal-body) {
+    padding: 18px;
   }
 }
 </style>

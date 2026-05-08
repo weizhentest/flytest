@@ -53,20 +53,22 @@ const emit = defineEmits<DashboardTaskSnapshotCardEmits>()
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
 .task-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .task-item {
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.05);
 }
 
 .task-head {
@@ -102,6 +104,12 @@ const emit = defineEmits<DashboardTaskSnapshotCardEmits>()
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 10px;
+}
+
+.task-actions :deep(.arco-btn-text),
+.panel-card :deep(.arco-btn-text) {
+  border-radius: 10px;
 }
 
 @media (max-width: 900px) {

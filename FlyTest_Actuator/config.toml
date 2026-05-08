@@ -3,7 +3,7 @@ ws_url = "ws://127.0.0.1:8000/ws/ui/actuator/"
 api_url = "http://127.0.0.1:8000"
 use_gui = true
 api_username = "admin"
-api_password = "admin123456"
+api_password = "wz729729."
 
 [actuator]
 name = "FlyTest-001"

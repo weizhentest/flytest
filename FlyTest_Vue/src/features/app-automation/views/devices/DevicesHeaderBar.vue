@@ -30,22 +30,33 @@ const emit = defineEmits<DevicesHeaderBarEmits>()
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--theme-card-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.02)),
+    var(--theme-card-bg);
+  box-shadow: var(--theme-card-shadow);
 }
 
 .page-header h3 {
   margin: 0;
   color: var(--theme-text);
+  font-size: 22px;
+  line-height: 1.2;
 }
 
 .page-header p {
-  margin: 6px 0 0;
+  max-width: 760px;
+  margin: 8px 0 0;
   color: var(--theme-text-secondary);
+  line-height: 1.7;
 }
 
 .header-tip {
   color: var(--theme-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .auto-refresh-toggle {
@@ -53,13 +64,23 @@ const emit = defineEmits<DevicesHeaderBarEmits>()
   align-items: center;
   gap: 8px;
   color: var(--theme-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
+  padding: 0 12px;
+  min-height: 36px;
+  border-radius: 999px;
+  background: rgba(var(--theme-accent-rgb), 0.06);
+}
+
+.page-header :deep(.arco-btn) {
+  min-width: 104px;
+  border-radius: 12px;
 }
 
 @media (max-width: 960px) {
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+    padding: 16px;
   }
 }
 </style>

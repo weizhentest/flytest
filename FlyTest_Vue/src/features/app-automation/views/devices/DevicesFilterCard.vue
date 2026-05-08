@@ -34,25 +34,39 @@ const emit = defineEmits<DevicesFilterCardEmits>()
 
 <style scoped>
 .filter-card {
-  border-radius: 16px;
+  border-radius: 18px;
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
 }
 
+.filter-card :deep(.arco-card-body) {
+  padding: 20px;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr) auto;
-  gap: 12px;
+  gap: 14px;
 }
 
 .filter-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
+}
+
+.filter-actions :deep(.arco-btn),
+.filter-card :deep(.arco-input-wrapper),
+.filter-card :deep(.arco-select-view) {
+  border-radius: 12px;
 }
 
 @media (max-width: 1080px) {
+  .filter-card :deep(.arco-card-body) {
+    padding: 16px;
+  }
+
   .filter-grid {
     grid-template-columns: 1fr;
   }

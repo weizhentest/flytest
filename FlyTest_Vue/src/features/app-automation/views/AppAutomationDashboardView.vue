@@ -137,8 +137,9 @@ const {
 .dashboard-view {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-height: 100%;
+  gap: 18px;
+  min-height: 0;
+  padding: 8px 6px 10px;
 }
 
 .empty-shell {
@@ -146,20 +147,56 @@ const {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--theme-card-bg);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.9));
   border: 1px solid var(--theme-card-border);
-  border-radius: 16px;
+  border-radius: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
 }
 
 .content-grid {
   display: grid;
   grid-template-columns: 1.1fr 1.4fr;
-  gap: 16px;
+  gap: 18px;
+}
+
+.dashboard-view :deep(.arco-card),
+.dashboard-view :deep(.dashboard-card) {
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+}
+
+.dashboard-view :deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 22px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
+}
+
+.dashboard-view :deep(.arco-card-header-title) {
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.dashboard-view :deep(.arco-card-body) {
+  padding: 22px;
 }
 
 @media (max-width: 1100px) {
   .content-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-view {
+    gap: 16px;
+    padding: 4px;
+  }
+
+  .dashboard-view :deep(.arco-card-body) {
+    padding: 18px;
   }
 }
 </style>

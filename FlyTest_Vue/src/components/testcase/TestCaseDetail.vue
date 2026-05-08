@@ -1008,10 +1008,11 @@ const handleBatchDeleteScreenshots = () => {
 
 <style scoped>
 .testcase-form-container { /* 复用 TestCaseForm.vue 的样式 */
-  background-color: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.08));
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-lg, 12px);
+  padding: 22px;
+  box-shadow: var(--ui-panel-shadow, 0 10px 24px rgba(15, 23, 42, 0.08));
   height: 100%;
   max-height: 100vh; /* 确保不超过视口高度 */
   box-sizing: border-box;
@@ -1026,6 +1027,8 @@ const handleBatchDeleteScreenshots = () => {
   align-items: center;
   margin-bottom: 24px;
   flex-shrink: 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ui-panel-border, var(--color-border-2));
 }
 
 .form-header .form-title { /* 复用 TestCaseForm.vue 的样式 */
@@ -1035,8 +1038,8 @@ const handleBatchDeleteScreenshots = () => {
 
 .form-header .form-title h2 { /* 复用 TestCaseForm.vue 的样式 */
   margin: 0 0 0 12px;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .form-header .form-actions { /* 复用 TestCaseForm.vue 的样式 */
@@ -1622,5 +1625,147 @@ const handleBatchDeleteScreenshots = () => {
   color: #1d2129 !important;
   font-weight: 500;
   min-width: 70px;
+}
+
+.testcase-form-container {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.08));
+  border: 1px solid var(--ui-panel-border, var(--color-neutral-3));
+  border-radius: var(--ui-radius-lg, 12px);
+  padding: 22px;
+  box-shadow: var(--ui-panel-shadow, 0 10px 24px rgba(15, 23, 42, 0.08));
+}
+
+.form-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ui-panel-border, var(--color-border-2));
+}
+
+.form-header .form-title h2 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.testcase-detail-content {
+  padding-right: 10px;
+  margin-right: -10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.testcase-detail-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.testcase-detail-content::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.testcase-detail-content::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 999px;
+}
+
+.testcase-detail-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.68);
+}
+
+.precondition-section h3,
+.steps-section h3,
+.notes-section h3,
+.screenshots-header h3 {
+  font-weight: 600;
+  color: var(--color-text-1);
+}
+
+.precondition-content,
+.notes-content {
+  padding: 16px 18px;
+  border: 1px solid var(--ui-panel-border, #e5e6eb);
+  border-radius: 12px;
+  line-height: 1.8;
+  color: var(--color-text-2);
+}
+
+.precondition-content {
+  background: linear-gradient(180deg, rgba(var(--arcoblue-1), 0.1), rgba(255, 255, 255, 0.96));
+}
+
+.notes-content {
+  background: linear-gradient(180deg, rgba(var(--arcoblue-1), 0.08), rgba(255, 255, 255, 0.96));
+}
+
+.screenshots-section {
+  padding: 18px;
+  border: 1px solid var(--ui-panel-border, #e5e6eb);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.screenshots-grid {
+  gap: 18px;
+}
+
+.screenshot-item {
+  border: 1px solid var(--ui-panel-border, #e5e6eb);
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.screenshot-item:hover {
+  border-color: rgba(var(--arcoblue-6), 0.4);
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.12);
+  transform: translateY(-2px);
+}
+
+.screenshot-preview {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.95));
+}
+
+.screenshot-info-container {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.06));
+}
+
+.upload-area {
+  border: 2px dashed rgba(var(--arcoblue-6), 0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(var(--arcoblue-1), 0.12), rgba(255, 255, 255, 0.96));
+}
+
+.file-item {
+  border: 1px solid var(--ui-panel-border, #e5e6eb);
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.preview-sidebar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(var(--arcoblue-1), 0.06));
+  border-right: 1px solid var(--ui-panel-border, #e5e6eb);
+}
+
+.preview-main {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.96));
+}
+
+.preview-image {
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.14);
+}
+
+.nav-indicator {
+  background-color: rgba(var(--arcoblue-1), 0.9) !important;
+}
+
+:deep(.testcase-detail-content .arco-descriptions) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+:deep(.testcase-detail-content .arco-table) {
+  border-radius: 14px;
+  overflow: hidden;
 }
 </style>

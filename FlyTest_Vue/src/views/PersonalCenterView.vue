@@ -317,11 +317,18 @@ onMounted(() => {
 
 <style scoped>
 .personal-center {
-  padding: 20px;
+  padding: 4px;
 }
 
 .page-header {
   margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--ui-panel-border);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .page-header h2 {
@@ -344,7 +351,9 @@ onMounted(() => {
 .section-sidebar {
   border-radius: 16px;
   overflow: hidden;
-  background: var(--theme-bg);
+  background: var(--ui-panel-bg);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
 }
 
 .section-content {
@@ -353,6 +362,9 @@ onMounted(() => {
 
 .panel-card {
   border-radius: 16px;
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
+  background: var(--ui-panel-bg);
 }
 
 .form-shell {
@@ -385,6 +397,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(149, 161, 187, 0.12);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.03);
 }
 
 .readonly-label {
@@ -433,6 +450,44 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   width: 100%;
+  padding-top: 4px;
+}
+
+.personal-center :deep(.arco-menu) {
+  padding: 10px;
+  background: transparent;
+}
+
+.personal-center :deep(.arco-menu-inner) {
+  padding: 0;
+}
+
+.personal-center :deep(.arco-menu-item),
+.personal-center :deep(.arco-menu-inline-header) {
+  border-radius: 10px;
+}
+
+.personal-center :deep(.arco-menu-item.arco-menu-selected) {
+  background: rgba(var(--theme-accent-rgb), 0.08);
+  color: var(--theme-accent);
+}
+
+.personal-center :deep(.arco-card-header) {
+  border-bottom-color: var(--ui-toolbar-border);
+}
+
+.personal-center :deep(.arco-card-body) {
+  padding: 20px;
+}
+
+.personal-center :deep(.arco-card) {
+  overflow: hidden;
+}
+
+.personal-center :deep(.arco-input-wrapper),
+.personal-center :deep(.arco-input-password),
+.personal-center :deep(.arco-btn) {
+  border-radius: 10px;
 }
 
 @media (max-width: 900px) {

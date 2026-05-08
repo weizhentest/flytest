@@ -52,13 +52,13 @@ const emit = defineEmits<DashboardAiOverviewCardEmits>()
   background: var(--theme-card-bg);
   border: 1px solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
 .ai-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .ai-panel-head {
@@ -76,7 +76,7 @@ const emit = defineEmits<DashboardAiOverviewCardEmits>()
 
 .ai-copy strong {
   color: var(--theme-text);
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .ai-copy p,
@@ -89,17 +89,19 @@ const emit = defineEmits<DashboardAiOverviewCardEmits>()
 .ai-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .ai-item {
-  border-radius: 14px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(var(--theme-accent-rgb), 0.05);
+  border-radius: 16px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.14);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(var(--theme-accent-rgb), 0.03)),
+    rgba(var(--theme-accent-rgb), 0.05);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
 
 .ai-item span {
@@ -114,8 +116,9 @@ const emit = defineEmits<DashboardAiOverviewCardEmits>()
 }
 
 .ai-endpoint {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(var(--theme-accent-rgb), 0.14);
   background: rgba(var(--theme-surface-rgb), 0.72);
   word-break: break-word;
 }
@@ -123,7 +126,12 @@ const emit = defineEmits<DashboardAiOverviewCardEmits>()
 .ai-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+}
+
+.ai-actions :deep(.arco-btn) {
+  min-width: 112px;
+  border-radius: 12px;
 }
 
 @media (max-width: 1100px) {

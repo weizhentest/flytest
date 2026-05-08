@@ -1,7 +1,12 @@
 <template>
-  <div class="api-automation-layout">
-    <CollectionPanel ref="collectionPanelRef" @select="onCollectionSelect" @updated="onCollectionUpdated" />
-    <div class="layout-content">
+  <div class="api-automation-shell">
+    <div class="api-automation-layout">
+      <CollectionPanel ref="collectionPanelRef" @select="onCollectionSelect" @updated="onCollectionUpdated" />
+      <div class="layout-content">
+        <div class="layout-content__inner">
+          <div class="layout-content__glow layout-content__glow--primary"></div>
+          <div class="layout-content__glow layout-content__glow--secondary"></div>
+        </div>
       <RequestList
         v-if="mountedTabs.includes('requests')"
         v-show="activeTab === 'requests'"
@@ -41,6 +46,7 @@
         :selected-collection-id="selectedCollectionId"
         :selected-collection-name="selectedCollection?.name"
       />
+      </div>
     </div>
   </div>
 </template>
@@ -148,7 +154,42 @@ watch(activeTab, newTab => {
 </script>
 
 <style scoped>
+.api-automation-shell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  padding: 4px;
+}
+
+.api-automation-shell::before,
+.api-automation-shell::after {
+  content: '';
+  position: absolute;
+  inset: auto;
+  border-radius: 999px;
+  filter: blur(56px);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.api-automation-shell::before {
+  top: -32px;
+  right: 12%;
+  width: 240px;
+  height: 240px;
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.api-automation-shell::after {
+  bottom: -28px;
+  left: 8%;
+  width: 220px;
+  height: 220px;
+  background: rgba(20, 184, 166, 0.16);
+}
+
 .api-automation-layout {
+  position: relative;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
   width: 100%;
@@ -159,11 +200,50 @@ watch(activeTab, newTab => {
 }
 
 .layout-content {
+  position: relative;
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: auto;
   display: block;
+  padding: 2px;
+}
+
+.layout-content__inner {
+  position: sticky;
+  inset: 0;
+  width: 0;
+  height: 0;
+  z-index: 0;
+}
+
+.layout-content__glow {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(48px);
+  opacity: 0.18;
+}
+
+.layout-content__glow--primary {
+  top: 48px;
+  right: 32px;
+  width: 180px;
+  height: 180px;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.layout-content__glow--secondary {
+  top: 240px;
+  left: 14%;
+  width: 160px;
+  height: 160px;
+  background: rgba(14, 165, 233, 0.18);
+}
+
+.layout-content > :deep(*) {
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 1200px) {
@@ -174,6 +254,10 @@ watch(activeTab, newTab => {
 }
 
 @media (max-width: 900px) {
+  .api-automation-shell {
+    padding: 0;
+  }
+
   .api-automation-layout {
     grid-template-columns: 1fr;
     gap: 16px;

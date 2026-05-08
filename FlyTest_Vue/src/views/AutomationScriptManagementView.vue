@@ -1351,9 +1351,9 @@ onUnmounted(() => {
   width: 320px;
   min-width: 280px;
   padding: 16px;
-  border-right: 1px solid #e5e6eb;
+  border-right: 1px solid var(--ui-toolbar-border);
   overflow-y: auto;
-  background: #fafafa;
+  background: rgba(248, 250, 252, 0.92);
   display: flex;
   flex-direction: column;
 }
@@ -1379,7 +1379,7 @@ onUnmounted(() => {
 .form-actions {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid #e5e6eb;
+  border-top: 1px solid var(--ui-toolbar-border);
   display: flex;
   justify-content: flex-end;
 }
@@ -1411,12 +1411,13 @@ onUnmounted(() => {
 
 .execution-logs-panel .logs-content {
   flex: 1;
-  background: #1e1e1e;
-  border-radius: 4px;
+  background: #141c2a;
+  border-radius: 10px;
   padding: 12px;
   overflow-y: auto;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .execution-logs-panel .log-item {
@@ -1434,7 +1435,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
+  background: #141c2a;
   min-width: 0;
 }
 
@@ -1446,8 +1447,8 @@ onUnmounted(() => {
 
 .editor-header {
   padding: 12px 16px;
-  background: #252526;
-  border-bottom: 1px solid #3c3c3c;
+  background: #1b2433;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1479,14 +1480,14 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
+  background: #141c2a;
   padding: 12px;
 }
 
 .preview-status {
   padding: 8px 12px;
-  background: #252526;
-  border-radius: 4px;
+  background: #1b2433;
+  border-radius: 10px;
   margin-bottom: 12px;
 }
 
@@ -1496,7 +1497,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   background: #000;
-  border-radius: 4px;
+  border-radius: 10px;
   overflow: hidden;
   min-height: 400px;
 }
@@ -1521,8 +1522,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   padding: 10px 12px;
-  background: #252526;
-  border-radius: 4px;
+  background: #1b2433;
+  border-radius: 10px;
   margin-top: 12px;
   gap: 8px;
 }

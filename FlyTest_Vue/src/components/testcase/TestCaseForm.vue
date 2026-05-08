@@ -1374,21 +1374,27 @@ const handleImageError = (_event: Event) => {
 }
 
 .screenshot-preview-modal :deep(.arco-modal-header) {
-  border-bottom: 1px solid #e5e6eb;
-  padding: 16px 24px;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
+  padding: 18px 24px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.94));
+}
+
+.screenshot-preview-modal :deep(.arco-modal-content) {
+  border-radius: 18px;
+  overflow: hidden;
 }
 
 .enhanced-preview-container {
   display: flex;
   height: 100%;
-  background-color: #f7f8fa;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.9));
 }
 
 /* 左侧信息面板 */
 .preview-sidebar {
   width: 320px;
-  background-color: #fff;
-  border-right: 1px solid #e5e6eb;
+  background: rgba(255, 255, 255, 0.96);
+  border-right: 1px solid rgba(149, 161, 187, 0.14);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -1404,7 +1410,7 @@ const handleImageError = (_event: Event) => {
 
 .preview-info {
   padding: 20px;
-  border-bottom: 1px solid #e5e6eb;
+  border-bottom: 1px solid rgba(149, 161, 187, 0.14);
 }
 
 .preview-info h4 {
@@ -1461,7 +1467,7 @@ const handleImageError = (_event: Event) => {
 .thumbnail-item {
   position: relative;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
   border: 2px solid transparent;
   transition: all 0.2s ease;
@@ -1518,8 +1524,8 @@ const handleImageError = (_event: Event) => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border-radius: 14px;
+  box-shadow: 0 22px 46px rgba(15, 23, 42, 0.16);
   background-color: #fff;
 }
 
@@ -1549,7 +1555,7 @@ const handleImageError = (_event: Event) => {
 
 .nav-button:hover:not(:disabled) {
   background-color: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
   transform: scale(1.1);
 }
 

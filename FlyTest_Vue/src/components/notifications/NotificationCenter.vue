@@ -528,11 +528,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 252, 0.94));
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
-  backdrop-filter: blur(22px);
+  border: 1px solid var(--ui-panel-border);
+  border-radius: 14px;
+  background: var(--ui-panel-bg);
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(18px);
 }
 
 .notification-panel__header,
@@ -544,8 +544,8 @@ onUnmounted(() => {
 }
 
 .notification-panel__header {
-  padding: 8px 8px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 10px 10px 14px;
+  border-bottom: 1px solid var(--ui-toolbar-border);
 }
 
 .notification-panel__title {
@@ -588,7 +588,7 @@ onUnmounted(() => {
 }
 
 .notification-list {
-  padding: 12px 4px 4px;
+  padding: 12px 6px 6px;
 }
 
 .notification-item {
@@ -598,9 +598,9 @@ onUnmounted(() => {
   gap: 12px;
   width: 100%;
   padding: 14px 14px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease;
@@ -613,7 +613,7 @@ onUnmounted(() => {
 }
 
 .notification-item--unread {
-  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.92));
+  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.96));
 }
 
 .notification-item__body,
@@ -711,7 +711,7 @@ onUnmounted(() => {
 
 .notification-detail__project {
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: 10px;
   background: rgba(var(--theme-accent-rgb), 0.08);
   color: var(--theme-text);
 }
@@ -720,8 +720,9 @@ onUnmounted(() => {
 .notification-replies,
 .notification-reply-editor {
   padding: 18px;
-  border-radius: 18px;
-  background: rgba(248, 250, 252, 0.9);
+  border-radius: 12px;
+  border: 1px solid rgba(149, 161, 187, 0.12);
+  background: rgba(248, 250, 252, 0.92);
 }
 
 .notification-detail__content {
@@ -743,9 +744,9 @@ onUnmounted(() => {
 
 .notification-reply {
   padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(149, 161, 187, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .notification-reply__meta {

@@ -1184,7 +1184,7 @@ onUnmounted(() => {
 .testcase-management-container {
   display: flex;
   height: 100%;
-  background-color: var(--color-bg-1);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -1192,8 +1192,9 @@ onUnmounted(() => {
   display: flex;
   width: 100%;
   height: 100%;
-  gap: 10px;
+  gap: 16px;
   overflow: hidden;
+  padding: 4px;
 }
 
 .module-panel-resizable-shell {
@@ -1202,21 +1203,24 @@ onUnmounted(() => {
   max-width: 45vw;
   height: 100%;
   overflow: hidden;
+  border-radius: var(--ui-radius-md);
 }
 
 .module-panel-resizer {
-  width: 6px;
-  flex: 0 0 6px;
+  width: 8px;
+  flex: 0 0 8px;
   cursor: col-resize;
   border-radius: 999px;
-  background: linear-gradient(to bottom, rgba(22, 93, 255, 0.08), rgba(22, 93, 255, 0.22));
-  transition: background-color 0.2s ease, opacity 0.2s ease;
-  opacity: 0.7;
+  align-self: stretch;
+  background: linear-gradient(to bottom, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.22));
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+  opacity: 0.85;
 }
 
 .module-panel-resizer:hover {
-  background: linear-gradient(to bottom, rgba(22, 93, 255, 0.18), rgba(22, 93, 255, 0.36));
+  background: linear-gradient(to bottom, rgba(var(--theme-accent-rgb), 0.14), rgba(var(--theme-accent-rgb), 0.34));
   opacity: 1;
+  transform: scaleX(1.05);
 }
 
 @media (max-width: 768px) {
@@ -1243,10 +1247,12 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.2), 0 4px 10px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.15);
-  padding: 20px; /* 添加内边距，与其他卡片保持一致 */
+  background: var(--ui-panel-bg);
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-panel-border);
+  box-shadow: var(--ui-panel-shadow);
+  backdrop-filter: blur(16px);
+  padding: 22px 22px 20px;
 }
 
 /* 确保右侧内容区域中的所有组件都能正确显示 */
@@ -1257,5 +1263,10 @@ onUnmounted(() => {
   box-shadow: none !important;
   border-radius: 0 !important;
   /* 不要用 !important 覆盖 overflow 和 padding，让子组件自行控制滚动 */
+}
+
+:root[data-theme='black'] .right-content-area {
+  background: var(--ui-panel-bg);
+  border-color: var(--ui-panel-border);
 }
 </style>

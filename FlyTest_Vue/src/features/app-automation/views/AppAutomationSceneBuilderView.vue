@@ -201,7 +201,9 @@ const {
 .page-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  min-height: 0;
+  padding: 6px;
 }
 
 .empty-shell {
@@ -209,12 +211,26 @@ const {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--theme-card-bg);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.9));
   border: 1px solid var(--theme-card-border);
-  border-radius: 16px;
+  border-radius: 18px;
+  box-shadow: var(--ui-panel-shadow);
+}
+
+.page-shell :deep(.arco-card),
+.page-shell :deep(.scene-builder-card) {
+  border-radius: 18px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+}
+
+@media (max-width: 900px) {
+  .page-shell {
+    gap: 16px;
+    padding: 4px;
+  }
 }
 </style>
-
-
 
 

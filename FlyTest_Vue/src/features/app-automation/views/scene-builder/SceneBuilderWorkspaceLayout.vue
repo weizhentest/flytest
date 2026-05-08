@@ -121,7 +121,7 @@ const emit = defineEmits<SceneBuilderWorkspaceLayoutEmits>()
 .builder-grid {
   display: grid;
   grid-template-columns: 1.05fr 1.2fr 0.95fr;
-  gap: 16px;
+  gap: 18px;
   min-height: 560px;
 }
 

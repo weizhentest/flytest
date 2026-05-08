@@ -27,6 +27,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
     SpectacularRedocView,
 )
+from flytest_django.app_automation_proxy import proxy_app_automation
 from flytest_django.spa_views import serve_spa_asset, serve_spa_index
 
 router = DefaultRouter()
@@ -66,6 +67,8 @@ urlpatterns = [
     path("api/data-factory/", include("data_factory.urls")),
     path("api/orchestrator/", include("orchestrator_integration.urls")),
     path("api/", include("testcase_templates.urls")),
+    path("api/app-automation/", proxy_app_automation),
+    path("api/app-automation/<path:subpath>", proxy_app_automation),
     path("api/ui-automation/", include("ui_automation.urls")),
     path("api/api-automation/", include("api_automation.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
@@ -83,7 +86,7 @@ urlpatterns = [
 
 urlpatterns += [
     re_path(
-        r"^(?P<asset_path>(assets/.*|favicon\.svg|logo\.svg|app-icon\.svg|manifest\.json|FlyTest\.png|login-fingerprint\.svg|vite\.svg|\.htaccess))$",
+        r"^(?P<asset_path>(assets/.*|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|json|txt|xml|webmanifest)|\.htaccess))$",
         serve_spa_asset,
     ),
     re_path(r"^(?!api/|admin/|media/|static/).*$", serve_spa_index),

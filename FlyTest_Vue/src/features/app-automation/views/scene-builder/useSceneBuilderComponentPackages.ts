@@ -22,18 +22,6 @@ export const useSceneBuilderComponentPackages = ({
   const componentPackageFile = ref<File | null>(null)
   const componentPackageOverwrite = ref(true)
   const componentPackageIncludeDisabled = ref(false)
-  const resetComponentPackageImportState = () => {
-    componentPackageFileList.value = []
-    componentPackageFile.value = null
-    componentPackageOverwrite.value = true
-  }
-  const resetComponentPackageExportState = () => {
-    componentPackageIncludeDisabled.value = false
-    componentPackageExportForm.name = 'app-component-pack'
-    componentPackageExportForm.version = ''
-    componentPackageExportForm.author = ''
-    componentPackageExportForm.description = 'FlyTest APP 鑷姩鍖栫粍浠跺寘'
-  }
 
   const componentPackageExportForm = reactive<SceneBuilderComponentPackageExportFormModel>({
     name: 'app-component-pack',
@@ -41,6 +29,20 @@ export const useSceneBuilderComponentPackages = ({
     author: '',
     description: 'FlyTest APP 自动化组件包',
   })
+
+  const resetComponentPackageImportState = () => {
+    componentPackageFileList.value = []
+    componentPackageFile.value = null
+    componentPackageOverwrite.value = true
+  }
+
+  const resetComponentPackageExportState = () => {
+    componentPackageIncludeDisabled.value = false
+    componentPackageExportForm.name = 'app-component-pack'
+    componentPackageExportForm.version = ''
+    componentPackageExportForm.author = ''
+    componentPackageExportForm.description = 'FlyTest APP 自动化组件包'
+  }
 
   const loadComponentPackageRecords = async () => {
     componentPackageLoading.value = true

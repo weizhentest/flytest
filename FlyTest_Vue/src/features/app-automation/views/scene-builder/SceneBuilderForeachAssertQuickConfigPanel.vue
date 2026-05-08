@@ -1,9 +1,13 @@
 <template>
   <div class="quick-config-panel">
-    <div class="quick-config-title">循环点击断言配置</div>
+    <div class="quick-config-head">
+      <span class="quick-config-kicker">Loop Assert</span>
+      <div class="quick-config-title">循环点击断言配置</div>
+    </div>
+
     <a-row :gutter="12">
       <a-col :span="8">
-        <a-form-item label="点击选择器类型">
+        <a-form-item label="点击定位方式">
           <a-select
             :model-value="selectedClickSelectorType"
             @change="value => updateSelectedStepConfig('click_selector_type', value || 'element')"
@@ -15,15 +19,16 @@
         </a-form-item>
       </a-col>
       <a-col :span="16">
-        <a-form-item label="点击选择器">
+        <a-form-item label="点击目标">
           <a-input
             :model-value="readSelectedConfigString('click_selector')"
-            placeholder="点击按钮元素、文本或图片路径"
+            placeholder="输入按钮元素、文本或图片路径"
             @input="value => updateSelectedStepConfig('click_selector', value)"
           />
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row v-if="selectedClickSelectorType === 'image'" :gutter="12">
       <a-col :span="8">
         <a-form-item label="点击阈值">
@@ -37,7 +42,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item label="点击全屏找图">
+        <a-form-item label="点击全屏查找">
           <a-switch
             :model-value="readSelectedConfigBoolean('click_search_full_screen', true)"
             @change="value => updateSelectedStepConfig('click_search_full_screen', value)"
@@ -45,6 +50,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row :gutter="12">
       <a-col :span="8">
         <a-form-item label="断言类型">
@@ -68,6 +74,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row :gutter="12">
       <a-col :span="8">
         <a-form-item label="匹配方式">
@@ -102,6 +109,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row :gutter="12">
       <a-col :span="12">
         <a-form-item label="点击后等待（秒）">
@@ -126,6 +134,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-form-item label="期望列表">
       <a-textarea
         :model-value="expectedListText"
@@ -152,3 +161,46 @@ interface Props
 
 defineProps<Props>()
 </script>
+
+<style scoped>
+.quick-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-surface-rgb), 0.72);
+}
+
+.quick-config-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-config-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quick-config-title {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+:deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.arco-input-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number),
+:deep(.arco-textarea-wrapper) {
+  border-radius: 12px;
+}
+</style>

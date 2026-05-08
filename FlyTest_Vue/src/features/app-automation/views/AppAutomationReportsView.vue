@@ -10,7 +10,7 @@
         @refresh="loadData"
       />
 
-      <a-tabs v-model:active-key="activeTab">
+      <a-tabs v-model:active-key="activeTab" class="report-tabs">
         <a-tab-pane key="suite" title="套件报告">
           <ReportsSuitePanel
             :loading="loading"
@@ -151,17 +151,58 @@ const {
 .page-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  min-height: 0;
+  padding: 8px 6px 10px;
 }
 
 .empty-shell {
-  min-height: 220px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--theme-text-secondary);
-  background: var(--theme-card-bg);
+  background:
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.06), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 253, 0.9));
   border: 1px solid var(--theme-card-border);
-  border-radius: 16px;
+  border-radius: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+}
+
+.page-shell :deep(.arco-tabs-content),
+.page-shell :deep(.arco-card),
+.page-shell :deep(.report-panel-card) {
+  border-radius: 20px;
+}
+
+.page-shell :deep(.arco-card),
+.page-shell :deep(.report-panel-card) {
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+}
+
+.report-tabs :deep(.arco-tabs-nav) {
+  margin-bottom: 16px;
+}
+
+.report-tabs :deep(.arco-tabs-nav::before) {
+  border-bottom-color: rgba(149, 161, 187, 0.14);
+}
+
+.report-tabs :deep(.arco-tabs-tab) {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 14px 14px 0 0;
+}
+
+.report-tabs :deep(.arco-tabs-tab-active) {
+  background: rgba(var(--theme-accent-rgb), 0.08);
+}
+
+@media (max-width: 900px) {
+  .page-shell {
+    gap: 16px;
+    padding: 4px;
+  }
 }
 </style>

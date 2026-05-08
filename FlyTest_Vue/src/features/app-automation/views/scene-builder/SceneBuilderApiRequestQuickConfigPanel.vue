@@ -1,6 +1,10 @@
 <template>
   <div class="quick-config-panel">
-    <div class="quick-config-title">接口请求配置</div>
+    <div class="quick-config-head">
+      <span class="quick-config-kicker">API Request</span>
+      <div class="quick-config-title">接口请求配置</div>
+    </div>
+
     <a-row :gutter="12">
       <a-col :span="8">
         <a-form-item label="请求方法">
@@ -24,6 +28,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row :gutter="12">
       <a-col :span="8">
         <a-form-item label="超时（秒）">
@@ -58,6 +63,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-row :gutter="12">
       <a-col :span="12">
         <a-form-item label="完整响应保存名">
@@ -69,7 +75,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="保存作用域">
+        <a-form-item label="保存范围">
           <a-select
             :model-value="selectedVariableScope"
             @change="value => updateSelectedStepConfig('scope', value || 'local')"
@@ -81,6 +87,7 @@
         </a-form-item>
       </a-col>
     </a-row>
+
     <a-form-item label="请求头 JSON">
       <a-textarea
         :model-value="formatQuickConfigValue(readSelectedConfigValue('headers', {}))"
@@ -105,11 +112,11 @@
         @change="value => handleJsonConfigTextChange('json', String(value || ''), undefined)"
       />
     </a-form-item>
-    <a-form-item label="表单/原始请求体">
+    <a-form-item label="表单或原始请求体">
       <a-textarea
         :model-value="formatQuickConfigValue(readSelectedConfigValue('data'))"
         :auto-size="{ minRows: 3, maxRows: 8 }"
-        placeholder="可填写文本、数字，或 JSON 对象"
+        placeholder="可填写文本、数字或 JSON 对象"
         @change="value => handleLooseConfigTextChange('data', String(value || ''))"
       />
     </a-form-item>
@@ -147,3 +154,46 @@ interface Props
 
 defineProps<Props>()
 </script>
+
+<style scoped>
+.quick-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--theme-card-border);
+  background: rgba(var(--theme-surface-rgb), 0.72);
+}
+
+.quick-config-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-config-kicker {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quick-config-title {
+  color: var(--theme-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+:deep(.arco-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.arco-input-wrapper),
+:deep(.arco-select-view),
+:deep(.arco-input-number),
+:deep(.arco-textarea-wrapper) {
+  border-radius: 12px;
+}
+</style>
