@@ -1,20 +1,19 @@
 <template>
   <a-modal
     :visible="visible"
-    title="AI 生成测试用例"
+    title="AI生成测试用例"
+    :width="840"
+    :confirm-loading="generating"
     @cancel="handleCancel"
     @ok="handleOk"
-    :width="800"
-    :confirm-loading="generating"
   >
-    <a-form :model="formState" :label-col-props="{ span: 5 }" :wrapper-col-props="{ span: 19 }">
-      <!-- 当前项目和生成模式在一行 -->
+    <a-form :model="formState" layout="vertical">
       <div class="header-row">
         <div class="header-item">
           <span class="header-label">当前项目</span>
-          <a-input v-model="currentProjectName" disabled style="width: 200px;" />
+          <a-input :model-value="currentProjectName" disabled />
         </div>
-        <div class="header-item">
+        <div class="header-item header-item--mode">
           <span class="header-label">生成模式</span>
           <a-radio-group v-model="formState.generateMode" type="button" @change="handleModeChange">
             <a-radio value="full">完整生成</a-radio>
@@ -25,8 +24,8 @@
         </div>
       </div>
 
-      <!-- 测试类型选择（所有模式通用） -->
-      <div class="form-row test-type-row">
+      <div class="test-type-row">
+        <span class="section-title required">测试类型</span>
         <a-checkbox-group v-model="formState.testTypes" class="test-type-checkboxes">
           <a-checkbox value="smoke">冒烟测试</a-checkbox>
           <a-checkbox value="functional">功能测试</a-checkbox>
@@ -38,15 +37,14 @@
         </a-checkbox-group>
       </div>
 
-      <!-- 需求文档和需求模块在一行显示 -->
       <div v-if="showRequirementFields" class="form-row">
         <div class="form-row-item">
-          <span class="form-row-label required">需求文档</span>
+          <span class="section-title required">需求文档</span>
           <a-select
             v-model="formState.requirementDocumentId"
-            placeholder="请选择"
+            placeholder="请选择需求文档"
             :loading="isDocLoading"
-            style="width: 100%;"
+            allow-search
             @change="handleDocumentChange"
           >
             <a-option v-for="doc in requirementDocuments" :key="doc.id" :value="doc.id">
@@ -55,13 +53,13 @@
           </a-select>
         </div>
         <div class="form-row-item">
-          <span class="form-row-label required">需求模块</span>
+          <span class="section-title required">需求模块</span>
           <a-select
             v-model="formState.requirementModuleId"
             placeholder="请先选择需求文档"
             :loading="isReqModuleLoading"
             :disabled="!formState.requirementDocumentId"
-            style="width: 100%;"
+            allow-search
           >
             <a-option v-for="module in requirementModules" :key="module.id" :value="module.id">
               {{ module.title }}
@@ -70,36 +68,35 @@
         </div>
       </div>
 
-      <!-- 完整生成/标题生成模式：提示词、知识库、保存模块在一行 -->
       <div v-if="showSaveModuleField" class="form-row form-row-3">
         <div class="form-row-item">
-          <span class="form-row-label required">选择提示词</span>
+          <span class="section-title required">提示词</span>
           <a-select
             v-model="formState.promptId"
-            placeholder="请选择"
+            placeholder="请选择提示词"
             :loading="isPromptsLoading"
-            style="width: 100%;"
+            allow-search
           >
             <a-option v-for="prompt in prompts" :key="prompt.id" :value="prompt.id">
               {{ prompt.name }}
             </a-option>
             <template #not-found>
-              <div style="padding: 10px; text-align: center;">
-                <a-empty description="没有可用的通用提示词，请先创建。" />
+              <div class="empty-wrap">
+                <a-empty description="暂无可用提示词" />
               </div>
             </template>
           </a-select>
         </div>
         <div class="form-row-item">
-          <span class="form-row-label">知识库</span>
+          <span class="section-title">知识库</span>
           <a-select
             v-model="formState.knowledgeBaseId"
             placeholder="不使用知识库"
             :loading="isKbLoading"
             allow-clear
-            style="width: 100%;"
+            allow-search
             @clear="formState.useKnowledgeBase = false"
-            @change="(val: any) => formState.useKnowledgeBase = !!val"
+            @change="(val: string | null) => (formState.useKnowledgeBase = !!val)"
           >
             <a-option v-for="kb in knowledgeBases" :key="kb.id" :value="kb.id">
               {{ kb.name }}
@@ -107,45 +104,56 @@
           </a-select>
         </div>
         <div class="form-row-item">
-          <span class="form-row-label required">保存模块</span>
+          <span class="section-title required">保存模块</span>
           <a-tree-select
             v-model="formState.testCaseModuleId"
             :data="testCaseModuleTree"
-            placeholder="请选择"
+            placeholder="请选择保存模块"
             allow-clear
-            style="width: 100%;"
           />
         </div>
       </div>
 
-      <!-- 知识库补全/知识生成模式：提示词、知识库在一行 -->
+      <div v-if="showSaveModuleField" class="form-row">
+        <div class="form-row-item form-row-item-full">
+          <span class="section-title">追加提示词</span>
+          <a-textarea
+            v-model="formState.extraPrompt"
+            placeholder="选填。比如补充关注异常场景、边界值、权限差异等。"
+            allow-clear
+            :max-length="1000"
+            :auto-size="{ minRows: 3, maxRows: 6 }"
+          />
+        </div>
+      </div>
+
       <div v-else class="form-row">
         <div class="form-row-item">
-          <span class="form-row-label required">选择提示词</span>
+          <span class="section-title required">提示词</span>
           <a-select
             v-model="formState.promptId"
-            placeholder="请选择"
+            placeholder="请选择提示词"
             :loading="isPromptsLoading"
-            style="width: 100%;"
+            allow-search
           >
             <a-option v-for="prompt in prompts" :key="prompt.id" :value="prompt.id">
               {{ prompt.name }}
             </a-option>
             <template #not-found>
-              <div style="padding: 10px; text-align: center;">
-                <a-empty description="没有可用的通用提示词，请先创建。" />
+              <div class="empty-wrap">
+                <a-empty description="暂无可用提示词" />
               </div>
             </template>
           </a-select>
         </div>
         <div class="form-row-item">
-          <span class="form-row-label required">关联知识库</span>
+          <span class="section-title required">关联知识库</span>
           <a-select
             v-model="formState.knowledgeBaseId"
             placeholder="请选择知识库"
             :loading="isKbLoading"
             allow-clear
-            style="width: 100%;"
+            allow-search
           >
             <a-option v-for="kb in knowledgeBases" :key="kb.id" :value="kb.id">
               {{ kb.name }}
@@ -154,90 +162,84 @@
         </div>
       </div>
 
-      <!-- 用例选择表格：知识库补全、知识生成模式显示 -->
-      <div v-if="showTestCaseSelector" class="testcase-selector-section">
-        <div class="section-label">选择用例</div>
-        <div class="testcase-selector-wrapper">
-          <div class="selector-header">
-            <a-input-search
-              v-model="searchKeyword"
-              placeholder="搜索用例名称"
-              allow-clear
-              style="width: 180px;"
-              @search="handleSearch"
-            />
-            <a-select
-              v-model="selectedModule"
-              placeholder="筛选模块"
-              allow-clear
-              :loading="modulesLoading"
-              style="width: 140px; margin-left: 12px;"
-              @change="handleModuleFilterChange"
-            >
-              <a-option v-for="module in flatModuleList" :key="module.id" :value="module.id">
-                {{ module.indentName }}
-              </a-option>
-            </a-select>
-            <a-select
-              v-model="selectedLevel"
-              placeholder="优先级"
-              allow-clear
-              style="width: 100px; margin-left: 12px;"
-              @change="handleLevelFilterChange"
-            >
-              <a-option value="P0">P0</a-option>
-              <a-option value="P1">P1</a-option>
-              <a-option value="P2">P2</a-option>
-              <a-option value="P3">P3</a-option>
-            </a-select>
-            <span class="selected-count">
-              已选 <strong>{{ selectedTestCaseIds.length }}</strong> 个
-            </span>
-          </div>
-
-          <a-table
-            :columns="testCaseColumns"
-            :data="testCaseData"
-            :pagination="paginationConfig"
-            :loading="testCaseLoading"
-            :scroll="{ y: 260 }"
-            :bordered="{ cell: true }"
-            row-key="id"
-            size="small"
-            @page-change="onPageChange"
-            @page-size-change="onPageSizeChange"
-          >
-            <template #selection="{ record }">
-              <a-checkbox
-                :model-value="selectedTestCaseIds.includes(record.id)"
-                @change="(checked: boolean) => handleCheckboxChange(record.id, checked)"
-              />
-            </template>
-            <template #selectAll>
-              <a-checkbox
-                :model-value="isCurrentPageAllSelected"
-                :indeterminate="isCurrentPageIndeterminate"
-                @change="handleSelectCurrentPage"
-              />
-            </template>
-            <template #level="{ record }">
-              <a-tag :color="getLevelColor(record.level)">{{ record.level }}</a-tag>
-            </template>
-          </a-table>
+      <div v-if="showTestCaseSelector" class="selector-section">
+        <div class="selector-header">
+          <span class="section-title required">选择测试用例</span>
+          <span class="selected-count">已选 {{ selectedTestCaseIds.length }} 条</span>
         </div>
+        <div class="selector-toolbar">
+          <a-input-search
+            v-model="searchKeyword"
+            placeholder="搜索用例名称"
+            allow-clear
+            @search="handleSearch"
+          />
+          <a-select
+            v-model="selectedModule"
+            placeholder="筛选模块"
+            allow-clear
+            :loading="modulesLoading"
+            @change="handleModuleFilterChange"
+          >
+            <a-option v-for="module in flatModuleList" :key="module.id" :value="module.id">
+              {{ module.indentName }}
+            </a-option>
+          </a-select>
+          <a-select
+            v-model="selectedLevel"
+            placeholder="优先级"
+            allow-clear
+            @change="handleLevelFilterChange"
+          >
+            <a-option value="P0">P0</a-option>
+            <a-option value="P1">P1</a-option>
+            <a-option value="P2">P2</a-option>
+            <a-option value="P3">P3</a-option>
+          </a-select>
+        </div>
+
+        <a-table
+          :columns="testCaseColumns"
+          :data="testCaseData"
+          :pagination="paginationConfig"
+          :loading="testCaseLoading"
+          :scroll="{ y: 260 }"
+          :bordered="{ cell: true }"
+          row-key="id"
+          size="small"
+          @page-change="onPageChange"
+          @page-size-change="onPageSizeChange"
+        >
+          <template #selection="{ record }">
+            <a-checkbox
+              :model-value="selectedTestCaseIds.includes(record.id)"
+              @change="(checked: boolean) => handleCheckboxChange(record.id, checked)"
+            />
+          </template>
+          <template #selectAll>
+            <a-checkbox
+              :model-value="isCurrentPageAllSelected"
+              :indeterminate="isCurrentPageIndeterminate"
+              @change="handleSelectCurrentPage"
+            />
+          </template>
+          <template #level="{ record }">
+            <a-tag :color="getLevelColor(record.level)">{{ record.level }}</a-tag>
+          </template>
+        </a-table>
       </div>
     </a-form>
   </a-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, computed } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type { PropType } from 'vue';
+import { Message } from '@arco-design/web-vue';
 import { useProjectStore } from '@/store/projectStore';
 import type { TreeNodeData } from '@arco-design/web-vue';
-import { Message } from '@arco-design/web-vue';
 import { RequirementDocumentService } from '@/features/requirements/services/requirementService';
-import type { RequirementDocument, DocumentModule } from '@/features/requirements/types';
+import type { DocumentModule, RequirementDocument } from '@/features/requirements/types';
 import { getUserPrompts } from '@/features/prompts/services/promptService';
 import type { UserPrompt, UserPromptListResponseData } from '@/features/prompts/types/prompt';
 import { KnowledgeService } from '@/features/knowledge/services/knowledgeService';
@@ -246,8 +248,17 @@ import { getTestCaseList, type TestCase } from '@/services/testcaseService';
 import { getTestCaseModules, type TestCaseModule } from '@/services/testcaseModuleService';
 import { getLevelColor } from '@/utils/formatters';
 
-// 生成模式类型
 type GenerateMode = 'full' | 'title_only' | 'kb_complete' | 'kb_generate';
+type InitialValues = {
+  generateMode?: GenerateMode;
+  requirementDocumentId?: string | null;
+  requirementModuleId?: string | null;
+  promptId?: number | null;
+  useKnowledgeBase?: boolean;
+  knowledgeBaseId?: string | null;
+  testTypes?: string[];
+  extraPrompt?: string;
+} | null;
 
 const props = defineProps({
   visible: {
@@ -262,30 +273,37 @@ const props = defineProps({
     type: Array as PropType<TreeNodeData[]>,
     default: () => [],
   },
+  initialModuleId: {
+    type: Number,
+    default: null,
+  },
+  initialValues: {
+    type: Object as PropType<InitialValues>,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['update:visible', 'submit']);
 
 const projectStore = useProjectStore();
+
 const isDocLoading = ref(false);
 const isReqModuleLoading = ref(false);
 const isPromptsLoading = ref(false);
 const isKbLoading = ref(false);
+const testCaseLoading = ref(false);
+const modulesLoading = ref(false);
 
 const requirementDocuments = ref<RequirementDocument[]>([]);
 const requirementModules = ref<DocumentModule[]>([]);
 const prompts = ref<UserPrompt[]>([]);
 const knowledgeBases = ref<KnowledgeBase[]>([]);
-
-// 用例选择相关状态
-const testCaseLoading = ref(false);
-const modulesLoading = ref(false);
 const testCaseData = ref<TestCase[]>([]);
 const moduleList = ref<TestCaseModule[]>([]);
 const selectedTestCaseIds = ref<number[]>([]);
 const searchKeyword = ref('');
 const selectedModule = ref<number | undefined>(undefined);
-const selectedLevel = ref<string>('');
+const selectedLevel = ref('');
 
 const paginationConfig = reactive({
   total: 0,
@@ -298,11 +316,11 @@ const paginationConfig = reactive({
 });
 
 const testCaseColumns = [
-  { title: '选择', slotName: 'selection', width: 50, titleSlotName: 'selectAll', align: 'center' as const },
-  { title: 'ID', dataIndex: 'id', width: 60 },
-  { title: '用例名称', dataIndex: 'name', width: 180, ellipsis: true, tooltip: true },
-  { title: '优先级', dataIndex: 'level', slotName: 'level', width: 70 },
-  { title: '所属模块', dataIndex: 'module_detail', width: 100, ellipsis: true },
+  { title: '选择', slotName: 'selection', width: 56, titleSlotName: 'selectAll', align: 'center' as const },
+  { title: 'ID', dataIndex: 'id', width: 72 },
+  { title: '用例名称', dataIndex: 'name', ellipsis: true, tooltip: true },
+  { title: '优先级', dataIndex: 'level', slotName: 'level', width: 88 },
+  { title: '所属模块', dataIndex: 'module_detail', ellipsis: true, tooltip: true, width: 180 },
 ];
 
 const formState = reactive({
@@ -312,35 +330,25 @@ const formState = reactive({
   promptId: null as number | null,
   useKnowledgeBase: false,
   knowledgeBaseId: null as string | null,
-  testCaseModuleId: null,
+  testCaseModuleId: null as number | null,
   testTypes: ['functional'] as string[],
+  extraPrompt: '',
 });
 
 const currentProjectName = computed(() => projectStore.currentProject?.name || '未命名项目');
+const showRequirementFields = computed(() => ['full', 'title_only', 'kb_generate'].includes(formState.generateMode));
+const showSaveModuleField = computed(() => ['full', 'title_only'].includes(formState.generateMode));
+const showTestCaseSelector = computed(() => ['kb_complete', 'kb_generate'].includes(formState.generateMode));
 
-// 是否显示需求文档相关字段
-const showRequirementFields = computed(() => {
-  return ['full', 'title_only', 'kb_generate'].includes(formState.generateMode);
-});
-
-// 是否显示保存模块字段
-const showSaveModuleField = computed(() => {
-  return ['full', 'title_only'].includes(formState.generateMode);
-});
-
-// 是否显示用例选择器
-const showTestCaseSelector = computed(() => {
-  return ['kb_complete', 'kb_generate'].includes(formState.generateMode);
-});
-
-// 将树形模块列表扁平化为带缩进的列表
 const flatModuleList = computed(() => {
   const flatList: Array<TestCaseModule & { indentName: string }> = [];
-  const flatten = (modules: TestCaseModule[], level: number = 0) => {
+  const flatten = (modules: TestCaseModule[], level = 0) => {
     modules.forEach((module) => {
-      const indent = '　'.repeat(level);
-      flatList.push({ ...module, indentName: `${indent}${module.name}` });
-      if (module.children && module.children.length > 0) {
+      flatList.push({
+        ...module,
+        indentName: `${'  '.repeat(level)}${module.name}`,
+      });
+      if (Array.isArray(module.children) && module.children.length > 0) {
         flatten(module.children, level + 1);
       }
     });
@@ -349,13 +357,11 @@ const flatModuleList = computed(() => {
   return flatList;
 });
 
-// 当前页是否全选
 const isCurrentPageAllSelected = computed(() => {
   if (testCaseData.value.length === 0) return false;
   return testCaseData.value.every((item) => selectedTestCaseIds.value.includes(item.id));
 });
 
-// 当前页是否半选状态
 const isCurrentPageIndeterminate = computed(() => {
   const count = testCaseData.value.filter((item) => selectedTestCaseIds.value.includes(item.id)).length;
   return count > 0 && count < testCaseData.value.length;
@@ -368,26 +374,58 @@ const resetModalState = () => {
   formState.promptId = null;
   formState.useKnowledgeBase = false;
   formState.knowledgeBaseId = null;
-  formState.testCaseModuleId = null;
+  formState.testCaseModuleId = props.initialModuleId ?? null;
   formState.testTypes = ['functional'];
+  formState.extraPrompt = '';
+
   requirementDocuments.value = [];
   requirementModules.value = [];
   prompts.value = [];
   knowledgeBases.value = [];
+  testCaseData.value = [];
+  moduleList.value = [];
   selectedTestCaseIds.value = [];
   searchKeyword.value = '';
   selectedModule.value = undefined;
   selectedLevel.value = '';
   paginationConfig.current = 1;
-  testCaseData.value = [];
-  moduleList.value = [];
+  paginationConfig.total = 0;
 };
 
-const initializeModalData = () => {
+const applyInitialValues = async () => {
+  const initialValues = props.initialValues;
+  formState.testCaseModuleId = props.initialModuleId ?? formState.testCaseModuleId;
+
+  if (!initialValues) {
+    return;
+  }
+
+  formState.generateMode = initialValues.generateMode || 'full';
+  formState.promptId = initialValues.promptId ?? null;
+  formState.useKnowledgeBase = !!initialValues.useKnowledgeBase;
+  formState.knowledgeBaseId = initialValues.knowledgeBaseId ?? null;
+  formState.testTypes =
+    Array.isArray(initialValues.testTypes) && initialValues.testTypes.length > 0
+      ? [...initialValues.testTypes]
+      : ['functional'];
+  formState.extraPrompt = initialValues.extraPrompt || '';
+
+  if (initialValues.requirementDocumentId) {
+    formState.requirementDocumentId = initialValues.requirementDocumentId;
+    await fetchRequirementModules(initialValues.requirementDocumentId, {
+      preserveSelection: true,
+      preferredModuleId: initialValues.requirementModuleId ?? null,
+    });
+  }
+};
+
+const initializeModalData = async () => {
   resetModalState();
-  fetchRequirementDocuments();
-  fetchPrompts();
-  fetchKnowledgeBases();
+  await Promise.all([fetchRequirementDocuments(), fetchPrompts(), fetchKnowledgeBases()]);
+  await applyInitialValues();
+  if (showTestCaseSelector.value) {
+    await Promise.all([fetchModules(), fetchTestCases()]);
+  }
 };
 
 const handleCancel = () => {
@@ -395,20 +433,17 @@ const handleCancel = () => {
 };
 
 const handleOk = () => {
-  // 验证测试类型
-  if (!formState.testTypes || formState.testTypes.length === 0) {
+  if (!formState.testTypes.length) {
     Message.error('请至少选择一种测试类型');
     return;
   }
 
-  // 验证提示词
   if (!formState.promptId) {
     Message.error('请选择提示词');
     return;
   }
 
-  // 根据模式验证必填项
-  if (['full', 'title_only'].includes(formState.generateMode)) {
+  if (showSaveModuleField.value) {
     if (!formState.requirementDocumentId || !formState.requirementModuleId || !formState.testCaseModuleId) {
       Message.error('请填写所有必填项');
       return;
@@ -417,51 +452,45 @@ const handleOk = () => {
 
   if (formState.generateMode === 'kb_generate') {
     if (!formState.requirementDocumentId || !formState.requirementModuleId) {
-      Message.error('请选择需求文档和模块');
+      Message.error('请选择需求文档和需求模块');
       return;
     }
   }
 
-  // 知识库补全和知识生成模式：知识库必选
-  if (['kb_complete', 'kb_generate'].includes(formState.generateMode)) {
+  if (showTestCaseSelector.value) {
     if (!formState.knowledgeBaseId) {
       Message.error('请选择知识库');
       return;
     }
     if (selectedTestCaseIds.value.length === 0) {
-      Message.error('请至少选择一个测试用例');
+      Message.error('请至少选择一条测试用例');
       return;
     }
   }
 
-  // 完整生成/标题生成模式：如果启用了知识库，必须选择知识库ID
-  if (['full', 'title_only'].includes(formState.generateMode) && formState.useKnowledgeBase && !formState.knowledgeBaseId) {
+  if (showSaveModuleField.value && formState.useKnowledgeBase && !formState.knowledgeBaseId) {
     Message.error('启用知识库后必须选择一个知识库');
     return;
   }
 
-  const selectedReqDocument = requirementDocuments.value.find(d => d.id === formState.requirementDocumentId);
-  const selectedReqModule = requirementModules.value.find(m => m.id === formState.requirementModuleId);
-  const selectedTestCases = testCaseData.value.filter(tc => selectedTestCaseIds.value.includes(tc.id));
+  const selectedReqDocument = requirementDocuments.value.find((item) => item.id === formState.requirementDocumentId);
+  const selectedReqModule = requirementModules.value.find((item) => item.id === formState.requirementModuleId);
+  const selectedTestCases = testCaseData.value.filter((item) => selectedTestCaseIds.value.includes(item.id));
 
   emit('submit', {
     ...formState,
     selectedDocument: selectedReqDocument,
     selectedModule: selectedReqModule,
     selectedTestCaseIds: selectedTestCaseIds.value,
-    selectedTestCases: selectedTestCases,
+    selectedTestCases,
   });
   emit('update:visible', false);
 };
 
-// 模式切换处理
-const handleModeChange = () => {
-  // 清空用例选择
+const handleModeChange = async () => {
   selectedTestCaseIds.value = [];
-  // 如果切换到需要用例选择的模式，加载用例
   if (showTestCaseSelector.value) {
-    fetchTestCases();
-    fetchModules();
+    await Promise.all([fetchModules(), fetchTestCases()]);
   }
 };
 
@@ -469,75 +498,83 @@ const fetchRequirementDocuments = async () => {
   if (!projectStore.currentProjectId) return;
   isDocLoading.value = true;
   try {
-    const response = await RequirementDocumentService.getDocumentList({ project: String(projectStore.currentProjectId) });
+    const response = await RequirementDocumentService.getDocumentList({
+      project: String(projectStore.currentProjectId),
+    });
     if (response.status === 'success' && Array.isArray(response.data)) {
       requirementDocuments.value = response.data;
-    } else if (response.status === 'success' && 'results' in response.data) {
-       requirementDocuments.value = response.data.results;
-    } else {
-      Message.error('加载需求文档列表失败');
-      requirementDocuments.value = [];
+      return;
     }
-  } catch (error) {
-    Message.error('加载需求文档列表时发生错误');
+    if (response.status === 'success' && response.data && 'results' in response.data) {
+      requirementDocuments.value = response.data.results;
+      return;
+    }
     requirementDocuments.value = [];
+    Message.error('加载需求文档失败');
+  } catch (error) {
+    requirementDocuments.value = [];
+    Message.error('加载需求文档失败');
   } finally {
     isDocLoading.value = false;
   }
 };
 
-const fetchRequirementModules = async (documentId: string) => {
+const fetchRequirementModules = async (
+  documentId: string,
+  options?: { preserveSelection?: boolean; preferredModuleId?: string | null }
+) => {
   isReqModuleLoading.value = true;
   requirementModules.value = [];
-  formState.requirementModuleId = null;
+  if (!options?.preserveSelection) {
+    formState.requirementModuleId = null;
+  }
+
   try {
     const response = await RequirementDocumentService.getDocumentDetail(documentId);
     if (response.status === 'success' && response.data?.modules) {
       requirementModules.value = response.data.modules;
-    } else {
-      Message.error('加载需求模块失败');
+      if (options?.preferredModuleId) {
+        const matched = requirementModules.value.find((item) => item.id === options.preferredModuleId);
+        formState.requirementModuleId = matched ? matched.id : null;
+      }
+      return;
     }
+    Message.error('加载需求模块失败');
   } catch (error) {
-    Message.error('加载需求模块时发生错误');
+    Message.error('加载需求模块失败');
   } finally {
     isReqModuleLoading.value = false;
   }
 };
 
-const handleDocumentChange = (value: any) => {
-  if (value) {
-    fetchRequirementModules(value);
-  } else {
+const handleDocumentChange = async (value: string | null) => {
+  if (!value) {
     requirementModules.value = [];
     formState.requirementModuleId = null;
+    return;
   }
+  await fetchRequirementModules(value);
 };
 
 const fetchPrompts = async () => {
   isPromptsLoading.value = true;
   try {
-    // 获取 "general" 类型的提示词
     const response = await getUserPrompts({ prompt_type: 'general' });
     if (response.status === 'success') {
-       // 根据您提供的实际返回，data可能直接是数组
-       if (Array.isArray(response.data)) {
-           prompts.value = response.data;
-       }
-       // 兼容旧的或分页的格式
-       else if ((response.data as UserPromptListResponseData)?.results) {
-           prompts.value = (response.data as UserPromptListResponseData).results;
-       }
-       else {
-           // 接口成功但数据格式不符或为空
-           prompts.value = [];
-       }
-    } else {
-      Message.error(response.message || '加载提示词列表失败');
-      prompts.value = [];
+      if (Array.isArray(response.data)) {
+        prompts.value = response.data;
+      } else if ((response.data as UserPromptListResponseData)?.results) {
+        prompts.value = (response.data as UserPromptListResponseData).results;
+      } else {
+        prompts.value = [];
+      }
+      return;
     }
-  } catch (error) {
-    Message.error('加载提示词列表时发生错误');
     prompts.value = [];
+    Message.error(response.message || '加载提示词失败');
+  } catch (error) {
+    prompts.value = [];
+    Message.error('加载提示词失败');
   } finally {
     isPromptsLoading.value = false;
   }
@@ -548,20 +585,15 @@ const fetchKnowledgeBases = async () => {
   isKbLoading.value = true;
   try {
     const response = await KnowledgeService.getKnowledgeBases({ project: projectStore.currentProjectId });
-    if (Array.isArray(response)) {
-       knowledgeBases.value = response;
-    } else {
-       knowledgeBases.value = response.results;
-    }
+    knowledgeBases.value = Array.isArray(response) ? response : response.results;
   } catch (error) {
-    Message.error('加载知识库列表失败');
     knowledgeBases.value = [];
+    Message.error('加载知识库失败');
   } finally {
     isKbLoading.value = false;
   }
 };
 
-// 用例选择相关函数
 const fetchTestCases = async () => {
   if (!projectStore.currentProjectId) {
     testCaseData.value = [];
@@ -578,19 +610,18 @@ const fetchTestCases = async () => {
       level: selectedLevel.value || undefined,
       module_id: selectedModule.value,
     });
-
     if (response.success && response.data) {
       testCaseData.value = response.data;
       paginationConfig.total = response.total || response.data.length;
-    } else {
-      Message.error(response.error || '获取测试用例列表失败');
-      testCaseData.value = [];
-      paginationConfig.total = 0;
+      return;
     }
-  } catch (error) {
-    Message.error('获取测试用例列表时发生错误');
     testCaseData.value = [];
     paginationConfig.total = 0;
+    Message.error(response.error || '获取测试用例失败');
+  } catch (error) {
+    testCaseData.value = [];
+    paginationConfig.total = 0;
+    Message.error('获取测试用例失败');
   } finally {
     testCaseLoading.value = false;
   }
@@ -605,11 +636,7 @@ const fetchModules = async () => {
   modulesLoading.value = true;
   try {
     const response = await getTestCaseModules(projectStore.currentProjectId);
-    if (response.success && response.data) {
-      moduleList.value = response.data;
-    } else {
-      moduleList.value = [];
-    }
+    moduleList.value = response.success && response.data ? response.data : [];
   } catch (error) {
     moduleList.value = [];
   } finally {
@@ -622,12 +649,9 @@ const handleCheckboxChange = (id: number, checked: boolean) => {
     if (!selectedTestCaseIds.value.includes(id)) {
       selectedTestCaseIds.value.push(id);
     }
-  } else {
-    const index = selectedTestCaseIds.value.indexOf(id);
-    if (index > -1) {
-      selectedTestCaseIds.value.splice(index, 1);
-    }
+    return;
   }
+  selectedTestCaseIds.value = selectedTestCaseIds.value.filter((item) => item !== id);
 };
 
 const handleSelectCurrentPage = (checked: boolean) => {
@@ -637,43 +661,43 @@ const handleSelectCurrentPage = (checked: boolean) => {
         selectedTestCaseIds.value.push(item.id);
       }
     });
-  } else {
-    const currentPageIds = testCaseData.value.map((item) => item.id);
-    selectedTestCaseIds.value = selectedTestCaseIds.value.filter((id) => !currentPageIds.includes(id));
+    return;
   }
+  const currentPageIds = testCaseData.value.map((item) => item.id);
+  selectedTestCaseIds.value = selectedTestCaseIds.value.filter((id) => !currentPageIds.includes(id));
 };
 
-const handleSearch = () => {
+const handleSearch = async () => {
   paginationConfig.current = 1;
-  fetchTestCases();
+  await fetchTestCases();
 };
 
-const handleModuleFilterChange = () => {
+const handleModuleFilterChange = async () => {
   paginationConfig.current = 1;
-  fetchTestCases();
+  await fetchTestCases();
 };
 
-const handleLevelFilterChange = () => {
+const handleLevelFilterChange = async () => {
   paginationConfig.current = 1;
-  fetchTestCases();
+  await fetchTestCases();
 };
 
-const onPageChange = (page: number) => {
+const onPageChange = async (page: number) => {
   paginationConfig.current = page;
-  fetchTestCases();
+  await fetchTestCases();
 };
 
-const onPageSizeChange = (pageSize: number) => {
+const onPageSizeChange = async (pageSize: number) => {
   paginationConfig.pageSize = pageSize;
   paginationConfig.current = 1;
-  fetchTestCases();
+  await fetchTestCases();
 };
 
 watch(
   () => props.visible,
-  (newVal) => {
-    if (newVal) {
-      initializeModalData();
+  async (visible) => {
+    if (visible) {
+      await initializeModalData();
     }
   },
   { immediate: true }
@@ -681,111 +705,133 @@ watch(
 
 watch(
   () => projectStore.currentProjectId,
-  (newProjectId, oldProjectId) => {
+  async (newProjectId, oldProjectId) => {
     if (props.visible && newProjectId && newProjectId !== oldProjectId) {
-      initializeModalData();
+      await initializeModalData();
     }
   }
 );
 
+watch(
+  () => [props.initialValues, props.initialModuleId] as const,
+  async () => {
+    if (props.visible) {
+      await initializeModalData();
+    }
+  }
+);
 </script>
 
 <style scoped>
 .header-row {
-  display: flex;
-  align-items: center;
-  gap: 48px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--color-border-2);
 }
 
 .header-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
 }
 
-.header-label {
+.header-item--mode {
+  min-width: 0;
+}
+
+.header-label,
+.section-title {
   font-size: 14px;
-  color: var(--color-text-2);
-  white-space: nowrap;
+  color: var(--color-text-1);
+}
+
+.required::before {
+  content: '*';
+  margin-right: 4px;
+  color: rgb(var(--danger-6));
 }
 
 .form-row {
-  display: flex;
-  gap: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
   margin-bottom: 16px;
 }
 
 .form-row-3 {
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .form-row-item {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.form-row-label {
-  font-size: 14px;
-  color: var(--color-text-1);
-}
-
-.form-row-label.required::before {
-  content: '*';
-  color: rgb(var(--danger-6));
-  margin-right: 4px;
-}
-
-.testcase-selector-section {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border-2);
-}
-
-.section-label {
-  font-size: 14px;
-  color: var(--color-text-1);
-  margin-bottom: 12px;
-}
-
-.testcase-selector-wrapper {
-  width: 100%;
-}
-
-.selector-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  gap: 8px 0;
-}
-
-.selected-count {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--color-text-2);
+.form-row-item-full {
+  grid-column: 1 / -1;
 }
 
 .test-type-row {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--color-border-2);
 }
 
 .test-type-checkboxes {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
 }
 
 .test-type-checkboxes :deep(.arco-checkbox) {
   margin-right: 0;
-  white-space: nowrap;
+}
+
+.selector-section {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-2);
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.selected-count {
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
+.selector-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 180px 120px;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.empty-wrap {
+  padding: 10px;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .header-row,
+  .form-row,
+  .form-row-3,
+  .selector-toolbar,
+  .test-type-checkboxes {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

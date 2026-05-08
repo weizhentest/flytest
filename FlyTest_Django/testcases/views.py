@@ -1137,6 +1137,11 @@ def _generate_testcases_from_requirement(
         .prefetch_related("steps")
         .order_by("id")
     )
+    same_type_existing_test_cases = [
+        case
+        for case in existing_test_cases
+        if str(getattr(case, "test_type", "") or "").strip() in allowed_test_types
+    ]
     (
         existing_case_context,
         existing_case_name_signatures,
@@ -1198,15 +1203,19 @@ def _generate_testcases_from_requirement(
         user_prompt += f"\n\n【补充提示词】\n{prompt_content}"
 
     if append_to_existing:
-        if existing_case_context:
-            existing_case_text = json.dumps(existing_case_context[:80], ensure_ascii=False, indent=2)
+        same_type_case_context, _, _, _ = _build_existing_case_context(same_type_existing_test_cases)
+        if same_type_case_context:
+            existing_case_text = json.dumps(same_type_case_context[:80], ensure_ascii=False, indent=2)
             user_prompt += (
-                "\n\n【当前模块已有测试用例】\n"
+                "\n\n【当前模块已存在同类型测试用例】\n"
                 f"{existing_case_text}\n"
-                "这些用例已经存在于当前模块，本次只允许追加生成新的测试用例，不要重复已有测试点，也不要仅仅换一个标题复述相同步骤流程。"
+                "以上是当前模块中与本次测试类型相同的已有用例。本次只允许追加生成新的测试用例，不要重复已有测试点，也不要仅仅换一个标题复述相同步骤流程。"
             )
         else:
-            user_prompt += "\n\n【当前模块已有测试用例】\n当前模块暂无已有测试用例，但本次仍然是追加生成模式，请避免重复语义。"
+            user_prompt += (
+                "\n\n【当前模块已存在同类型测试用例】\n"
+                "当前模块下所选测试类型暂无已有用例，本次会按该类型首次生成处理，但仍需避免与模块内已有用例产生重复语义。"
+            )
 
     if emit_progress:
         emit_progress(35, "generate", "AI 正在生成测试用例")

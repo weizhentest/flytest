@@ -27,7 +27,7 @@
           :current-project-id="currentProjectId"
           :selected-module-id="selectedModuleId"
           :module-tree="moduleTreeForForm"
-          @add-test-case="showAddCaseModeModal"
+          @add-test-case="handleManualAddSelected"
           @generate-test-cases="showGenerateCasesModal"
           @edit-test-case="showEditTestCaseForm"
           @view-test-case="showViewTestCaseDetail"
@@ -74,21 +74,9 @@
       v-model:visible="isGenerateCasesModalVisible"
       :generating="isGeneratingCases"
       :test-case-module-tree="moduleTreeForForm"
+      :initial-module-id="selectedModuleId"
+      :initial-values="currentGenerateDraft"
       @submit="handleGenerateCasesSubmit"
-    />
-
-    <AddCaseModeModal
-      v-model:visible="isAddCaseModeModalVisible"
-      @manual="handleManualAddSelected"
-      @ai="handleAiAddSelected"
-    />
-
-    <AppendGenerateCasesModal
-      v-if="isAppendGenerateModalVisible"
-      v-model:visible="isAppendGenerateModalVisible"
-      :generating="isGeneratingCases"
-      :module-name="selectedModuleName"
-      @submit="handleAppendGenerateSubmit"
     />
     
     <ExecuteTestCaseModal
@@ -113,7 +101,6 @@ import { useRouter } from 'vue-router';
 import { useProjectStore } from '@/store/projectStore';
 import { useAiActivityStore } from '@/store/aiActivityStore';
 import {
-  clearModuleTestCases,
   generateTestCasesFromRequirement,
   getTestCaseList,
   type TestCase,
@@ -121,12 +108,10 @@ import {
 import type { TestCaseModule } from '@/services/testcaseModuleService';
 import type { TreeNodeData } from '@arco-design/web-vue';
 import { getTestCaseModules } from '@/services/testcaseModuleService';
-import { Message, Modal, Notification } from '@arco-design/web-vue';
+import { Message, Notification } from '@arco-design/web-vue';
 
 import ModuleManagementPanel from '@/components/testcase/ModuleManagementPanel.vue';
 import TestCaseList from '@/components/testcase/TestCaseList.vue';
-import AddCaseModeModal from '@/components/testcase/AddCaseModeModal.vue';
-import AppendGenerateCasesModal from '@/components/testcase/AppendGenerateCasesModal.vue';
 const TestCaseForm = defineAsyncComponent(() => import('@/components/testcase/TestCaseForm.vue'));
 const TestCaseDetail = defineAsyncComponent(() => import('@/components/testcase/TestCaseDetail.vue'));
 const GenerateCasesModal = defineAsyncComponent(() => import('@/components/testcase/GenerateCasesModal.vue'));
@@ -185,17 +170,31 @@ const router = useRouter();
 const projectStore = useProjectStore();
 const aiActivityStore = useAiActivityStore();
 const currentProjectId = computed(() => projectStore.currentProjectId || null);
+const TESTCASE_GENERATION_DRAFT_STORAGE_KEY = 'flytest-testcase-generation-drafts-v1';
+
+type GenerateMode = 'full' | 'title_only' | 'kb_complete' | 'kb_generate';
+type GenerateDraft = {
+  generateMode: GenerateMode;
+  requirementDocumentId: string | null;
+  requirementModuleId: string | null;
+  promptId: number | null;
+  useKnowledgeBase: boolean;
+  knowledgeBaseId: string | null;
+  testTypes: string[];
+  extraPrompt: string;
+  updatedAt: string;
+};
+type GenerateDraftMap = Record<string, GenerateDraft>;
 
 const viewMode = ref<'list' | 'add' | 'edit' | 'view'>('list');
 const selectedModuleId = ref<number | null>(null);
 const currentEditingTestCaseId = ref<number | null>(null);
 const currentViewingTestCaseId = ref<number | null>(null);
 const isGenerateCasesModalVisible = ref(false);
-const isAddCaseModeModalVisible = ref(false);
-const isAppendGenerateModalVisible = ref(false);
 const isGeneratingCases = ref(false);
 const isExecuteModalVisible = ref(false);
 const isOptimizationModalVisible = ref(false);
+const generationDraftMap = ref<GenerateDraftMap>({});
 const pendingExecuteTestCase = ref<TestCase | null>(null);
 const pendingOptimizationTestCase = ref<TestCase | null>(null);
 const testCaseIdsForNavigation = ref<number[]>([]); // 用于编辑页面导航的用例ID列表
@@ -207,9 +206,11 @@ const testCaseListRef = ref<InstanceType<typeof TestCaseList> | null>(null);
 
 // 存储所有模块数据，用于传递给详情页和表单
 const allModules = ref<TestCaseModule[]>([]);
-const selectedModuleName = computed(() => {
-  const target = allModules.value.find((module) => module.id === selectedModuleId.value);
-  return target?.name || '';
+const currentGenerateDraft = computed<Partial<GenerateDraft> | null>(() => {
+  if (!selectedModuleId.value) {
+    return null;
+  }
+  return generationDraftMap.value[String(selectedModuleId.value)] || null;
 });
 const moduleTreeForForm = ref<TreeNodeData[]>([]); // 用于表单的模块树
 
@@ -350,23 +351,9 @@ const handleModuleUpdated = () => {
   testCaseListRef.value?.refreshTestCases();
 };
 
-const showAddCaseModeModal = () => {
-  isAddCaseModeModalVisible.value = true;
-};
-
 const handleManualAddSelected = () => {
-  isAddCaseModeModalVisible.value = false;
   currentEditingTestCaseId.value = null;
   viewMode.value = 'add';
-};
-
-const handleAiAddSelected = () => {
-  if (!selectedModuleId.value) {
-    Message.warning('请先在左侧选择一个用例模块，再使用 AI 追加生成');
-    return;
-  }
-  isAddCaseModeModalVisible.value = false;
-  isAppendGenerateModalVisible.value = true;
 };
 
 const showAddTestCaseForm = () => {
@@ -468,43 +455,72 @@ const handleViewDetailTestCaseDeleted = () => {
 };
 
 const showGenerateCasesModal = () => {
+  if (!selectedModuleId.value) {
+    Message.warning('请先在左侧选择一个测试用例模块');
+    return;
+  }
   isGenerateCasesModalVisible.value = true;
 };
 
-const getModuleExistingCaseCount = async (moduleId: number) => {
+const readGenerationDraftMap = (): GenerateDraftMap => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(TESTCASE_GENERATION_DRAFT_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.warn('读取测试用例生成草稿失败', error);
+    return {};
+  }
+};
+
+const syncGenerationDraftMap = () => {
+  generationDraftMap.value = readGenerationDraftMap();
+};
+
+const saveGenerationDraft = (moduleId: number, draft: Omit<GenerateDraft, 'updatedAt'>) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const draftMap = {
+    ...generationDraftMap.value,
+  };
+  draftMap[String(moduleId)] = {
+    ...draft,
+    updatedAt: new Date().toISOString(),
+  };
+  window.localStorage.setItem(TESTCASE_GENERATION_DRAFT_STORAGE_KEY, JSON.stringify(draftMap));
+  generationDraftMap.value = draftMap;
+};
+
+const getModuleExistingCasesByTypes = async (moduleId: number, testTypes: string[]) => {
   if (!currentProjectId.value) {
-    return 0;
+    return [];
   }
 
+  const normalizedTypes = Array.from(new Set((testTypes || []).filter(Boolean)));
   const response = await getTestCaseList(currentProjectId.value, {
     page: 1,
-    pageSize: 1,
+    pageSize: 200,
     module_id: moduleId,
+    test_type_in: normalizedTypes.length ? normalizedTypes : undefined,
   });
 
   if (!response.success) {
-    throw new Error(response.error || '获取当前模块测试用例数量失败');
+    throw new Error(response.error || '获取当前模块测试用例失败');
   }
 
-  return response.total ?? response.data?.length ?? 0;
-};
-
-const clearModuleCasesBeforeRegenerate = async (moduleId: number) => {
-  if (!currentProjectId.value) {
-    throw new Error('没有有效的项目ID');
-  }
-
-  aiActivityStore.clearGenerationJob();
-  const response = await clearModuleTestCases(currentProjectId.value, moduleId);
-  if (!response.success) {
-    throw new Error(response.error || '清空当前模块测试用例失败');
-  }
+  return response.data || [];
 };
 
 const startRequirementCaseGenerationJob = async (
   payload: Parameters<typeof generateTestCasesFromRequirement>[1],
   options?: {
-    submittingModal?: 'generate' | 'append';
     startLabel?: string;
     startNotification?: {
       title: string;
@@ -517,39 +533,25 @@ const startRequirementCaseGenerationJob = async (
     };
   }
 ) => {
-  const restoreSubmitModal = () => {
-    if (options?.submittingModal === 'generate') {
-      isGenerateCasesModalVisible.value = true;
-    }
-    if (options?.submittingModal === 'append') {
-      isAppendGenerateModalVisible.value = true;
-    }
-  };
-
   if (!currentProjectId.value) {
     Message.error('没有有效的项目ID');
     return null;
   }
 
-  if (options?.submittingModal === 'generate') {
-    isGenerateCasesModalVisible.value = false;
-  }
-  if (options?.submittingModal === 'append') {
-    isAppendGenerateModalVisible.value = false;
-  }
+  isGenerateCasesModalVisible.value = false;
 
   isGeneratingCases.value = true;
   try {
     try {
       const result = await generateTestCasesFromRequirement(currentProjectId.value, payload);
       if (!result.success) {
-        restoreSubmitModal();
+        isGenerateCasesModalVisible.value = true;
         Message.error(result.error || '生成测试用例失败');
         return null;
       }
 
       if (!result.jobId) {
-        restoreSubmitModal();
+        isGenerateCasesModalVisible.value = true;
         Message.error('生成任务创建失败，请稍后重试');
         return null;
       }
@@ -571,48 +573,13 @@ const startRequirementCaseGenerationJob = async (
 
       return result.jobId;
     } catch (error) {
-      restoreSubmitModal();
+      isGenerateCasesModalVisible.value = true;
       Message.error(error instanceof Error ? error.message : '生成测试用例失败，请稍后重试');
       return null;
     }
   } finally {
     isGeneratingCases.value = false;
   }
-};
-
-const handleAppendGenerateSubmit = async (payload: { extraPrompt: string }) => {
-  if (!currentProjectId.value) {
-    Message.error('缺少有效的项目ID');
-    return;
-  }
-
-  if (!selectedModuleId.value) {
-    Message.warning('请先选择一个用例模块');
-    return;
-  }
-
-  await startRequirementCaseGenerationJob(
-    {
-      test_case_module_id: selectedModuleId.value,
-      generate_mode: 'full',
-      test_types: ['functional'],
-      extra_prompt: payload.extraPrompt,
-      append_to_existing: true,
-      auto_infer_requirement: true,
-    },
-    {
-      submittingModal: 'append',
-      startLabel: 'AI正在生成用例',
-      startNotification: {
-        title: '正在追加生成测试用例',
-        content: '任务已提交到后台，系统会自动带入当前模块需求和已有用例继续生成。',
-      },
-      activityMeta: {
-        mode: 'append',
-        targetModuleId: selectedModuleId.value,
-      },
-    }
-  );
 };
 
 const resolveGeneratedCount = (payload?: {
@@ -748,6 +715,7 @@ const handleGenerateCasesSubmit = async (formData: {
   selectedTestCaseIds: number[],
   selectedTestCases: TestCase[],
   testTypes: string[],
+  extraPrompt?: string,
 }) => {
   if (!currentProjectId.value) {
     Message.error('没有有效的项目ID');
@@ -755,13 +723,28 @@ const handleGenerateCasesSubmit = async (formData: {
   }
 
   if (['full', 'title_only'].includes(formData.generateMode)) {
-    const submitRequirementGeneration = async () => {
-      const testTypePrompt = getTestTypePrompt(formData.testTypes || []);
+    try {
+      const normalizedTestTypes = formData.testTypes?.length ? formData.testTypes : ['functional'];
+      const matchedExistingCases = await getModuleExistingCasesByTypes(formData.testCaseModuleId, normalizedTestTypes);
+      const appendToExisting = matchedExistingCases.length > 0;
+      const testTypePrompt = getTestTypePrompt(normalizedTestTypes);
       const promptParts = [
-        formData.selectedDocument?.title ? `\u9700\u6c42\u6587\u6863\uff1a${formData.selectedDocument.title}` : '',
-        formData.selectedModule?.title ? `\u9700\u6c42\u6a21\u5757\uff1a${formData.selectedModule.title}` : '',
+        formData.selectedDocument?.title ? `需求文档：${formData.selectedDocument.title}` : '',
+        formData.selectedModule?.title ? `需求模块：${formData.selectedModule.title}` : '',
         testTypePrompt,
+        formData.extraPrompt?.trim() ? `追加提示词：${formData.extraPrompt.trim()}` : '',
       ].filter(Boolean);
+
+      saveGenerationDraft(formData.testCaseModuleId, {
+        generateMode: formData.generateMode,
+        requirementDocumentId: formData.requirementDocumentId,
+        requirementModuleId: formData.requirementModuleId,
+        promptId: formData.promptId,
+        useKnowledgeBase: formData.useKnowledgeBase,
+        knowledgeBaseId: formData.knowledgeBaseId || null,
+        testTypes: normalizedTestTypes,
+        extraPrompt: formData.extraPrompt?.trim() || '',
+      });
 
       await startRequirementCaseGenerationJob(
         {
@@ -770,50 +753,32 @@ const handleGenerateCasesSubmit = async (formData: {
           test_case_module_id: formData.testCaseModuleId,
           prompt_id: formData.promptId,
           generate_mode: formData.generateMode as 'full' | 'title_only',
-          test_types: formData.testTypes?.length ? formData.testTypes : ['functional'],
+          test_types: normalizedTestTypes,
           extra_prompt: promptParts.join('\n\n'),
-          append_to_existing: false,
+          append_to_existing: appendToExisting,
+          auto_infer_requirement: true,
         },
         {
-          submittingModal: 'generate',
-          startLabel: 'AI\u6b63\u5728\u751f\u6210\u7528\u4f8b',
-          startNotification: {
-            title: '\u6b63\u5728\u91cd\u65b0\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b',
-            content: '\u4efb\u52a1\u5df2\u63d0\u4ea4\u5230\u540e\u53f0\uff0c\u7cfb\u7edf\u4f1a\u5148\u6e05\u7a7a\u5f53\u524d\u6a21\u5757\u7684\u65e7\u7528\u4f8b\uff0c\u518d\u91cd\u65b0\u751f\u6210\u3002',
-            duration: 10000,
-          },
+          startLabel: 'AI正在生成用例',
+          startNotification: appendToExisting
+            ? {
+                title: '正在追加生成测试用例',
+                content: '当前模块已存在所选类型的测试用例，系统会自动带入同类型用例上下文并继续追加生成。',
+                duration: 8000,
+              }
+            : {
+                title: '正在生成测试用例',
+                content: '当前类型会按首次生成处理，系统会保留模块下其他类型的现有用例。',
+                duration: 8000,
+              },
           activityMeta: {
-            mode: 'standard',
+            mode: appendToExisting ? 'append' : 'standard',
             targetModuleId: formData.testCaseModuleId,
           },
         }
       );
-    };
-
-    try {
-      const existingCount = await getModuleExistingCaseCount(formData.testCaseModuleId);
-      if (existingCount > 0) {
-        Modal.warning({
-          title: '\u786e\u8ba4\u91cd\u65b0\u751f\u6210',
-          content: `\u5f53\u524d\u6a21\u5757\u5df2\u6709 ${existingCount} \u6761\u6d4b\u8bd5\u7528\u4f8b\u3002\u70b9\u51fb\u786e\u8ba4\u540e\u4f1a\u5148\u5f7b\u5e95\u6e05\u7a7a\u5f53\u524d\u6a21\u5757\u7684\u73b0\u6709\u7528\u4f8b\uff0c\u518d\u91cd\u65b0\u751f\u6210\u3002\u53ea\u6709\u201c\u6dfb\u52a0\u7528\u4f8b\u201d\u624d\u4f1a\u4fdd\u7559\u73b0\u6709\u7528\u4f8b\u5e76\u7ee7\u7eed\u8ffd\u52a0\u3002`,
-          okText: '\u786e\u8ba4\u6e05\u7a7a\u5e76\u751f\u6210',
-          cancelText: '\u53d6\u6d88',
-          onOk: async () => {
-            try {
-              await clearModuleCasesBeforeRegenerate(formData.testCaseModuleId);
-              await submitRequirementGeneration();
-            } catch (error) {
-              Message.error(error instanceof Error ? error.message : '\u91cd\u65b0\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b\u5931\u8d25');
-            }
-          },
-        });
-        return;
-      }
-
-      await clearModuleCasesBeforeRegenerate(formData.testCaseModuleId);
-      await submitRequirementGeneration();
     } catch (error) {
-      Message.error(error instanceof Error ? error.message : '\u751f\u6210\u6d4b\u8bd5\u7528\u4f8b\u5931\u8d25');
+      Message.error(error instanceof Error ? error.message : '生成测试用例失败');
     }
     return;
   }
@@ -1086,6 +1051,7 @@ ${data.suggestion || '请根据测试最佳实践进行全面优化'}
 };
 
 watch(currentProjectId, (newVal) => {
+  syncGenerationDraftMap();
   selectedModuleId.value = null; // 项目切换时清空已选模块
   // 列表和模块面板会各自 watch projectId 并刷新
   if (newVal) {
@@ -1169,6 +1135,7 @@ watch(
 );
 
 onMounted(() => {
+  syncGenerationDraftMap();
   if (currentProjectId.value) {
     fetchAllModulesForForm();
   }
