@@ -2230,8 +2230,10 @@ export default {
 <style scoped>
 .chat-layout {
   display: flex;
+  align-items: stretch;
   height: 100%;
-  padding: 14px;
+  min-height: 100%;
+  padding: 0;
   gap: 16px;
   background:
     radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.05), transparent 28%),
@@ -2239,7 +2241,7 @@ export default {
   border: 1px solid var(--ui-panel-border);
   border-radius: 22px;
   box-shadow: var(--ui-panel-shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .chat-container {

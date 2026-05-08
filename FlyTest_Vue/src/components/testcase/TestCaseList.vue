@@ -1,13 +1,13 @@
 ﻿<template>
-  <div ref="testcaseContentRef" class="testcase-content">
-    <div class="page-header">
-      <div class="search-box">
+    <div ref="testcaseContentRef" class="testcase-content">
+      <div class="page-header">
+        <div class="search-box">
         <a-input-search
           placeholder="搜索用例名称/前置条件"
           allow-clear
           class="search-input"
           @search="onSearch"
-          :style="{ width: isSmallScreen ? '70px' : '130px' }"
+          :style="{ width: isSmallScreen ? '84px' : '132px' }"
           v-model="localSearchKeyword"
         />
         <a-select
@@ -15,7 +15,7 @@
           placeholder="优先级"
           allow-clear
           class="level-filter"
-          :style="{ width: isSmallScreen ? '90px' : '130px' }"
+          :style="{ width: isSmallScreen ? '82px' : '96px' }"
           @change="onLevelChange"
         >
           <a-option value="P0">{{ isSmallScreen ? 'P0' : 'P0 - 最高' }}</a-option>
@@ -32,7 +32,7 @@
           :max-tag-count="1"
           tag-nowrap
           class="review-status-filter"
-          :style="{ width: '190px' }"
+          :style="{ width: isSmallScreen ? '104px' : '124px' }"
           @change="onReviewStatusChange"
         >
           <a-option v-for="option in REVIEW_STATUS_OPTIONS" :key="option.value" :value="option.value">
@@ -44,7 +44,7 @@
           placeholder="测试类型"
           allow-clear
           class="test-type-filter"
-          :style="{ width: isSmallScreen ? '90px' : '130px' }"
+          :style="{ width: isSmallScreen ? '88px' : '104px' }"
           @change="onTestTypeChange"
         >
           <a-option v-for="option in TEST_TYPE_OPTIONS" :key="option.value" :value="option.value">
@@ -59,21 +59,31 @@
           :max-tag-count="1"
           tag-nowrap
           class="assignee-filter"
-          :style="{ width: '220px' }"
+          :style="{ width: isSmallScreen ? '104px' : '132px' }"
           @change="onAssigneeChange"
         >
           <a-option v-for="member in projectMembers" :key="member.user" :value="member.user">
             {{ getUserDisplayName(member.user_detail) }}
           </a-option>
         </a-select>
+        <a-button v-if="!isSuiteActionMode" type="outline" class="io-btn" @click="handleImport">
+          <template #icon>
+            <icon-upload />
+          </template>
+          <span class="io-btn-text">导入</span>
+        </a-button>
         <a-button type="outline" class="io-btn" @click="handleExport">
           <template #icon>
             <icon-download />
           </template>
           <span class="io-btn-text">导出</span>
         </a-button>
+        <template v-if="showCreateActions && !isSuiteActionMode">
+          <a-button type="primary" @click="handleGenerateTestCases">AI生成用例</a-button>
+          <a-button type="primary" @click="handleAddTestCase">添加用例</a-button>
+        </template>
       </div>
-      <div class="action-buttons">
+      <div class="header-actions">
         <template v-if="hasSelection">
           <a-button type="primary" status="danger" @click="handleBatchDelete">批量删除</a-button>
           <a-dropdown trigger="click" @select="(value: string) => handleBatchExecutionStatusChange(value as ExecutionStatus)">
@@ -85,10 +95,6 @@
             </template>
           </a-dropdown>
           <a-button v-if="!isSuiteActionMode" type="primary" @click="openAssignModal(selectedTestCaseIds)">批量分配</a-button>
-        </template>
-        <template v-else-if="showCreateActions">
-          <a-button type="primary" @click="handleGenerateTestCases">生成用例</a-button>
-          <a-button type="primary" @click="handleAddTestCase">添加用例</a-button>
         </template>
       </div>
     </div>
@@ -224,6 +230,13 @@
       </template>
     </a-table>
 
+    <ImportModal
+      v-if="currentProjectId && !isSuiteActionMode"
+      ref="importModalRef"
+      :project-id="currentProjectId"
+      @success="onImportSuccess"
+    />
+
     <ExportModal
       v-if="currentProjectId"
       ref="exportModalRef"
@@ -263,10 +276,11 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, toRefs, nextTick } from 'vue';
 import axios from 'axios';
 import { Message, Modal } from '@arco-design/web-vue';
-import { IconFolder, IconDownload, IconDown } from '@arco-design/web-vue/es/icon';
+import { IconFolder, IconDownload, IconUpload, IconDown } from '@arco-design/web-vue/es/icon';
 import { useAuthStore } from '@/store/authStore';
 import { getUserDisplayName } from '@/utils/userDisplay';
 import { API_BASE_URL } from '@/config/api';
+import ImportModal from '@/features/testcase-templates/components/ImportModal.vue';
 import ExportModal from '@/features/testcase-templates/components/ExportModal.vue';
 import {
   getTestCaseList,
@@ -292,7 +306,7 @@ type TestCaseListItem = TestCase & {
   } | null;
 };
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   currentProjectId: number | null;
   selectedModuleId?: number | null; // 鍙€夌殑妯″潡ID锛岀敤浜庣瓫閫?
   selectedSuiteId?: number | null;
@@ -301,7 +315,12 @@ const props = defineProps<{
   showReviewStatus?: boolean;
   actionMode?: 'default' | 'suite';
   timeColumnMode?: 'created' | 'assigned';
-}>();
+}>(), {
+  showCreateActions: true,
+  showReviewStatus: true,
+  actionMode: 'default',
+  timeColumnMode: 'created',
+});
 
 const emit = defineEmits<{
   (e: 'addTestCase'): void;
@@ -338,6 +357,7 @@ const selectedReviewStatuses = ref<ReviewStatus[]>([]);
 const selectedAssigneeIds = ref<number[]>([]);
 const testCaseData = ref<TestCaseListItem[]>([]);
 const selectedTestCaseIds = ref<number[]>([]);
+const importModalRef = ref<InstanceType<typeof ImportModal> | null>(null);
 const exportModalRef = ref<InstanceType<typeof ExportModal> | null>(null);
 const assignmentModalVisible = ref(false);
 const assignmentLoading = ref(false);
@@ -1003,6 +1023,19 @@ const handleExport = () => {
   exportModalRef.value?.open();
 };
 
+const handleImport = () => {
+  if (!currentProjectId.value) {
+    Message.warning('请先选择一个项目');
+    return;
+  }
+  importModalRef.value?.open();
+};
+
+const onImportSuccess = () => {
+  selectedTestCaseIds.value = [];
+  fetchTestCases();
+};
+
 onMounted(() => {
   handleResize(); // 鍒濆鍖栬〃鏍奸珮搴?
   fetchTestCases();
@@ -1093,13 +1126,15 @@ defineExpose({
   align-items: center;
   margin-bottom: 16px;
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
   padding: 14px 16px;
   border: 1px solid var(--ui-toolbar-border, var(--color-neutral-3));
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-toolbar-bg, var(--color-fill-1));
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .search-box {
@@ -1107,35 +1142,41 @@ defineExpose({
   flex-wrap: nowrap;
   align-items: center;
   gap: 10px;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
+  min-width: max-content;
+  flex: 1 1 auto;
+  overflow: visible;
+  padding-bottom: 2px;
 }
 
 .search-box > * {
   margin-left: 0 !important;
-  flex-shrink: 1;
-}
-
-.action-buttons {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
   flex-shrink: 0;
 }
 
-.action-buttons > * {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: fit-content;
+  padding-bottom: 2px;
+  margin-left: auto;
+}
+
+.header-actions > * {
   margin-right: 0 !important;
+  flex-shrink: 0;
 }
 
 .search-input {
-  width: 200px;
-  min-width: 120px;
-  flex-shrink: 1;
+  width: 132px;
+  min-width: 108px;
+  flex-shrink: 0;
 }
 
 .level-filter {
-  flex-shrink: 1;
+  flex-shrink: 0;
+  width: 96px;
 }
 
 .review-status-filter {
@@ -1144,7 +1185,8 @@ defineExpose({
 }
 
 .test-type-filter {
-  flex-shrink: 1;
+  flex-shrink: 0;
+  width: 104px;
 }
 
 .assignee-filter {
@@ -1159,6 +1201,15 @@ defineExpose({
 /* 瀵煎叆瀵煎嚭鎸夐挳鍝嶅簲寮?*/
 .io-btn {
   flex-shrink: 0;
+}
+
+.page-header::-webkit-scrollbar {
+  height: 6px;
+}
+
+.page-header::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
 }
 
 @media (max-width: 1200px) {

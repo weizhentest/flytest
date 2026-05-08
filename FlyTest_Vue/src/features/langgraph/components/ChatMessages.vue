@@ -157,7 +157,8 @@ defineExpose({
 
 <style scoped>
 .chat-messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   display: flex;
@@ -166,11 +167,11 @@ defineExpose({
 }
 
 .empty-chat {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 220px;
   color: #86909c;
 }
 
@@ -188,5 +189,16 @@ defineExpose({
   height: 72px;
   object-fit: contain;
   filter: drop-shadow(0 0 20px rgba(100, 180, 255, 0.18));
+}
+
+@media (max-width: 768px) {
+  .chat-messages {
+    padding: 18px;
+    gap: 18px;
+  }
+
+  .empty-chat {
+    min-height: 180px;
+  }
 }
 </style>

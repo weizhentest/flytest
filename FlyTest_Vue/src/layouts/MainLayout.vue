@@ -475,7 +475,7 @@
       </a-layout-sider>
 
       <!-- 右侧内容区域 -->
-      <a-layout-content class="content">
+      <a-layout-content class="content" :class="{ 'content--chat': activeMenu === 'langgraph-chat' }">
         <router-view v-slot="{ Component }">
           <keep-alive include="LangGraphChat">
             <component :is="Component" />
@@ -2200,6 +2200,21 @@ onUnmounted(() => {
   overflow-y: visible;
   overscroll-behavior: auto;
   scrollbar-gutter: auto;
+}
+
+.content.content--chat {
+  min-height: calc(100vh - var(--dashboard-header-total-height) - 16px);
+  padding: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.content.content--chat > * {
+  min-height: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  display: flex;
 }
 
 .content::before {

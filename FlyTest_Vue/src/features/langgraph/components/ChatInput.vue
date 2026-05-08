@@ -322,7 +322,8 @@ const handlePaste = (e: ClipboardEvent) => {
 
 <style scoped>
 .chat-input-container {
-  padding: 16px 20px;
+  margin-top: auto;
+  padding: 18px 20px 20px;
   background-color: white;
   border-top: 1px solid #e5e6eb;
 }
@@ -435,7 +436,7 @@ const handlePaste = (e: ClipboardEvent) => {
   background-color: #f2f3f5;
   transition: all 0.2s;
   resize: none;
-  min-height: 36px;
+  min-height: 72px;
 }
 
 .chat-input:hover, .chat-input:focus {
@@ -446,9 +447,9 @@ const handlePaste = (e: ClipboardEvent) => {
 /* 确保文本框内容样式正确 */
 .chat-input :deep(.arco-textarea) {
   border-radius: 12px;
-  padding: 8px 12px;
+  padding: 14px 16px;
   line-height: 20px;
-  min-height: 36px;
+  min-height: 72px;
 }
 
 /* 拖拽覆盖层 */
@@ -499,8 +500,9 @@ const handlePaste = (e: ClipboardEvent) => {
   gap: 4px;
   border-radius: 20px;
   padding: 0 16px;
-  height: 36px;
+  height: 44px;
   flex-shrink: 0;
+  align-self: flex-end;
 }
 
 .stop-button {
@@ -509,8 +511,9 @@ const handlePaste = (e: ClipboardEvent) => {
   gap: 4px;
   border-radius: 20px;
   padding: 0 16px;
-  height: 36px;
+  height: 44px;
   flex-shrink: 0;
+  align-self: flex-end;
   animation: pulse-stop 1.5s ease-in-out infinite;
 }
 
