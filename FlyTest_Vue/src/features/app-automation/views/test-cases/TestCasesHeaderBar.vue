@@ -4,21 +4,25 @@
       <h3>测试用例</h3>
       <p>维护 APP 自动化场景、最近执行结果与快速执行入口，让日常回归更高效。</p>
     </div>
-    <a-space wrap>
-      <a-input-search
-        v-model="searchModel"
-        allow-clear
-        placeholder="搜索测试用例"
-        @search="emit('search')"
-      />
-      <a-select v-model="packageFilterModel" allow-clear placeholder="全部应用包" style="width: 220px">
-        <a-option value="">全部应用包</a-option>
-        <a-option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">{{ pkg.name }}</a-option>
-      </a-select>
-      <a-button @click="emit('reset')">重置</a-button>
-      <a-button @click="emit('quick-create')">快速新建</a-button>
-      <a-button type="primary" @click="emit('open-scene-builder-draft')">新增测试用例</a-button>
-    </a-space>
+    <div class="header-toolbar">
+      <div class="toolbar-filters">
+        <a-input-search
+          v-model="searchModel"
+          allow-clear
+          placeholder="搜索测试用例"
+          @search="emit('search')"
+        />
+        <a-select v-model="packageFilterModel" allow-clear placeholder="全部应用包">
+          <a-option value="">全部应用包</a-option>
+          <a-option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">{{ pkg.name }}</a-option>
+        </a-select>
+      </div>
+      <a-space wrap class="toolbar-actions">
+        <a-button @click="emit('reset')">重置</a-button>
+        <a-button @click="emit('quick-create')">快速新建</a-button>
+        <a-button type="primary" @click="emit('open-scene-builder-draft')">新增测试用例</a-button>
+      </a-space>
+    </div>
   </div>
 </template>
 
@@ -69,6 +73,36 @@ const emit = defineEmits<TestCasesHeaderBarEmits>()
   border-radius: 12px;
 }
 
+.header-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.toolbar-filters,
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolbar-filters {
+  justify-content: flex-end;
+  flex: 1;
+}
+
+.toolbar-filters :deep(.arco-input-wrapper) {
+  width: 260px;
+}
+
+.toolbar-filters :deep(.arco-select-view) {
+  width: 220px;
+}
+
 .page-header :deep(.arco-btn) {
   min-width: 92px;
 }
@@ -78,6 +112,17 @@ const emit = defineEmits<TestCasesHeaderBarEmits>()
     flex-direction: column;
     align-items: flex-start;
     padding: 16px;
+  }
+
+  .header-toolbar,
+  .toolbar-filters {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .toolbar-filters :deep(.arco-input-wrapper),
+  .toolbar-filters :deep(.arco-select-view) {
+    width: 100%;
   }
 }
 </style>

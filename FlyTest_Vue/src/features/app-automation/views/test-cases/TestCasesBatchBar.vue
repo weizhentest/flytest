@@ -24,6 +24,7 @@ const emit = defineEmits<TestCasesBatchBarEmits>()
 
 <style scoped>
 .batch-bar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,12 +37,14 @@ const emit = defineEmits<TestCasesBatchBarEmits>()
     var(--theme-card-bg);
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
   color: var(--theme-text);
+  overflow: hidden;
 }
 
 .batch-bar-copy {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .batch-bar-kicker {
@@ -59,6 +62,14 @@ const emit = defineEmits<TestCasesBatchBarEmits>()
 .batch-bar-actions :deep(.arco-btn) {
   min-width: 92px;
   border-radius: 12px;
+}
+
+.batch-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.85), rgba(var(--theme-accent-rgb), 0.24));
 }
 
 @media (max-width: 900px) {

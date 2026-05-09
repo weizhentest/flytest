@@ -165,7 +165,7 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
 .filter-grid {
   display: grid;
   gap: 14px;
-  align-items: center;
+  align-items: end;
 }
 
 .case-filter-grid {
@@ -177,6 +177,8 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .filter-actions :deep(.arco-btn),
@@ -194,6 +196,7 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
 .stat-card :deep(.arco-card-body) {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 10px;
   min-height: 126px;
 }
@@ -225,6 +228,11 @@ const emit = defineEmits<ReportsExecutionPanelEmits>()
 .pagination-row {
   padding: 16px 20px 20px;
   border-top: 1px solid rgba(var(--theme-accent-rgb), 0.08);
+}
+
+.table-card :deep(.arco-table) {
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 @media (max-width: 1280px) {

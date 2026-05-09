@@ -1,21 +1,25 @@
 <template>
   <div class="page-header">
-    <div>
+    <div class="header-copy">
       <h3>场景编排</h3>
       <p>支持基础步骤、自定义组件和流程控制分支的可视化编排。</p>
     </div>
-    <a-space class="header-actions" wrap>
-      <a-button type="outline" :loading="aiGenerating" @click="emit('open-ai-plan')">AI 生成场景</a-button>
-      <a-button :loading="loading" @click="emit('reload-data')">刷新</a-button>
-      <a-button type="outline" @click="emit('open-testcase-workspace')">测试用例</a-button>
-      <a-button type="outline" @click="emit('open-execution-workspace')">执行记录</a-button>
-      <a-button @click="emit('create-draft')">新建草稿</a-button>
-      <a-button :disabled="!hasSteps" @click="emit('open-create-custom-component')">另存为自定义组件</a-button>
-      <a-button type="primary" :loading="saving" @click="emit('save-draft')">保存用例</a-button>
-      <a-button type="primary" status="success" :loading="saving || executing" @click="emit('open-execute-dialog')">
-        保存并执行
-      </a-button>
-    </a-space>
+    <div class="header-actions">
+      <div class="header-action-group">
+        <a-button type="outline" :loading="aiGenerating" @click="emit('open-ai-plan')">AI 生成场景</a-button>
+        <a-button :loading="loading" @click="emit('reload-data')">刷新</a-button>
+        <a-button type="outline" @click="emit('open-testcase-workspace')">测试用例</a-button>
+        <a-button type="outline" @click="emit('open-execution-workspace')">执行记录</a-button>
+      </div>
+      <div class="header-action-group header-action-group--primary">
+        <a-button @click="emit('create-draft')">新建草稿</a-button>
+        <a-button :disabled="!hasSteps" @click="emit('open-create-custom-component')">另存为自定义组件</a-button>
+        <a-button type="primary" :loading="saving" @click="emit('save-draft')">保存用例</a-button>
+        <a-button type="primary" status="success" :loading="saving || executing" @click="emit('open-execute-dialog')">
+          保存并执行
+        </a-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -47,7 +51,7 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 20px;
   padding: 18px 20px;
   border: 1px solid var(--theme-card-border);
   border-radius: 18px;
@@ -57,8 +61,29 @@ const emit = defineEmits<{
   box-shadow: var(--theme-card-shadow);
 }
 
+.header-copy {
+  flex: 1;
+  min-width: 0;
+}
+
 .header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: min(100%, 760px);
+}
+
+.header-action-group {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+.header-action-group--primary {
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--theme-accent-rgb), 0.12);
 }
 
 .page-header h3 {
@@ -85,6 +110,18 @@ const emit = defineEmits<{
     flex-direction: column;
     align-items: flex-start;
     padding: 16px;
+  }
+
+  .header-actions,
+  .header-action-group {
+    width: 100%;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .header-action-group--primary {
+    padding-top: 0;
+    border-top: none;
   }
 }
 </style>

@@ -120,9 +120,10 @@ const emit = defineEmits<SceneBuilderWorkspaceLayoutEmits>()
 <style scoped>
 .builder-grid {
   display: grid;
-  grid-template-columns: 1.05fr 1.2fr 0.95fr;
-  gap: 18px;
-  min-height: 560px;
+  align-items: start;
+  grid-template-columns: 0.94fr 1.26fr 1.02fr;
+  gap: 20px;
+  min-height: 620px;
 }
 
 @media (max-width: 1480px) {

@@ -214,6 +214,7 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+  overflow: hidden;
 }
 
 .canvas-panel :deep(.arco-card-header) {
@@ -257,6 +258,16 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
     linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.06), rgba(var(--theme-accent-rgb), 0.025)),
     rgba(var(--theme-accent-rgb), 0.04);
   cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.step-item:hover,
+.sub-step-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--theme-accent-rgb), 0.28);
 }
 
 .step-item.active,
@@ -361,13 +372,21 @@ const handleSubStepSelectionChange = (step: AppSceneStep, groupKey: StepChildGro
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+  align-items: center;
 }
 
-.sub-step-toolbar :deep(.arco-select-view) {
+.sub-step-toolbar :deep(.arco-select-view),
+.sub-step-toolbar :deep(.arco-btn) {
   border-radius: 12px;
 }
 
 @media (max-width: 960px) {
+  .step-item,
+  .sub-step-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .sub-step-toolbar {
     grid-template-columns: 1fr;
   }

@@ -101,6 +101,7 @@ const paletteTabModel = computed({
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+  overflow: hidden;
 }
 
 .library-panel :deep(.arco-card-header) {
@@ -151,7 +152,8 @@ const paletteTabModel = computed({
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
-    background 0.18s ease;
+    background 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .component-item:hover {
@@ -177,12 +179,14 @@ const paletteTabModel = computed({
 .component-name {
   font-weight: 700;
   color: var(--theme-text);
+  line-height: 1.5;
 }
 
 .component-meta,
 .component-tag {
   font-size: 12px;
   color: var(--theme-text-secondary);
+  line-height: 1.5;
 }
 
 .component-actions {
@@ -194,5 +198,17 @@ const paletteTabModel = computed({
 
 .component-actions :deep(.arco-btn-text) {
   border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+  .component-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .component-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

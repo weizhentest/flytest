@@ -121,7 +121,7 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .stack span,
@@ -137,6 +137,7 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 .filter-card,
 .table-card,
 .stat-card {
+  overflow: hidden;
   border-radius: 18px;
   border: 1px solid rgba(149, 161, 187, 0.14);
   background: rgba(255, 255, 255, 0.96);
@@ -146,8 +147,8 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 .filter-grid {
   display: grid;
   grid-template-columns: 1.6fr 180px auto;
-  gap: 12px;
-  align-items: center;
+  gap: 14px;
+  align-items: end;
 }
 
 .filter-actions,
@@ -155,6 +156,8 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .stats-grid {
@@ -185,8 +188,10 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 .stat-card :deep(.arco-card-body) {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 8px;
   padding: 18px 20px;
+  min-height: 120px;
 }
 
 .stat-label {
@@ -212,6 +217,10 @@ const emit = defineEmits<ReportsSuitePanelEmits>()
 
 .table-card :deep(.arco-table-tr:hover .arco-table-td) {
   background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+.pagination-row {
+  padding-top: 18px;
 }
 
 @media (max-width: 1280px) {

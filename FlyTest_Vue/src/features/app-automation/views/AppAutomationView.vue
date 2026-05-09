@@ -1,239 +1,276 @@
 <template>
   <div class="app-automation-shell">
-    <section class="app-automation-hero">
-      <div class="app-automation-hero__copy">
-        <div class="app-automation-hero__eyebrow">APP Automation Workspace</div>
-        <div class="app-automation-hero__title">APP 自动化</div>
-        <div class="app-automation-hero__desc">
-          覆盖设备、应用包、元素、场景编排、测试用例、测试套件、执行记录与报告的完整移动端自动化工作台。
-        </div>
-      </div>
-
-      <div class="app-automation-hero__meta">
-        <div class="hero-metric-card">
-          <span>能力范围</span>
-          <strong>12</strong>
-          <em>核心子模块</em>
-        </div>
-        <div class="hero-metric-card">
-          <span>工作模式</span>
-          <strong>端到端</strong>
-          <em>编排到回溯</em>
-        </div>
-      </div>
-    </section>
-
     <div class="app-automation-layout">
-      <a-tabs v-model:active-key="activeTab" type="card-gutter" lazy-load class="app-tabs">
-        <a-tab-pane
-          v-for="tab in tabDefinitions"
-          :key="tab.key"
-          :title="tab.title"
-        >
-          <component :is="tab.component" />
-        </a-tab-pane>
-      </a-tabs>
+      <component :is="activeDefinition.component" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
-import type { AppAutomationTab } from '../types'
-import {
-  buildAppAutomationTabChangePatch,
-  replaceAppAutomationQuery,
-} from './appAutomationNavigation'
-import {
-  appAutomationTabDefinitions,
-  normalizeAppAutomationTab,
-} from './appAutomationTabs'
+import { appAutomationTabDefinitions, normalizeAppAutomationTab } from './appAutomationTabs'
 
 const route = useRoute()
-const router = useRouter()
-
-const activeTab = computed<AppAutomationTab>({
-  get: () => normalizeAppAutomationTab(route.query.tab),
-  set: value => {
-    if (value === normalizeAppAutomationTab(route.query.tab)) {
-      return
-    }
-    void replaceAppAutomationQuery(route, router, buildAppAutomationTabChangePatch(value))
-  },
-})
 
 const tabDefinitions = appAutomationTabDefinitions
+const activeDefinition = computed(
+  () => tabDefinitions.find(tab => tab.key === normalizeAppAutomationTab(route.query.tab)) ?? tabDefinitions[0],
+)
 </script>
 
 <style scoped>
 .app-automation-shell {
-  height: auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 4px 0 0;
+  padding: 0;
 }
 
-.app-automation-hero {
+.app-automation-layout {
+  min-height: 0;
+  padding: 0;
+}
+
+:deep(.page-shell),
+:deep(.dashboard-view) {
   display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 18px;
-  position: relative;
-  overflow: hidden;
-  padding: 24px 26px;
-  border-radius: 26px;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  padding: 12px 10px 16px;
+}
+
+:deep(.empty-shell) {
+  min-height: 360px;
+  border-radius: 24px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background:
-    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.18), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.94));
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 253, 0.92));
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
 }
 
-.app-automation-hero__copy {
+:deep(.page-header) {
+  position: relative;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 24px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.09), rgba(var(--theme-accent-rgb), 0.025)),
+    rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.05);
+}
+
+:deep(.page-header::after) {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 22px 0 0 22px;
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.78), rgba(var(--theme-accent-rgb), 0.2));
+}
+
+:deep(.page-header > div:first-child) {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-width: 780px;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
-.app-automation-hero__eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--theme-accent);
-}
-
-.app-automation-hero__title {
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 1.06;
+:deep(.page-header h3) {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
   color: var(--theme-text);
 }
 
-.app-automation-hero__desc {
+:deep(.page-header p) {
   max-width: 860px;
+  margin: 4px 0 0;
   font-size: 13px;
   line-height: 1.8;
   color: var(--theme-text-secondary);
 }
 
-.app-automation-hero__meta {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
-  gap: 12px;
-  min-width: 320px;
+:deep(.page-header .arco-space) {
+  row-gap: 10px !important;
+  column-gap: 10px !important;
 }
 
-.hero-metric-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  border: 1px solid rgba(var(--theme-accent-rgb), 0.16);
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.hero-metric-card span,
-.hero-metric-card em {
-  font-size: 12px;
+:deep(.page-header .header-tip) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(var(--theme-accent-rgb), 0.06);
   color: var(--theme-text-secondary);
-  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.hero-metric-card strong {
-  font-size: 24px;
-  line-height: 1.1;
-  color: var(--theme-text);
+:deep(.page-header .auto-refresh-toggle) {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--theme-accent-rgb), 0.12);
+  background: rgba(255, 255, 255, 0.76);
 }
 
-.app-automation-layout {
-  min-height: 0;
-  height: auto;
-  padding: 2px;
+:deep(.page-header .arco-btn),
+:deep(.page-header .arco-input-wrapper),
+:deep(.page-header .arco-select-view) {
+  border-radius: 12px;
 }
 
-.app-tabs {
-  height: auto;
-  border-radius: 26px;
+:deep(.page-header .arco-input-wrapper),
+:deep(.page-header .arco-select-view) {
+  min-height: 40px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+:deep(.page-header .arco-btn) {
+  min-height: 40px;
+  padding-inline: 16px;
+}
+
+:deep(.arco-card),
+:deep(.dashboard-card),
+:deep(.device-card),
+:deep(.stats-card),
+:deep(.suite-card),
+:deep(.case-card),
+:deep(.report-panel-card),
+:deep(.scene-builder-card) {
+  border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.04);
-  overflow: visible;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.045);
+  background: rgba(255, 255, 255, 0.92);
 }
 
-:deep(.arco-tabs-nav) {
-  margin: 0;
-  padding: 16px 20px 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.82));
+:deep(.arco-card-header) {
+  min-height: 60px;
+  padding: 0 22px;
+  border-bottom-color: rgba(var(--theme-accent-rgb), 0.12);
 }
 
-:deep(.arco-tabs-nav::before) {
-  left: 20px;
-  right: 20px;
-  border-bottom-color: rgba(148, 163, 184, 0.14);
+:deep(.arco-card-header-title) {
+  color: var(--theme-text);
+  font-size: 15px;
+  font-weight: 700;
 }
 
-:deep(.arco-tabs-tab) {
+:deep(.arco-card-body) {
+  padding: 20px 22px;
+}
+
+:deep(.filter-card),
+:deep(.table-card),
+:deep(.stat-card),
+:deep(.batch-bar),
+:deep(.library-panel),
+:deep(.canvas-panel),
+:deep(.config-panel) {
+  position: relative;
+  overflow: hidden;
+}
+
+:deep(.filter-card::before),
+:deep(.table-card::before),
+:deep(.stat-card::before),
+:deep(.library-panel::before),
+:deep(.canvas-panel::before),
+:deep(.config-panel::before) {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(var(--theme-accent-rgb), 0), rgba(var(--theme-accent-rgb), 0.22), rgba(var(--theme-accent-rgb), 0));
+}
+
+:deep(.filter-grid) {
+  align-items: end;
+}
+
+:deep(.filter-actions) {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+:deep(.stats-grid) {
+  align-items: stretch;
+}
+
+:deep(.stat-card .arco-card-body) {
+  justify-content: space-between;
+}
+
+:deep(.arco-table-container) {
+  border-radius: 16px;
+}
+
+:deep(.arco-table-th) {
+  height: 48px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+:deep(.arco-table-td) {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+:deep(.arco-table-tr:hover .arco-table-td) {
+  background: rgba(var(--theme-accent-rgb), 0.035);
+}
+
+:deep(.pagination-row) {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+:deep(.builder-grid) {
+  align-items: start;
+  grid-template-columns: 0.94fr 1.26fr 1.02fr;
+  gap: 20px;
+  min-height: 620px;
+}
+
+:deep(.report-tabs .arco-tabs-nav) {
+  margin-bottom: 16px;
+}
+
+:deep(.report-tabs .arco-tabs-nav::before) {
+  border-bottom-color: rgba(149, 161, 187, 0.14);
+}
+
+:deep(.report-tabs .arco-tabs-tab) {
   min-height: 42px;
   padding: 0 16px;
   border-radius: 14px 14px 0 0;
-  color: var(--theme-text-secondary);
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
-:deep(.arco-tabs-tab:hover) {
-  color: var(--theme-text);
-}
-
-:deep(.arco-tabs-tab-active) {
-  background: rgba(var(--theme-accent-rgb), 0.1);
-  color: var(--theme-text);
-}
-
-:deep(.arco-tabs-content) {
-  height: auto;
-  overflow: visible;
-  padding: 18px;
-}
-
-@media (max-width: 980px) {
-  .app-automation-hero {
-    flex-direction: column;
-  }
-
-  .app-automation-hero__meta {
-    min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+:deep(.report-tabs .arco-tabs-tab-active) {
+  background: rgba(var(--theme-accent-rgb), 0.08);
 }
 
 @media (max-width: 768px) {
-  .app-automation-shell {
-    gap: 14px;
+  :deep(.page-shell),
+  :deep(.dashboard-view) {
+    gap: 16px;
+    padding: 4px;
   }
 
-  .app-automation-hero {
-    padding: 20px;
-    border-radius: 22px;
+  :deep(.page-header) {
+    padding: 16px 16px 16px 18px;
   }
 
-  .app-automation-hero__title {
-    font-size: 26px;
-  }
-
-  .app-tabs {
-    border-radius: 22px;
-  }
-
-  :deep(.arco-tabs-content) {
-    padding: 12px;
+  :deep(.arco-card-body) {
+    padding: 18px;
   }
 }
 </style>

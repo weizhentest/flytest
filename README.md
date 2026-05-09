@@ -1,75 +1,114 @@
 # FlyTest
 
-FlyTest 是一套面向测试团队的 AI-Native 智能测试平台，覆盖需求理解、知识库增强、测试用例设计、测试资产管理，以及 API / UI / APP 自动化执行的完整链路。
+FlyTest 是一个面向测试团队的 AI 智能测试平台，覆盖需求理解、AI 对话、测试用例、测试套件、BUG 管理、测试报告、知识库、API/UI/APP 自动化，以及 MCP / Skills 扩展能力。
 
-[English](README_EN.md)
+[English](./README_EN.md)
 
-## 项目简介
+## 项目定位
 
-FlyTest 不只是“AI 生成测试用例”工具，更强调把测试工作真正串起来：
+FlyTest 不是单点的“AI 生成用例”工具，而是把测试工作从需求到执行再到复盘串起来的一套平台：
 
-- 从需求文档进入测试流程
-- 用 AI 和知识库理解业务上下文
-- 生成、评审、管理和优化测试用例
-- 组织测试套件、执行结果、缺陷和历史记录
-- 连接 MCP、Skills、执行器和自动化服务，把设计落到执行
+- 需求文档上传、拆解、评审与报告生成
+- 基于大模型和知识库的 AI 对话与测试设计
+- 测试用例、测试套件、BUG、执行历史、测试报告统一管理
+- API 自动化、UI 自动化、APP 自动化一体化协同
+- MCP、Skills、执行器、通知等工程化扩展能力
+
+## 页面截图
+
+### 登录首页
+
+![FlyTest 登录首页](./.github/readme-assets/login-home.png)
+
+### 登录弹窗
+
+![FlyTest 登录弹窗](./.github/readme-assets/login-dialog.png)
+
+### 测试工作台示意
+
+![FlyTest 工作台示意](./.github/readme-assets/workspace-testcases.png)
 
 ## 核心能力
 
-### 1. 需求管理与需求评审
+### 1. 需求管理
 
-- 上传需求文档或直接录入需求
-- 支持文档拆分、模块化整理、结构化评审
-- 生成需求评审报告、问题清单和模块级建议
-- 将需求分析结果继续传递到测试设计环节
+- 上传需求文档并按模块拆分
+- 生成需求评审结果、问题清单、结构化建议
+- 将需求上下文继续传递给测试设计和 AI 分析模块
 
-### 2. AI 对话与测试设计
+### 2. AI 对话与智能测试设计
 
-- 基于 LangGraph 的对话式测试设计能力
+- 基于 LangGraph 的多阶段 AI 对话能力
 - 支持提示词、知识库、Skills、工具调用协同
-- 支持流式响应、会话历史、过程留痕
-- AI 生成结果可直接保存为测试用例
+- 可将 AI 生成结果直接沉淀为测试用例、测试报告或分析结论
 
 ### 3. 测试资产管理
 
-- 项目、成员、权限统一管理
-- 测试用例、测试套件、执行历史集中维护
-- 支持模块树、层级组织、筛选、分配与执行状态跟踪
-- 覆盖缺陷管理、执行记录和结果回溯
+- 测试用例管理
+- 测试套件管理
+- BUG 管理
+- 测试执行历史与测试报告
+- 项目、成员、权限、通知统一协同
 
 ### 4. 知识库增强
 
-- 项目级知识库管理
-- 文档上传、切片、向量化、检索与重排
+- 文档上传、切片、向量化、检索、重排
 - 为 AI 对话、需求评审、测试设计提供上下文增强
-- 向量存储基于 Qdrant
+- 向量检索底层可接入 Qdrant
 
-### 5. 自动化测试能力
+### 5. 自动化测试
 
-- API 自动化：请求、用例、环境、执行记录、测试报告
-- UI 自动化：页面与步骤管理、AI 智能模式、Trace 与执行留痕
-- APP 自动化：设备、应用包、元素、场景、用例与执行记录
-- 通过执行器和任务链路把测试资产落地执行
+- `API 自动化`：接口、环境、请求、断言、执行、报告
+- `UI 自动化`：页面、步骤、Trace、执行器、批量执行
+- `APP 自动化`：设备、应用包、元素、场景编排、测试用例、测试套件、执行记录、报告
 
-### 6. MCP 与 Skills 扩展
+### 6. 平台扩展能力
 
-- 支持 MCP 服务接入与工具扩展
-- 支持项目级 Skills 管理与复用
-- 可结合内部工具、Playwright 工具链与自动化服务协同工作
+- MCP 服务接入
+- Skills 管理与复用
+- 执行器联动
+- 站内通知与协作消息
 
-## 仓库结构
+## 当前仓库结构
 
 | 目录 | 说明 |
 | --- | --- |
-| `FlyTest_Django/` | 主后端，负责业务 API、AI 对话、需求评审、知识库、测试管理 |
-| `FlyTest_Vue/` | 主前端，基于 Vue 3 + TypeScript + Vite |
+| `FlyTest_Vue/` | Vue 3 + TypeScript 前端主应用 |
+| `FlyTest_Django/` | Django + DRF 主后端，承载核心业务 API |
 | `FlyTest_FastAPI_AppAutomation/` | APP 自动化独立服务 |
-| `FlyTest_Actuator/` | UI 自动化执行器，负责实际浏览器执行 |
+| `FlyTest_Actuator/` | UI 自动化执行器 |
 | `FlyTest_MCP/` | MCP 工具服务 |
-| `FlyTest_Skills/` | 内置 Skills 仓库 |
-| `docs/` | 项目文档 |
-| `deploy-scripts/` | 启动与部署脚本 |
-| `data/` | 运行期数据目录 |
+| `FlyTest_Skills/` | 项目内置 Skills |
+| `docs/` | 项目文档与历史截图 |
+| `deploy-scripts/` | 构建与部署脚本 |
+
+## 前端主要模块
+
+根据当前路由与功能目录，FlyTest 前端主要包含：
+
+- 首页与个人中心
+- 项目管理 / 用户管理 / 组织管理 / 权限管理
+- 需求管理 / 需求文档详情 / 专项分析报告
+- AI 对话 / LLM 配置 / Prompt 与图表能力
+- 知识库管理 / Skills 管理 / MCP 远程配置 / API Key 管理
+- 测试用例 / 测试套件 / BUG 管理 / 测试执行历史
+- API 自动化 / UI 自动化 / APP 自动化
+- 数据工厂 / 用例模板管理
+
+## 后端主要领域
+
+结合当前 Django 应用结构，主后端已覆盖这些核心领域：
+
+- `accounts`：认证、注册、登录、个人中心
+- `projects`：项目、成员、权限关联
+- `testcases`：测试用例、套件、BUG、执行历史
+- `requirements` 相关能力：需求文档、拆解、评审、报告
+- `langgraph_integration`：AI 对话、多阶段生成
+- `knowledge`：知识库、向量检索
+- `api_automation`：接口自动化
+- `ui_automation`：UI 自动化
+- `site_notifications`：站内通知
+- `skills` / `mcp_tools` / `api_keys`：平台扩展与安全接入
 
 ## 技术栈
 
@@ -85,52 +124,53 @@ FlyTest 不只是“AI 生成测试用例”工具，更强调把测试工作真
 
 - Django 5
 - Django REST Framework
-- Channels / Daphne
+- Channels / ASGI
 - SimpleJWT
 - Celery + Redis
+
+### AI / 自动化 / 基础设施
+
 - LangChain / LangGraph
-
-### AI / 检索 / 自动化
-
-- OpenAI 兼容模型接入
-- Qwen Provider 支持
 - Qdrant
-- Playwright
 - FastAPI
+- Playwright
 - MCP
 - Skills Runtime
+- PostgreSQL / SQLite
 
 ## 系统架构
 
 ```mermaid
 flowchart LR
     FE["FlyTest_Vue"] --> BE["FlyTest_Django"]
-    BE --> AI["LangGraph / AI 对话"]
-    BE --> REQ["需求评审与测试管理"]
-    BE --> KB["知识库 / Qdrant"]
-    BE --> CEL["Celery / Redis"]
+    FE --> APP["FlyTest_FastAPI_AppAutomation"]
+    BE --> AI["LangGraph / LLM"]
+    BE --> KB["Knowledge / Qdrant"]
+    BE --> CASE["Test Cases / Suites / Bugs / Reports"]
     BE --> MCP["FlyTest_MCP"]
-    BE --> APP["FlyTest_FastAPI_AppAutomation"]
-    BE --> ACT["FlyTest_Actuator / Playwright"]
+    BE --> CEL["Celery / Redis"]
+    BE --> UIA["UI Automation"]
+    APP --> DEV["APP Devices / Packages / Elements / Scenes"]
+    UIA --> ACT["FlyTest_Actuator / Playwright"]
     MCP --> BE
     ACT --> BE
 ```
 
 ## 典型使用流程
 
-1. 创建项目并配置成员权限
-2. 上传需求文档并完成需求拆解
-3. 发起需求评审，查看问题清单与结构化建议
-4. 在 AI 对话中结合需求、提示词和知识库生成测试用例
-5. 将结果保存到测试用例库并组织进测试套件
-6. 在 API / UI / APP 自动化模块中继续编排与执行
-7. 查看执行记录、缺陷、报告和 Trace，持续优化测试资产
+1. 创建项目并配置成员与权限
+2. 上传需求文档，完成拆解与评审
+3. 在 AI 对话中结合需求、提示词、知识库生成测试设计
+4. 沉淀测试用例并组织成测试套件
+5. 在 API / UI / APP 自动化模块中执行测试
+6. 提交和跟踪 BUG，查看执行记录与测试报告
+7. 通过通知、报告、知识库持续沉淀测试资产
 
 ## 快速开始
 
 ### 方式一：Docker Compose
 
-适合快速体验完整能力。
+适合快速体验完整平台。
 
 ```bash
 git clone https://github.com/flytestai/flytest.git
@@ -142,13 +182,13 @@ docker compose up -d
 默认端口：
 
 - 前端：`http://localhost:8913`
-- 后端 API：`http://localhost:8912`
+- Django API：`http://localhost:8912`
 - MCP：`http://localhost:8914`
 - Playwright MCP：`http://localhost:8916`
 - Qdrant：`http://localhost:8918`
 - PostgreSQL：`localhost:8919`
 
-默认管理员账号可通过环境变量覆盖；未修改时，`docker-compose.yml` 中的默认值为：
+默认管理员账号可通过环境变量覆盖；如果未修改，`docker-compose.yml` 中的默认值为：
 
 - 用户名：`admin`
 - 密码：`admin123456`
@@ -166,7 +206,7 @@ python manage.py migrate
 python manage.py runserver 0.0.0.0:8000
 ```
 
-#### 2. 启动 Vue 前端
+#### 2. 启动前端
 
 ```bash
 cd FlyTest_Vue
@@ -182,7 +222,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
 ```
 
-#### 4. 启动 MCP 工具服务
+#### 4. 启动 MCP 服务
 
 ```bash
 cd FlyTest_MCP
@@ -198,49 +238,48 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## 常用配置项
+## 常用环境变量
 
-建议从根目录 `.env.example` 开始配置。常见变量包括：
+建议从根目录 `.env.example` 开始配置。常用变量包括：
 
 - `DATABASE_TYPE`
-- `POSTGRES_HOST` / `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD`
-- `CELERY_BROKER_URL`
-- `CELERY_RESULT_BACKEND`
-- `UI_AUTOMATION_AI_USE_CELERY`
-- `UI_AUTOMATION_CELERY_QUEUE`
+- `POSTGRES_HOST`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
 - `DJANGO_SECRET_KEY`
 - `DJANGO_ALLOWED_HOSTS`
 - `DJANGO_CORS_ALLOWED_ORIGINS`
+- `CELERY_BROKER_URL`
+- `CELERY_RESULT_BACKEND`
+- `QDRANT_URL`
 - `FLYTEST_API_KEY`
 - `FLYTEST_BACKEND_URL`
-- `QDRANT_URL`
 - `MEDIA_ROOT`
 
-## 相关文档
+## 文档入口
 
-- 快速开始：[`docs/QUICK_START.md`](./docs/QUICK_START.md)
-- Docker 部署：[`docker-compose.yml`](./docker-compose.yml)
-- 后端说明：[`FlyTest_Django/README.md`](./FlyTest_Django/README.md)
-- 前端说明：[`FlyTest_Vue/README.md`](./FlyTest_Vue/README.md)
-- APP 自动化服务：[`FlyTest_FastAPI_AppAutomation/README.md`](./FlyTest_FastAPI_AppAutomation/README.md)
-- UI 执行器：[`FlyTest_Actuator/README.md`](./FlyTest_Actuator/README.md)
-- MCP 工具服务：[`FlyTest_MCP/README.md`](./FlyTest_MCP/README.md)
-- 许可证说明：[`docs/license.md`](./docs/license.md)
+- 快速开始：[docs/QUICK_START.md](./docs/QUICK_START.md)
+- 项目文档首页：[docs/index.md](./docs/index.md)
+- 后端说明：[FlyTest_Django/README.md](./FlyTest_Django/README.md)
+- 前端说明：[FlyTest_Vue/README.md](./FlyTest_Vue/README.md)
+- APP 自动化服务：[FlyTest_FastAPI_AppAutomation/README.md](./FlyTest_FastAPI_AppAutomation/README.md)
+- UI 执行器：[FlyTest_Actuator/README.md](./FlyTest_Actuator/README.md)
+- MCP 服务：[FlyTest_MCP/README.md](./FlyTest_MCP/README.md)
 
-## 授权说明
+## 许可说明
 
-当前项目采用 [PolyForm Noncommercial 1.0.0](./LICENSE) 许可证。
+当前项目采用 [PolyForm Noncommercial 1.0.0](./LICENSE)。
 
 这意味着：
 
-- 允许学习、研究、评估和内部非商业使用
-- 允许在非商业前提下修改和分发
-- 不允许直接用于商业目的
-- 商业部署、商业交付、SaaS 或客户项目使用需要单独授权
+- 允许学习、研究、评估与内部非商业使用
+- 允许在非商业前提下修改与分发
+- 不允许直接用于商业交付、商业 SaaS 或收费部署
 
 ## 安全建议
 
 - 默认配置更适合本地开发或受控内网环境
-- 生产环境请务必修改默认管理员密码与 API Key
-- 对 MCP、Skills、执行器等高权限能力启用最小权限原则
-- 对外暴露服务前，请补齐访问控制、密钥管理、网关与审计策略
+- 生产环境请务必修改管理员密码、API Key、密钥配置
+- 对 MCP、Skills、执行器等高权限能力启用最小权限策略
+- 对外部署前请补齐访问控制、审计、网关与备份策略

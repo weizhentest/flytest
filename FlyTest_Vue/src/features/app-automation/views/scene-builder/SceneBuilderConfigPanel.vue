@@ -182,6 +182,7 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
   border: 1px solid var(--theme-card-border);
   background: var(--theme-card-bg);
   box-shadow: var(--theme-card-shadow);
+  overflow: hidden;
 }
 
 .config-panel :deep(.arco-card-header) {
@@ -197,6 +198,16 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
 .config-empty,
 .config-empty-text {
   color: var(--theme-text-secondary);
+}
+
+.config-empty {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 1px dashed rgba(var(--theme-accent-rgb), 0.2);
+  background: rgba(var(--theme-accent-rgb), 0.04);
 }
 
 .config-form {
@@ -233,6 +244,10 @@ const emit = defineEmits<SceneBuilderConfigPanelEmits>()
 :deep(.arco-btn),
 :deep(.arco-picker) {
   border-radius: 12px;
+}
+
+:deep(.arco-form-item) {
+  margin-bottom: 18px;
 }
 
 </style>
