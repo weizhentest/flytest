@@ -16,17 +16,25 @@ FlyTest 不是单点的“AI 生成用例”工具，而是把测试工作从需
 
 ## 页面截图
 
-### 登录首页
+### 登录与入口
 
-![FlyTest 登录首页](./.github/readme-assets/login-home.png)
+| 登录首页 | 登录弹窗 |
+| --- | --- |
+| ![FlyTest 登录首页](./.github/readme-assets/login-home.png) | ![FlyTest 登录弹窗](./.github/readme-assets/login-dialog.png) |
 
-### 登录弹窗
+### 管理后台
 
-![FlyTest 登录弹窗](./.github/readme-assets/login-dialog.png)
+| 首页工作台 | 测试用例 |
+| --- | --- |
+| ![FlyTest 首页工作台](./.github/readme-assets/dashboard-home.png) | ![FlyTest 测试用例](./.github/readme-assets/testcases-page.png) |
 
-### 测试工作台示意
+| BUG 管理 | APP 自动化 |
+| --- | --- |
+| ![FlyTest BUG 管理](./.github/readme-assets/bugs-page.png) | ![FlyTest APP 自动化](./.github/readme-assets/app-automation-page.png) |
 
-![FlyTest 工作台示意](./.github/readme-assets/workspace-testcases.png)
+| 执行历史 | 测试工作台示意 |
+| --- | --- |
+| ![FlyTest 执行历史](./.github/readme-assets/reports-page.png) | ![FlyTest 测试工作台示意](./.github/readme-assets/workspace-testcases.png) |
 
 ## 核心能力
 
