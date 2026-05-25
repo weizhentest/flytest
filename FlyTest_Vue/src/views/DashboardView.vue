@@ -337,8 +337,13 @@ const tokenUsageLoading = ref(false)
 const usagePreset = ref<'today' | '7d' | '30d' | 'custom'>('today')
 const usageSource = ref('')
 const currentProjectName = computed(() => projectStore.currentProject?.name || 'FlyTest Project')
-const DASHBOARD_REFRESH_INTERVAL_MS = 30000
+const DASHBOARD_REFRESH_INTERVAL_MS = 120000
+const DASHBOARD_FOCUS_REFRESH_COOLDOWN_MS = 15000
 let dashboardRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let isDashboardRefreshing = false
+let isSecondaryLoading = false
+let lastRefreshStartedAt = 0
+let lastLoadedProjectId: number | null = null
 
 const periodOptions = [
   { label: '日', value: 'day' as const },
@@ -533,6 +538,11 @@ const avgTokensPerRequest = computed(() => {
   return formatTokenCount(Math.round(total / requests))
 })
 
+const canTriggerRefresh = () => {
+  const now = Date.now()
+  return !isDashboardRefreshing && now - lastRefreshStartedAt >= DASHBOARD_FOCUS_REFRESH_COOLDOWN_MS
+}
+
 const clearDashboardRefreshTimer = () => {
   if (dashboardRefreshTimer !== null) {
     clearTimeout(dashboardRefreshTimer)
@@ -563,7 +573,7 @@ const fetchTokenStats = async () => {
 
 const changeTokenPeriod = (period: 'day' | 'week' | 'month') => {
   tokenPeriod.value = period
-  fetchTokenStats()
+  void fetchTokenStats()
 }
 
 const fetchTokenUsage = async () => {
@@ -640,23 +650,52 @@ const fetchStatistics = async ({ controlLoading = true }: { controlLoading?: boo
   }
 }
 
-const refreshDashboardData = async ({ silent = false }: { silent?: boolean } = {}) => {
+const fetchDashboardSecondaryData = async () => {
+  if (isSecondaryLoading || !isApproved.value || !currentProjectId.value) {
+    return
+  }
+
+  isSecondaryLoading = true
+  try {
+    await Promise.allSettled([
+      fetchTokenStats(),
+      fetchTokenUsage(),
+    ])
+  } finally {
+    isSecondaryLoading = false
+  }
+}
+
+const refreshDashboardData = async ({
+  silent = false,
+  projectChanged = false,
+}: {
+  silent?: boolean
+  projectChanged?: boolean
+} = {}) => {
   if (!isApproved.value || !currentProjectId.value) {
     clearDashboardRefreshTimer()
     return
   }
+  if (isDashboardRefreshing) {
+    return
+  }
 
+  isDashboardRefreshing = true
+  lastRefreshStartedAt = Date.now()
   if (!silent) {
     loading.value = true
   }
 
   try {
-    await Promise.allSettled([
-      fetchStatistics({ controlLoading: false }),
-      fetchTokenStats(),
-      fetchTokenUsage(),
-    ])
+    await fetchStatistics({ controlLoading: false })
+    if (projectChanged) {
+      tokenStats.value = null
+      tokenUsageStats.value = null
+    }
+    void fetchDashboardSecondaryData()
   } finally {
+    isDashboardRefreshing = false
     if (!silent) {
       loading.value = false
     }
@@ -666,6 +705,9 @@ const refreshDashboardData = async ({ silent = false }: { silent?: boolean } = {
 
 const handleWindowFocus = () => {
   if (!isApproved.value || !currentProjectId.value) {
+    return
+  }
+  if (!canTriggerRefresh()) {
     return
   }
   void refreshDashboardData({ silent: true })
@@ -679,25 +721,33 @@ const handleVisibilityChange = () => {
   if (!isApproved.value || !currentProjectId.value) {
     return
   }
+  if (!canTriggerRefresh()) {
+    return
+  }
   void refreshDashboardData({ silent: true })
 }
 
-watch(currentProjectId, () => {
+watch(currentProjectId, (newProjectId) => {
   if (!isApproved.value) {
     statistics.value = null
+    tokenStats.value = null
+    tokenUsageStats.value = null
     clearDashboardRefreshTimer()
-  } else if (currentProjectId.value) {
-    void refreshDashboardData()
+    lastLoadedProjectId = null
+  } else if (newProjectId) {
+    const projectChanged = newProjectId !== lastLoadedProjectId
+    lastLoadedProjectId = newProjectId
+    void refreshDashboardData({ projectChanged })
   } else {
     statistics.value = null
+    tokenStats.value = null
+    tokenUsageStats.value = null
     clearDashboardRefreshTimer()
+    lastLoadedProjectId = null
   }
-})
+}, { immediate: true })
 
 onMounted(() => {
-  if (isApproved.value && currentProjectId.value) {
-    void refreshDashboardData()
-  }
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })

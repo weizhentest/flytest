@@ -988,3 +988,744 @@
 :root[data-theme='black'] body[arco-theme='dark'] .arco-drawer-resize-trigger {
   background: rgba(148, 163, 184, 0.14) !important;
 }
+
+/* Flat visual layer: style-only overrides, no layout or behavior changes. */
+body:has(.main-layout) {
+  --flat-radius-xs: 4px;
+  --flat-radius-sm: 6px;
+  --flat-radius-md: 8px;
+  --flat-bg: #f5f6f8;
+  --flat-surface: #ffffff;
+  --flat-surface-soft: #f8fafc;
+  --flat-border: #dfe3ea;
+  --flat-border-strong: #cbd5e1;
+  --flat-hover: #f1f5f9;
+  --flat-active: rgba(var(--theme-accent-rgb), 0.1);
+  --flat-shadow: none;
+  --theme-bg: var(--flat-bg);
+  --theme-page-bg: var(--flat-bg);
+  --theme-surface: var(--flat-surface);
+  --theme-surface-soft: var(--flat-surface-soft);
+  --theme-shell: var(--flat-surface);
+  --theme-shell-soft: var(--flat-surface);
+  --theme-card-bg: var(--flat-surface);
+  --theme-card-border: var(--flat-border);
+  --theme-card-shadow: var(--flat-shadow);
+  --theme-card-shadow-strong: var(--flat-shadow);
+  --theme-input-bg: var(--flat-surface);
+  --theme-input-border: var(--flat-border);
+  --theme-input-hover: var(--flat-hover);
+  --theme-input-focus-bg: var(--flat-surface);
+  --theme-overlay-bg: var(--flat-surface);
+  --theme-overlay-border: var(--flat-border);
+  --theme-overlay-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --theme-shadow: var(--flat-shadow);
+  --theme-focus-ring: rgba(var(--theme-accent-rgb), 0.14);
+}
+
+:root[data-theme='black'] body:has(.main-layout) {
+  --flat-bg: #080b10;
+  --flat-surface: #11151b;
+  --flat-surface-soft: #171c24;
+  --flat-surface-strong: #1c232d;
+  --flat-border: rgba(148, 163, 184, 0.14);
+  --flat-border-strong: rgba(148, 163, 184, 0.24);
+  --flat-hover: #1a2029;
+  --flat-active: rgba(var(--theme-accent-rgb), 0.16);
+  --theme-bg: var(--flat-bg);
+  --theme-page-bg: var(--flat-bg);
+  --theme-surface: var(--flat-surface);
+  --theme-surface-soft: var(--flat-surface-soft);
+  --theme-shell: var(--flat-surface);
+  --theme-shell-soft: var(--flat-surface);
+  --theme-page-text: #cbd5e1;
+  --theme-text: #e5edf6;
+  --theme-text-secondary: #a7b4c5;
+  --theme-text-tertiary: #77869a;
+  --theme-border: var(--flat-border);
+  --theme-card-bg: var(--flat-surface);
+  --theme-card-border: var(--flat-border);
+  --theme-card-shadow: none;
+  --theme-card-shadow-strong: none;
+  --theme-input-bg: #0d1117;
+  --theme-input-border: var(--flat-border);
+  --theme-input-hover: var(--flat-hover);
+  --theme-input-focus-bg: #101821;
+  --theme-overlay-bg: #131922;
+  --theme-overlay-border: var(--flat-border);
+  --theme-overlay-shadow: none;
+  --theme-shadow: none;
+  --theme-panel-bg: var(--flat-surface);
+  --theme-panel-bg-strong: var(--flat-surface);
+  --theme-panel-bg-soft: var(--flat-surface-soft);
+  --theme-hero-bg: var(--flat-surface);
+  --theme-hero-stat-bg: var(--flat-surface-soft);
+  --theme-card-header-bg: var(--flat-surface-soft);
+  --theme-table-row-bg: var(--flat-surface);
+  --theme-table-row-alt-bg: var(--flat-surface-soft);
+  --theme-table-row-hover-bg: var(--flat-hover);
+  --theme-toggle-bg: var(--flat-surface-soft);
+  --theme-toggle-hover: var(--flat-surface-strong);
+  --theme-accent: #38bdf8;
+  --theme-accent-hover: #67e8f9;
+  --theme-accent-active: #0ea5e9;
+  --theme-accent-rgb: 56, 189, 248;
+  --theme-focus-ring: rgba(var(--theme-accent-rgb), 0.2);
+  --color-bg-1: var(--flat-surface);
+  --color-bg-2: var(--flat-bg);
+  --color-bg-3: var(--flat-surface-soft);
+  --color-bg-4: var(--flat-surface-strong);
+  --color-fill-1: rgba(148, 163, 184, 0.08);
+  --color-fill-2: rgba(148, 163, 184, 0.12);
+  --color-fill-3: rgba(148, 163, 184, 0.18);
+  --color-border-1: var(--flat-border);
+  --color-border-2: var(--flat-border-strong);
+  --color-text-1: var(--theme-text);
+  --color-text-2: var(--theme-text-secondary);
+  --color-text-3: var(--theme-text-tertiary);
+}
+
+html body:has(.main-layout),
+:root[data-theme='black'] body:has(.main-layout) {
+  background: var(--theme-page-bg) !important;
+}
+
+html body:has(.main-layout) .main-layout,
+html body:has(.main-layout) .dashboard-view,
+html body:has(.main-layout) .testcase-management-container,
+html body:has(.main-layout) .testbug-management-container,
+html body:has(.main-layout) .test-report-view {
+  background: var(--theme-page-bg) !important;
+}
+
+html body:has(.main-layout) .main-layout::after,
+html body:has(.main-layout) .main-layout .header::before,
+html body:has(.main-layout) .main-layout .sider::before,
+html body:has(.main-layout) .main-layout .content::before,
+html body:has(.main-layout) .dashboard-view::before,
+html body:has(.main-layout) .testcase-management-container::before,
+html body:has(.main-layout) .testbug-management-container::before,
+html body:has(.main-layout) .test-report-view::before {
+  content: none !important;
+  display: none !important;
+}
+
+html body:has(.main-layout) .main-layout .header,
+html body:has(.main-layout) .main-layout .sider,
+html body:has(.main-layout) .main-layout .content,
+html body:has(.main-layout) .main-layout .layout-menu-popup,
+html body:has(.main-layout) .main-layout .user-panel-dropdown {
+  border: 1px solid var(--flat-border) !important;
+  border-radius: var(--flat-radius-md) !important;
+  background: var(--flat-surface) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html body:has(.main-layout) .main-layout .header {
+  margin: 12px 12px 10px !important;
+}
+
+html body:has(.main-layout) .main-layout .sider {
+  margin: 0 0 12px 12px !important;
+}
+
+html body:has(.main-layout) .main-layout .content {
+  margin: 0 12px 12px !important;
+}
+
+html body:has(.main-layout) .main-layout .menu,
+html body:has(.main-layout) .main-layout .arco-menu,
+html body:has(.main-layout) .main-layout .arco-menu-light,
+html body:has(.main-layout) .layout-menu-popup .arco-menu,
+html body:has(.main-layout) .layout-menu-popup .arco-menu-light {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-item,
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-inline-header,
+html body:has(.main-layout) .layout-menu-popup .arco-menu-item,
+html body:has(.main-layout) .layout-menu-popup .arco-menu-pop-header {
+  border-radius: var(--flat-radius-sm) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background: transparent !important;
+}
+
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-item:hover,
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-inline-header:hover,
+html body:has(.main-layout) .layout-menu-popup .arco-menu-item:hover,
+html body:has(.main-layout) .layout-menu-popup .arco-menu-pop-header:hover {
+  background: var(--flat-hover) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-selected,
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-inline-header.arco-menu-selected,
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-item-selected {
+  background: var(--flat-active) !important;
+  border-left: 2px solid var(--theme-accent) !important;
+  color: var(--theme-accent) !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .main-layout .arco-menu-light .arco-menu-icon,
+html body:has(.main-layout) .main-layout .arco-menu-light .menu-parent-icon {
+  border: 0 !important;
+  border-radius: var(--flat-radius-sm) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html body:has(.main-layout) .main-layout .workspace-badge,
+html body:has(.main-layout) .main-layout .generation-badge-stage,
+html body:has(.main-layout) .main-layout .theme-switch-button,
+html body:has(.main-layout) .main-layout .avatar,
+html body:has(.main-layout) .main-layout .version-badge {
+  border-radius: var(--flat-radius-sm) !important;
+  background: var(--flat-surface-soft) !important;
+  border: 1px solid var(--flat-border) !important;
+  box-shadow: none !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+html body:has(.main-layout) .main-layout .workspace-dot {
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .arco-btn,
+html body:has(.main-layout) .arco-tag,
+html body:has(.main-layout) .arco-alert,
+html body:has(.main-layout) .arco-pagination-item,
+html body:has(.main-layout) .arco-tabs-tab,
+html body:has(.main-layout) .arco-radio-button,
+html body:has(.main-layout) .arco-checkbox,
+html body:has(.main-layout) .arco-switch {
+  border-radius: var(--flat-radius-sm) !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .arco-btn {
+  transform: none !important;
+}
+
+html body:has(.main-layout) .arco-btn:hover,
+html body:has(.main-layout) .arco-btn:active {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .arco-btn-primary {
+  background: var(--theme-accent) !important;
+  border-color: var(--theme-accent) !important;
+}
+
+html body:has(.main-layout) .arco-btn-primary:hover {
+  background: var(--theme-accent-hover) !important;
+  border-color: var(--theme-accent-hover) !important;
+}
+
+html body:has(.main-layout) .arco-input-wrapper,
+html body:has(.main-layout) .arco-select-view,
+html body:has(.main-layout) .arco-textarea-wrapper,
+html body:has(.main-layout) .arco-picker,
+html body:has(.main-layout) .arco-input-tag,
+html body:has(.main-layout) .arco-cascader-view,
+html body:has(.main-layout) .arco-mention {
+  border-radius: var(--flat-radius-sm) !important;
+  background: var(--theme-input-bg) !important;
+  border-color: var(--flat-border) !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .arco-input-wrapper:focus-within,
+html body:has(.main-layout) .arco-input-wrapper.arco-input-focus,
+html body:has(.main-layout) .arco-select-view-focus,
+html body:has(.main-layout) .arco-picker-focused,
+html body:has(.main-layout) .arco-textarea-wrapper-focus {
+  border-color: var(--theme-accent) !important;
+  box-shadow: 0 0 0 2px var(--theme-focus-ring) !important;
+}
+
+html body:has(.main-layout) .arco-card,
+html body:has(.main-layout) .arco-list,
+html body:has(.main-layout) .arco-table,
+html body:has(.main-layout) .arco-collapse,
+html body:has(.main-layout) .arco-collapse-item,
+html body:has(.main-layout) .arco-descriptions,
+html body:has(.main-layout) .arco-modal,
+html body:has(.main-layout) .arco-modal-content,
+html body:has(.main-layout) .arco-drawer,
+html body:has(.main-layout) .arco-drawer-content,
+html body:has(.main-layout) .arco-popover,
+html body:has(.main-layout) .arco-popover-content,
+html body:has(.main-layout) .arco-popconfirm,
+html body:has(.main-layout) .arco-popconfirm-content,
+html body:has(.main-layout) .arco-trigger-popup {
+  border-radius: var(--flat-radius-md) !important;
+  background: var(--flat-surface) !important;
+  border-color: var(--flat-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html body:has(.main-layout) .arco-modal-header,
+html body:has(.main-layout) .arco-modal-footer,
+html body:has(.main-layout) .arco-drawer-header,
+html body:has(.main-layout) .arco-drawer-footer,
+html body:has(.main-layout) .arco-card-header,
+html body:has(.main-layout) .arco-table-th,
+html body:has(.main-layout) .arco-collapse-item-header,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-label-block,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-label-inline {
+  background: var(--flat-surface-soft) !important;
+  border-color: var(--flat-border) !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .arco-table-tr:hover .arco-table-td,
+html body:has(.main-layout) .arco-table-tbody > .arco-table-tr:hover > .arco-table-td {
+  background: var(--flat-hover) !important;
+}
+
+html body:has(.main-layout) .arco-dropdown-content,
+html body:has(.main-layout) .arco-select-dropdown,
+html body:has(.main-layout) .arco-picker-container,
+html body:has(.main-layout) .arco-tooltip-content,
+html body:has(.main-layout) .arco-message,
+html body:has(.main-layout) .arco-notification {
+  border-radius: var(--flat-radius-md) !important;
+  background: var(--flat-surface) !important;
+  border: 1px solid var(--flat-border) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+html body:has(.main-layout) .arco-tooltip-content {
+  color: var(--theme-text) !important;
+}
+
+html body:has(.main-layout) .arco-tooltip-popup-arrow {
+  background-color: var(--flat-surface) !important;
+}
+
+html body:has(.main-layout) .content-card,
+html body:has(.main-layout) .panel-card,
+html body:has(.main-layout) .table-card,
+html body:has(.main-layout) .form-card,
+html body:has(.main-layout) .stats-card,
+html body:has(.main-layout) .stat-card,
+html body:has(.main-layout) .metric-card,
+html body:has(.main-layout) .summary-card,
+html body:has(.main-layout) .filter-card,
+html body:has(.main-layout) .toolbar,
+html body:has(.main-layout) .filter-bar,
+html body:has(.main-layout) .table-toolbar,
+html body:has(.main-layout) [class$='-card'],
+html body:has(.main-layout) [class$='-panel'],
+html body:has(.main-layout) [class$='-shell'] {
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html body:has(.main-layout) .dashboard-view .hero-section,
+html body:has(.main-layout) .dashboard-view .hero-highlight-card,
+html body:has(.main-layout) .dashboard-view .hero-aside-panel,
+html body:has(.main-layout) .dashboard-view .kpi-card,
+html body:has(.main-layout) .dashboard-view .surface-card,
+html body:has(.main-layout) .dashboard-view .approval-shell,
+html body:has(.main-layout) .dashboard-view .empty-project-shell,
+html body:has(.main-layout) .dashboard-view .token-total-panel,
+html body:has(.main-layout) .dashboard-view .trend-bar-shell,
+html body:has(.main-layout) .dashboard-view .operations-item,
+html body:has(.main-layout) .dashboard-view .token-mini-card,
+html body:has(.main-layout) .dashboard-view .token-ranking-item,
+html body:has(.main-layout) .dashboard-view .execution-legend-item,
+html body:has(.main-layout) .dashboard-view .hero-score-stat,
+html body:has(.main-layout) .dashboard-view .governance-item {
+  border-radius: var(--flat-radius-md) !important;
+  background: var(--flat-surface) !important;
+  border: 1px solid var(--flat-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html body:has(.main-layout) .dashboard-view .hero-section,
+html body:has(.main-layout) .dashboard-view .dashboard-content,
+html body:has(.main-layout) .dashboard-view .dashboard-spin,
+html body:has(.main-layout) .dashboard-view .arco-spin-children {
+  background: transparent !important;
+}
+
+html body:has(.main-layout) .dashboard-view .kpi-card:hover,
+html body:has(.main-layout) .dashboard-view .surface-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .dashboard-view .kpi-icon-wrap,
+html body:has(.main-layout) .dashboard-view .empty-project-icon,
+html body:has(.main-layout) .dashboard-view .section-badge,
+html body:has(.main-layout) .dashboard-view .kpi-tag,
+html body:has(.main-layout) .dashboard-view .period-tag,
+html body:has(.main-layout) .dashboard-view .summary-item,
+html body:has(.main-layout) .dashboard-view .review-track {
+  border-radius: var(--flat-radius-sm) !important;
+  box-shadow: none !important;
+}
+
+html body:has(.main-layout) .dashboard-view .trend-bar,
+html body:has(.main-layout) .dashboard-view .legend-tag::before {
+  border-radius: var(--flat-radius-xs) !important;
+}
+
+html body:has(.main-layout) .dashboard-view .trend-bar.passed,
+html body:has(.main-layout) .dashboard-view .legend-tag.passed::before {
+  background: #22c55e !important;
+}
+
+html body:has(.main-layout) .dashboard-view .trend-bar.failed,
+html body:has(.main-layout) .dashboard-view .legend-tag.failed::before {
+  background: #ef4444 !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popover-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popconfirm,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popconfirm-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-card,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-dropdown-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-select-dropdown,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-picker-container {
+  background: var(--flat-surface) !important;
+  border-color: var(--flat-border) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-footer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-footer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-card-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-th {
+  background: var(--flat-surface-soft) !important;
+  border-color: var(--flat-border) !important;
+}
+
+/* Refined admin black theme. */
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) {
+  color: var(--theme-page-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout {
+  background: var(--flat-bg) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .sider,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .user-panel-dropdown,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .layout-menu-popup {
+  background: var(--flat-surface) !important;
+  border-color: var(--flat-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .content {
+  background: var(--flat-bg) !important;
+  border-color: var(--flat-border) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .logo-text,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .username,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .dropdown-username,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout h1,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout h2,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout h3,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout h4,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='__title'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='-title'] {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .logo-subtitle,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .dropdown-email,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='__subtitle'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='-subtitle'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='__description'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='-description'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='__hint'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='-hint'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='__meta'],
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout [class$='-meta'] {
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .workspace-badge,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .generation-badge-stage,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .theme-switch-button,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .version-badge,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .menu-parent-icon {
+  background: var(--flat-surface-soft) !important;
+  border-color: var(--flat-border) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .theme-switch-button:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .menu-parent-icon:hover {
+  background: var(--flat-surface-strong) !important;
+  border-color: var(--flat-border-strong) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .arco-menu-light .arco-menu-item:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .arco-menu-light .arco-menu-inline-header:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .layout-menu-popup .arco-menu-item:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .layout-menu-popup .arco-menu-pop-header:hover {
+  background: var(--flat-hover) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .arco-menu-light .arco-menu-selected,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .arco-menu-light .arco-menu-inline-header.arco-menu-selected,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .main-layout .arco-menu-light .arco-menu-item-selected {
+  background: rgba(var(--theme-accent-rgb), 0.12) !important;
+  border-left-color: var(--theme-accent) !important;
+  color: var(--theme-accent-hover) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-card,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-list,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-collapse,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popover-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popconfirm,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-popconfirm-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-trigger-popup,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-dropdown-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-select-dropdown,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-picker-container {
+  background: var(--flat-surface) !important;
+  border-color: var(--flat-border) !important;
+  color: var(--theme-page-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-modal-footer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-drawer-footer,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-card-header,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-th,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-thead > tr > .arco-table-th {
+  background: var(--flat-surface-soft) !important;
+  border-color: var(--flat-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-container,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-content,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-element {
+  background: var(--flat-surface) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-tr .arco-table-td,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-tbody > .arco-table-tr > .arco-table-td {
+  background: var(--theme-table-row-bg) !important;
+  border-bottom-color: var(--flat-border) !important;
+  color: var(--theme-page-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-striped .arco-table-tr:nth-child(even) .arco-table-td {
+  background: var(--theme-table-row-alt-bg) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-tr:hover .arco-table-td,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-table-tbody > .arco-table-tr:hover > .arco-table-td {
+  background: var(--theme-table-row-hover-bg) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-input-wrapper,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-select-view,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-textarea-wrapper,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-picker,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-input-tag,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-cascader-view,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-mention {
+  background: var(--theme-input-bg) !important;
+  border-color: var(--flat-border) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-input,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-textarea,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-select-view-value,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-picker input {
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-input-wrapper:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-select-view:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-textarea-wrapper:hover,
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-picker:hover {
+  background: var(--theme-input-focus-bg) !important;
+  border-color: var(--flat-border-strong) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-tooltip-content {
+  background: var(--flat-surface-strong) !important;
+  border-color: var(--flat-border-strong) !important;
+  color: var(--theme-text) !important;
+}
+
+:root[data-theme='black'] body[arco-theme='dark']:has(.main-layout) .arco-tooltip-popup-arrow {
+  background-color: var(--flat-surface-strong) !important;
+}
+
+/* Compact admin density layer. */
+html body:has(.main-layout) {
+  --flat-page-padding: 10px;
+  --flat-section-gap: 12px;
+  --flat-card-padding: 12px;
+  --flat-card-padding-sm: 10px;
+  --flat-card-header-padding: 9px 12px;
+}
+
+html body:has(.main-layout) .main-layout .content:not(.content--chat) > * {
+  padding: var(--flat-page-padding) !important;
+}
+
+html body:has(.main-layout) .dashboard-view,
+html body:has(.main-layout) .testcase-management-container,
+html body:has(.main-layout) .testbug-management-container,
+html body:has(.main-layout) .test-report-view,
+html body:has(.main-layout) .api-automation-view,
+html body:has(.main-layout) .app-automation-view,
+html body:has(.main-layout) .ui-automation-view,
+html body:has(.main-layout) .project-management-view,
+html body:has(.main-layout) .requirement-management-view,
+html body:has(.main-layout) .knowledge-management-view,
+html body:has(.main-layout) .data-factory-view {
+  padding: var(--flat-page-padding) !important;
+}
+
+html body:has(.main-layout) .arco-card-header {
+  min-height: 38px !important;
+  padding: var(--flat-card-header-padding) !important;
+}
+
+html body:has(.main-layout) .arco-card-body,
+html body:has(.main-layout) .arco-list-content,
+html body:has(.main-layout) .arco-collapse-item-content-box {
+  padding: var(--flat-card-padding) !important;
+}
+
+html body:has(.main-layout) .arco-descriptions-body,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-label-block,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-value-block,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-label-inline,
+html body:has(.main-layout) .arco-descriptions-bordered .arco-descriptions-item-value-inline {
+  padding: 8px 10px !important;
+}
+
+html body:has(.main-layout) .content-card,
+html body:has(.main-layout) .panel-card,
+html body:has(.main-layout) .table-card,
+html body:has(.main-layout) .form-card,
+html body:has(.main-layout) .filter-card,
+html body:has(.main-layout) .toolbar,
+html body:has(.main-layout) .filter-bar,
+html body:has(.main-layout) .table-toolbar,
+html body:has(.main-layout) [class$='-card'],
+html body:has(.main-layout) [class$='-panel'],
+html body:has(.main-layout) [class$='-shell'] {
+  padding: var(--flat-card-padding) !important;
+}
+
+html body:has(.main-layout) .stats-card,
+html body:has(.main-layout) .stat-card,
+html body:has(.main-layout) .metric-card,
+html body:has(.main-layout) .summary-card,
+html body:has(.main-layout) .kpi-card,
+html body:has(.main-layout) .surface-card,
+html body:has(.main-layout) .token-mini-card,
+html body:has(.main-layout) .operations-item,
+html body:has(.main-layout) .execution-legend-item,
+html body:has(.main-layout) .hero-score-stat,
+html body:has(.main-layout) .governance-item {
+  min-height: auto !important;
+  padding: var(--flat-card-padding) !important;
+}
+
+html body:has(.main-layout) .hero-section,
+html body:has(.main-layout) .page-hero,
+html body:has(.main-layout) .page-header,
+html body:has(.main-layout) .view-header,
+html body:has(.main-layout) .dashboard-view .hero-highlight-card,
+html body:has(.main-layout) .dashboard-view .hero-aside-panel,
+html body:has(.main-layout) [class$='-header-bar'] {
+  padding: 14px !important;
+}
+
+html body:has(.main-layout) .dashboard-content,
+html body:has(.main-layout) .content-grid,
+html body:has(.main-layout) .main-grid,
+html body:has(.main-layout) .page-grid,
+html body:has(.main-layout) .stats-grid,
+html body:has(.main-layout) .kpi-grid,
+html body:has(.main-layout) .metrics-grid,
+html body:has(.main-layout) .summary-grid,
+html body:has(.main-layout) .cards-grid,
+html body:has(.main-layout) .surface-grid,
+html body:has(.main-layout) .overview-grid,
+html body:has(.main-layout) .report-grid,
+html body:has(.main-layout) .quick-actions-grid,
+html body:has(.main-layout) [class$='-grid'] {
+  gap: var(--flat-section-gap) !important;
+}
+
+html body:has(.main-layout) .arco-row {
+  row-gap: var(--flat-section-gap) !important;
+}
+
+html body:has(.main-layout) .arco-space {
+  gap: 8px !important;
+}
+
+html body:has(.main-layout) .arco-table-th,
+html body:has(.main-layout) .arco-table-td {
+  padding: 8px 10px !important;
+}
+
+html body:has(.main-layout) .arco-tabs-content {
+  padding-top: 10px !important;
+}
+
+html body:has(.main-layout) .arco-modal-body,
+html body:has(.main-layout) .arco-drawer-body {
+  padding: 14px 16px !important;
+}
+
+@media (max-width: 768px) {
+  html body:has(.main-layout) {
+    --flat-page-padding: 8px;
+    --flat-section-gap: 10px;
+    --flat-card-padding: 10px;
+    --flat-card-padding-sm: 8px;
+    --flat-card-header-padding: 8px 10px;
+  }
+}

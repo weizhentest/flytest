@@ -1,4 +1,4 @@
-ARG PYTHON_BASE_IMAGE=python:3.11-slim
+ARG PYTHON_BASE_IMAGE=python:3.11-slim-bullseye
 
 FROM ${PYTHON_BASE_IMAGE}
 
@@ -12,16 +12,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_PROGRESS_BAR=off \
     DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app
-
-RUN if [ "$APT_BASE_URL" != "http://deb.debian.org" ]; then \
-        sed -i "s|http://deb.debian.org/debian|${APT_BASE_URL}/debian|g; s|http://deb.debian.org/debian-security|${APT_BASE_URL}/debian-security|g" /etc/apt/sources.list.d/debian.sources; \
-    fi && \
-    apt-get -o Acquire::Retries=10 update && \
-    apt-get -o Acquire::Retries=10 install -y --fix-missing --no-install-recommends \
-    adb \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt
 

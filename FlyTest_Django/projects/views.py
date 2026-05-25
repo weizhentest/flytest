@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q, Sum
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import filters, status
@@ -296,6 +298,10 @@ class ProjectViewSet(BaseModelViewSet):
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
         project = self.get_object()
+        cache_key = f"project_statistics:{project.id}"
+        cached_response = cache.get(cache_key)
+        if cached_response is not None:
+            return Response(cached_response)
 
         from mcp_tools.models import RemoteMCPConfig
         from skills.models import Skill
@@ -317,8 +323,6 @@ class ProjectViewSet(BaseModelViewSet):
             total_passed=Count('id', filter=Q(status='completed')),
             total_failed=Count('id', filter=Q(status='failed')),
             total_cancelled=Count('id', filter=Q(status='cancelled')),
-        )
-        execution_result_totals = executions.aggregate(
             total_passed_cases=Sum('passed_count'),
             total_failed_cases=Sum('failed_count'),
             total_skipped_cases=Sum('skipped_count'),
@@ -329,21 +333,36 @@ class ProjectViewSet(BaseModelViewSet):
         now = timezone.now()
         thirty_days_ago = now - timedelta(days=30)
 
+        seven_days_ago = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+        daily_stats_source = executions.filter(created_at__gte=seven_days_ago).annotate(
+            period=TruncDate('created_at')
+        ).values('period').annotate(
+            execution_count=Count('id'),
+            passed=Sum('passed_count'),
+            failed=Sum('failed_count'),
+        )
+        daily_stats_map = {
+            item['period'].strftime('%Y-%m-%d'): {
+                'execution_count': item['execution_count'] or 0,
+                'passed': item['passed'] or 0,
+                'failed': item['failed'] or 0,
+            }
+            for item in daily_stats_source
+            if item['period']
+        }
         daily_stats_7d = []
-        for i in range(7):
-            day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
-            day_end = day_start + timedelta(days=1)
-            day_executions = executions.filter(created_at__gte=day_start, created_at__lt=day_end)
-            day_agg = day_executions.aggregate(count=Count('id'), passed=Sum('passed_count'), failed=Sum('failed_count'))
+        for offset in range(6, -1, -1):
+            day = (now - timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+            date_key = day.strftime('%Y-%m-%d')
+            day_stats = daily_stats_map.get(date_key, {})
             daily_stats_7d.append(
                 {
-                    'date': day_start.strftime('%Y-%m-%d'),
-                    'execution_count': day_agg['count'] or 0,
-                    'passed': day_agg['passed'] or 0,
-                    'failed': day_agg['failed'] or 0,
+                    'date': date_key,
+                    'execution_count': day_stats.get('execution_count', 0),
+                    'passed': day_stats.get('passed', 0),
+                    'failed': day_stats.get('failed', 0),
                 }
             )
-        daily_stats_7d.reverse()
 
         stats_30d = executions.filter(created_at__gte=thirty_days_ago).aggregate(
             execution_count=Count('id'),
@@ -362,13 +381,19 @@ class ProjectViewSet(BaseModelViewSet):
 
         ui_testcases = UiTestCase.objects.filter(project=project)
         ui_executions = UiExecutionRecord.objects.filter(test_case__project=project)
+        ui_execution_stats = ui_executions.aggregate(
+            total_executions=Count('id'),
+            success=Count('id', filter=Q(status=2)),
+            failed=Count('id', filter=Q(status=3)),
+            cancelled=Count('id', filter=Q(status=4)),
+        )
         ui_automation_stats = {
             'total_cases': ui_testcases.count(),
-            'total_executions': ui_executions.count(),
+            'total_executions': ui_execution_stats['total_executions'] or 0,
             'by_status': {
-                'success': ui_executions.filter(status=2).count(),
-                'failed': ui_executions.filter(status=3).count(),
-                'cancelled': ui_executions.filter(status=4).count(),
+                'success': ui_execution_stats['success'] or 0,
+                'failed': ui_execution_stats['failed'] or 0,
+                'cancelled': ui_execution_stats['cancelled'] or 0,
             },
         }
 
@@ -392,11 +417,11 @@ class ProjectViewSet(BaseModelViewSet):
                     'cancelled': execution_stats['total_cancelled'],
                 },
                 'case_results': {
-                    'total': execution_result_totals['total_cases'] or 0,
-                    'passed': execution_result_totals['total_passed_cases'] or 0,
-                    'failed': execution_result_totals['total_failed_cases'] or 0,
-                    'skipped': execution_result_totals['total_skipped_cases'] or 0,
-                    'error': execution_result_totals['total_error_cases'] or 0,
+                    'total': execution_stats['total_cases'] or 0,
+                    'passed': execution_stats['total_passed_cases'] or 0,
+                    'failed': execution_stats['total_failed_cases'] or 0,
+                    'skipped': execution_stats['total_skipped_cases'] or 0,
+                    'error': execution_stats['total_error_cases'] or 0,
                 },
             },
             'execution_trend': {
@@ -412,4 +437,5 @@ class ProjectViewSet(BaseModelViewSet):
             'ui_automation': ui_automation_stats,
         }
 
+        cache.set(cache_key, response_data, 20)
         return Response(response_data)

@@ -69,8 +69,13 @@
           <icon-moon-fill v-else class="theme-switch-icon" />
         </button>
         <NotificationCenter :is-admin="Boolean(user?.is_staff)" />
-        <a-avatar class="avatar">
-          <span>{{ userInitial }}</span>
+        <a-avatar class="avatar user-avatar" :title="avatarLabel">
+          <img
+            :src="generatedAvatarUrl"
+            :alt="avatarLabel"
+            class="user-avatar-image"
+            draggable="false"
+          />
         </a-avatar>
         <a-dropdown
           trigger="click"
@@ -718,14 +723,69 @@ const user = computed(() => authStore.currentUser);
 const isApproved = computed(() => authStore.isApproved);
 const username = computed(() => user.value?.username || '');
 const displayName = computed(() => user.value?.real_name || user.value?.username || '');
-const userInitial = computed(() => {
-  if (user.value?.real_name && user.value.real_name.length > 0) {
-    return user.value.real_name.charAt(0).toUpperCase();
+const avatarLabel = computed(() => `${displayName.value || username.value || '用户'}头像`);
+
+const hashString = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  if (user.value?.first_name && user.value.first_name.length > 0) {
-    return user.value.first_name.charAt(0).toUpperCase();
-  }
-  return displayName.value.charAt(0).toUpperCase();
+  return hash >>> 0;
+};
+
+const generatedAvatarUrl = computed(() => {
+  const seed = `${user.value?.id ?? 'guest'}-${user.value?.username || displayName.value || 'flytest'}`;
+  const hash = hashString(seed);
+  const palettes = [
+    ['#0ea5e9', '#22d3ee'],
+    ['#2563eb', '#8b5cf6'],
+    ['#059669', '#34d399'],
+    ['#f97316', '#facc15'],
+    ['#e11d48', '#fb7185'],
+    ['#7c3aed', '#c084fc'],
+    ['#0f766e', '#14b8a6'],
+    ['#475569', '#94a3b8'],
+  ];
+  const skinTones = ['#f8c7a6', '#eab18d', '#c7865c', '#8d5a3b', '#f1d0b5'];
+  const hairColors = ['#1f2937', '#3f2f25', '#5b3a29', '#111827', '#6b4f3b'];
+  const shirts = ['#ffffff', '#e0f2fe', '#dcfce7', '#fef3c7', '#fce7f3', '#ede9fe'];
+  const palette = palettes[hash % palettes.length];
+  const skin = skinTones[(hash >>> 4) % skinTones.length];
+  const hair = hairColors[(hash >>> 8) % hairColors.length];
+  const shirt = shirts[(hash >>> 12) % shirts.length];
+  const faceX = 32 + ((hash >>> 16) % 5) - 2;
+  const hairVariant = hash % 3;
+  const mouthVariant = (hash >>> 20) % 2;
+  const hairShape = [
+    `M${faceX - 13} 28c1-11 8-17 19-17 10 0 17 7 18 17-6-5-13-7-21-7-7 0-12 2-16 7z`,
+    `M${faceX - 14} 29c-1-13 8-19 19-19 9 0 16 5 18 16-7-4-14-4-21-2-5 1-9 2-16 5z`,
+    `M${faceX - 15} 26c4-12 12-17 23-14 8 2 13 9 13 18-6-6-14-9-22-9-8 0-14 2-14 5z`,
+  ][hairVariant];
+  const mouth = mouthVariant === 0
+    ? `M${faceX - 5} 36c3 3 8 3 11 0`
+    : `M${faceX - 4} 37c2 2 7 2 9 0`;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="${palette[0]}"/>
+          <stop offset="1" stop-color="${palette[1]}"/>
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+      <circle cx="17" cy="14" r="14" fill="#ffffff" opacity=".16"/>
+      <circle cx="52" cy="48" r="18" fill="#0f172a" opacity=".12"/>
+      <path d="M14 58c2-13 10-21 18-21s16 8 18 21H14z" fill="${shirt}"/>
+      <circle cx="${faceX}" cy="30" r="13" fill="${skin}"/>
+      <path d="${hairShape}" fill="${hair}"/>
+      <circle cx="${faceX - 5}" cy="31" r="1.8" fill="#111827" opacity=".82"/>
+      <circle cx="${faceX + 6}" cy="31" r="1.8" fill="#111827" opacity=".82"/>
+      <path d="${mouth}" fill="none" stroke="#7f1d1d" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+      <path d="M20 58h24" stroke="#0f172a" stroke-width="2" opacity=".08"/>
+    </svg>
+  `;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 });
 
 const themeButtonLabel = computed(() => (themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题'));
@@ -1425,6 +1485,21 @@ onUnmounted(() => {
 .avatar {
   background-color: var(--theme-accent);
   color: #ffffff;
+}
+
+.user-avatar {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+}
+
+.user-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
 }
 
 .user-dropdown-wrapper :deep(.arco-dropdown-content) {

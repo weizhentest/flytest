@@ -205,7 +205,7 @@
         <span v-else class="text-gray">未分配</span>
       </template>
       <template #operations="{ record }">
-        <a-space v-if="record" :size="4">
+        <a-space v-if="record" class="operation-actions" :size="4">
           <a-button type="primary" size="mini" @click.stop="handleViewTestCase(record)">查看</a-button>
           <a-button type="primary" size="mini" @click.stop="handleEditTestCase(record)">编辑</a-button>
           <a-dropdown
@@ -558,9 +558,11 @@ const columns = computed(() => {
     title: '操作',
     dataIndex: 'operations',
     slotName: 'operations',
-    width: isSuiteActionMode.value ? 200 : 180,
+    width: isSuiteActionMode.value ? 224 : 208,
     fixed: 'right',
-    align: 'center'
+    align: 'center',
+    headerCellClass: 'operation-column',
+    cellClass: 'operation-column',
   },
   {
     title: '',
@@ -1240,6 +1242,9 @@ defineExpose({
   display: flex;
   flex-direction: column;
   border-radius: 14px;
+  --testcase-fixed-column-bg: var(--theme-table-row-bg, var(--flat-surface, var(--color-bg-2, #ffffff)));
+  --testcase-fixed-column-header-bg: var(--flat-surface-soft, #f8fafc);
+  --testcase-fixed-column-hover-bg: var(--theme-table-row-hover-bg, var(--flat-hover, var(--color-fill-2, #f2f3f5)));
 }
 
 :deep(.test-case-table .arco-table) {
@@ -1256,7 +1261,21 @@ defineExpose({
   padding: 0 !important;
   border-left: none !important;
   border-right: none !important;
-  background: transparent !important;
+}
+
+:deep(.test-case-table .operation-column),
+:deep(.test-case-table .resize-tail-column) {
+  background: var(--testcase-fixed-column-bg) !important;
+}
+
+:deep(.test-case-table .arco-table-th.operation-column),
+:deep(.test-case-table .arco-table-th.resize-tail-column) {
+  background: var(--testcase-fixed-column-header-bg) !important;
+}
+
+:deep(.test-case-table .arco-table-tr:hover .operation-column),
+:deep(.test-case-table .arco-table-tr:hover .resize-tail-column) {
+  background: var(--testcase-fixed-column-hover-bg) !important;
 }
 
 .text-gray {
@@ -1323,6 +1342,23 @@ defineExpose({
 
 :deep(.test-case-table .arco-table-cell-fixed-right) {
   padding: 6px 4px;
+}
+
+.operation-actions {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+
+:deep(.test-case-table .operation-actions .arco-space-item) {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+:deep(.test-case-table .operation-actions .arco-btn-size-mini) {
+  min-width: 34px;
+  padding: 0 5px;
 }
 
 :deep(.test-case-table .arco-space-compact) {

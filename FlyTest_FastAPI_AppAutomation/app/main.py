@@ -82,11 +82,19 @@ init_storage()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    app_scheduler.start()
+    try:
+        app_scheduler.start()
+    except RuntimeError:
+        # Some low-resource hosts restrict creating background threads.
+        # The service can still handle manual operations without the scheduler.
+        pass
     try:
         yield
     finally:
-        app_scheduler.stop()
+        try:
+            app_scheduler.stop()
+        except RuntimeError:
+            pass
 
 
 app = FastAPI(title="FlyTest APP Automation Service", version="0.2.0", lifespan=lifespan)
