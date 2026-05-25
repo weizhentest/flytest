@@ -20,6 +20,42 @@
       <section class="section-content">
         <a-card v-if="activeSection === 'profile'" title="个人资料" class="panel-card">
           <div class="form-shell">
+            <div class="avatar-editor">
+              <div class="profile-avatar-preview" :title="avatarLabel">
+                <img
+                  v-if="profileForm.avatar_url"
+                  :src="profileForm.avatar_url"
+                  :alt="avatarLabel"
+                  draggable="false"
+                />
+                <span v-else>{{ avatarInitial }}</span>
+              </div>
+              <div class="avatar-actions">
+                <a-space>
+                  <a-button size="small" :loading="avatarLoading" @click="triggerAvatarPicker">
+                    上传头像
+                  </a-button>
+                  <a-button
+                    v-if="profileForm.avatar_url"
+                    size="small"
+                    status="danger"
+                    :loading="avatarLoading"
+                    @click="handleRemoveAvatar"
+                  >
+                    移除头像
+                  </a-button>
+                </a-space>
+                <div class="avatar-tip">支持 JPG、PNG、WEBP、GIF，最大 5MB。</div>
+                <input
+                  ref="avatarInputRef"
+                  class="avatar-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  @change="handleAvatarFileChange"
+                />
+              </div>
+            </div>
+
             <template v-if="!isEditingProfile">
               <div class="profile-readonly">
                 <div class="readonly-item">
@@ -155,14 +191,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/authStore'
 import {
   changeCurrentPassword,
+  deleteCurrentAvatar,
   getCurrentProfile,
   updateCurrentProfile,
+  uploadCurrentAvatar,
   type ProfileData,
 } from '@/services/profileService'
 
@@ -172,7 +210,9 @@ const authStore = useAuthStore()
 const activeSection = ref<'profile' | 'password'>('profile')
 const isEditingProfile = ref(false)
 const profileLoading = ref(false)
+const avatarLoading = ref(false)
 const passwordLoading = ref(false)
+const avatarInputRef = ref<HTMLInputElement | null>(null)
 
 const profileForm = reactive({
   username: '',
@@ -182,6 +222,7 @@ const profileForm = reactive({
   email: '',
   real_name: '',
   phone_number: '',
+  avatar_url: '',
 })
 
 const organizations = ref<string[]>([])
@@ -195,6 +236,15 @@ const passwordForm = reactive({
 const CHINA_MOBILE_REGEX = /^1[3-9]\d{9}$/
 const CHINESE_REAL_NAME_REGEX = /^[\u4e00-\u9fff·]{2,20}$/
 const SYSTEM_USERNAME_REGEX = /^(?=.*[A-Za-z])[A-Za-z0-9]{3,}$/
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024
+const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+const avatarInitial = computed(() => {
+  const label = profileForm.real_name || profileForm.username || authStore.currentUser?.real_name || authStore.currentUser?.username || 'U'
+  return label.slice(0, 1).toUpperCase()
+})
+
+const avatarLabel = computed(() => `${profileForm.real_name || profileForm.username || '用户'}头像`)
 
 const formatDateTime = (value?: string | null) => {
   if (!value) {
@@ -215,6 +265,7 @@ const applyProfileData = (payload: Partial<ProfileData> | null | undefined) => {
   profileForm.email = payload?.email || authStore.currentUser?.email || ''
   profileForm.real_name = payload?.real_name || authStore.currentUser?.real_name || ''
   profileForm.phone_number = payload?.phone_number || authStore.currentUser?.phone_number || ''
+  profileForm.avatar_url = payload?.avatar_url ?? authStore.currentUser?.avatar_url ?? ''
   organizations.value = payload?.groups || authStore.currentUser?.groups || []
 }
 
@@ -244,6 +295,60 @@ const loadProfile = async () => {
 
 const handleSectionChange = (key: string) => {
   activeSection.value = key as 'profile' | 'password'
+}
+
+const triggerAvatarPicker = () => {
+  avatarInputRef.value?.click()
+}
+
+const handleAvatarFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+
+  if (!file) {
+    return
+  }
+  if (!AVATAR_TYPES.includes(file.type)) {
+    Message.warning('请选择 JPG、PNG、WEBP 或 GIF 图片')
+    return
+  }
+  if (file.size > MAX_AVATAR_SIZE) {
+    Message.warning('头像图片不能超过 5MB')
+    return
+  }
+
+  avatarLoading.value = true
+  try {
+    const response = await uploadCurrentAvatar(file)
+    if (!response.success || !response.data) {
+      Message.error(response.error || '头像上传失败')
+      return
+    }
+
+    applyProfileData(response.data)
+    patchCurrentUser(response.data)
+    Message.success('头像已更新')
+  } finally {
+    avatarLoading.value = false
+  }
+}
+
+const handleRemoveAvatar = async () => {
+  avatarLoading.value = true
+  try {
+    const response = await deleteCurrentAvatar()
+    if (!response.success || !response.data) {
+      Message.error(response.error || '头像移除失败')
+      return
+    }
+
+    applyProfileData(response.data)
+    patchCurrentUser(response.data)
+    Message.success('头像已移除')
+  } finally {
+    avatarLoading.value = false
+  }
 }
 
 const handleSaveProfile = async () => {
@@ -373,6 +478,56 @@ onMounted(() => {
   margin: 0 auto;
 }
 
+.avatar-editor {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 12px;
+  border: 1px solid var(--ui-panel-border);
+  border-radius: 10px;
+  background: var(--ui-panel-bg);
+}
+
+.profile-avatar-preview {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--ui-toolbar-border);
+  background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.9), rgba(14, 165, 233, 0.92));
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.profile-avatar-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-actions {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.avatar-tip {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+}
+
+.avatar-input {
+  display: none;
+}
+
 .form-shell :deep(.arco-form-item) {
   width: 100%;
 }
@@ -497,6 +652,10 @@ onMounted(() => {
 
   .form-shell {
     max-width: none;
+  }
+
+  .avatar-editor {
+    align-items: flex-start;
   }
 }
 </style>

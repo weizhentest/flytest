@@ -11,6 +11,7 @@ from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, Throttled
 from rest_framework.filters import SearchFilter
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -25,6 +26,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from .throttles import LoginRateThrottle, RegisterRateThrottle
 from .serializers import (
     ChangePasswordSerializer,
+    CurrentUserAvatarSerializer,
     CurrentUserProfileSerializer,
     UserSerializer,
     UserDetailSerializer,
@@ -102,7 +104,7 @@ class CurrentUserAPIView(APIView):
 
     def get(self, request):
         # 认证通过后直接返回当前用户详情，避免客户端再额外请求用户编号。
-        serializer = UserDetailSerializer(request.user)
+        serializer = UserDetailSerializer(request.user, context={"request": request})
         return Response(serializer.data)
 
 
@@ -111,7 +113,7 @@ class CurrentUserProfileAPIView(APIView):
 
     def get(self, request):
         ensure_user_profile(request.user)
-        serializer = UserDetailSerializer(request.user)
+        serializer = UserDetailSerializer(request.user, context={"request": request})
         return Response(
             {
                 "status": "success",
@@ -129,11 +131,54 @@ class CurrentUserProfileAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        response_serializer = UserDetailSerializer(request.user)
+        response_serializer = UserDetailSerializer(request.user, context={"request": request})
         return Response(
             {
                 "status": "success",
                 "message": "个人资料更新成功",
+                "data": response_serializer.data,
+            }
+        )
+
+
+class CurrentUserAvatarAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        return self._save_avatar(request)
+
+    def patch(self, request):
+        return self._save_avatar(request)
+
+    def delete(self, request):
+        profile = ensure_user_profile(request.user)
+        if profile.avatar:
+            profile.avatar.delete(save=False)
+        profile.avatar = ""
+        profile.save(update_fields=["avatar", "updated_at"])
+        response_serializer = UserDetailSerializer(request.user, context={"request": request})
+        return Response(
+            {
+                "status": "success",
+                "message": "头像已移除",
+                "data": response_serializer.data,
+            }
+        )
+
+    def _save_avatar(self, request):
+        serializer = CurrentUserAvatarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile = ensure_user_profile(request.user)
+        if profile.avatar:
+            profile.avatar.delete(save=False)
+        profile.avatar = serializer.validated_data["avatar"]
+        profile.save(update_fields=["avatar", "updated_at"])
+        response_serializer = UserDetailSerializer(request.user, context={"request": request})
+        return Response(
+            {
+                "status": "success",
+                "message": "头像已更新",
                 "data": response_serializer.data,
             }
         )

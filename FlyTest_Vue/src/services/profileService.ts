@@ -11,6 +11,7 @@ export interface ProfileData {
   last_name: string
   real_name?: string
   phone_number?: string
+  avatar_url?: string
   is_staff: boolean
   is_active: boolean
   groups: string[]
@@ -40,6 +41,22 @@ export const updateCurrentProfile = (payload: UpdateProfilePayload) =>
     url: '/accounts/profile/',
     method: 'PUT',
     data: payload,
+  })
+
+export const uploadCurrentAvatar = (file: File) => {
+  const formData = new FormData()
+  formData.append('avatar', file)
+  return request<ProfileData>({
+    url: '/accounts/profile/avatar/',
+    method: 'POST',
+    data: formData,
+  })
+}
+
+export const deleteCurrentAvatar = () =>
+  request<ProfileData>({
+    url: '/accounts/profile/avatar/',
+    method: 'DELETE',
   })
 
 export const changeCurrentPassword = (payload: ChangePasswordPayload) =>

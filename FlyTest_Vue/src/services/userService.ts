@@ -13,6 +13,7 @@ export interface User {
   last_name: string;
   real_name?: string;
   phone_number?: string;
+  avatar_url?: string;
   is_staff: boolean;
   is_active: boolean;
   groups?: string[];

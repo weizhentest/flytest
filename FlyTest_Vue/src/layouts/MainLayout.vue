@@ -69,9 +69,9 @@
           <icon-moon-fill v-else class="theme-switch-icon" />
         </button>
         <NotificationCenter :is-admin="Boolean(user?.is_staff)" />
-        <a-avatar class="avatar user-avatar" :title="avatarLabel">
+        <a-avatar class="avatar user-avatar" shape="square" :title="avatarLabel">
           <img
-            :src="generatedAvatarUrl"
+            :src="displayAvatarUrl"
             :alt="avatarLabel"
             class="user-avatar-image"
             draggable="false"
@@ -724,6 +724,7 @@ const isApproved = computed(() => authStore.isApproved);
 const username = computed(() => user.value?.username || '');
 const displayName = computed(() => user.value?.real_name || user.value?.username || '');
 const avatarLabel = computed(() => `${displayName.value || username.value || '用户'}头像`);
+const uploadedAvatarUrl = computed(() => (user.value?.avatar_url || '').trim());
 
 const hashString = (value: string) => {
   let hash = 2166136261;
@@ -773,7 +774,7 @@ const generatedAvatarUrl = computed(() => {
           <stop offset="1" stop-color="${palette[1]}"/>
         </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="18" fill="url(#bg)"/>
+      <rect width="64" height="64" rx="6" fill="url(#bg)"/>
       <circle cx="17" cy="14" r="14" fill="#ffffff" opacity=".16"/>
       <circle cx="52" cy="48" r="18" fill="#0f172a" opacity=".12"/>
       <path d="M14 58c2-13 10-21 18-21s16 8 18 21H14z" fill="${shirt}"/>
@@ -787,6 +788,8 @@ const generatedAvatarUrl = computed(() => {
   `;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 });
+
+const displayAvatarUrl = computed(() => uploadedAvatarUrl.value || generatedAvatarUrl.value);
 
 const themeButtonLabel = computed(() => (themeStore.isBlack ? '切换到默认主题' : '切换到黑色主题'));
 type MenuNavigationTarget = {
@@ -1492,6 +1495,7 @@ onUnmounted(() => {
   overflow: hidden;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px !important;
 }
 
 .user-avatar-image {
@@ -1499,6 +1503,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
   user-select: none;
 }
 

@@ -26,6 +26,7 @@ interface User {
   last_name: string
   phone_number?: string
   real_name?: string
+  avatar_url?: string
   is_staff: boolean
   is_active: boolean
   groups: any[]

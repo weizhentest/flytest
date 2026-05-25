@@ -349,6 +349,7 @@ class UserApprovalMixin(serializers.Serializer):
 class UserProfileMixin(serializers.Serializer):
     phone_number = serializers.SerializerMethodField()
     real_name = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
     username_changed_at = serializers.SerializerMethodField()
     username_next_editable_at = serializers.SerializerMethodField()
     can_change_username = serializers.SerializerMethodField()
@@ -360,6 +361,20 @@ class UserProfileMixin(serializers.Serializer):
     def get_real_name(self, obj):
         profile = get_user_profile(obj)
         return profile.real_name if profile else ""
+
+    def get_avatar_url(self, obj):
+        profile = get_user_profile(obj)
+        if not profile or not profile.avatar:
+            return ""
+        try:
+            url = profile.avatar.url
+        except ValueError:
+            return ""
+        updated_at = getattr(profile, "updated_at", None)
+        if updated_at:
+            url = f"{url}?v={int(updated_at.timestamp())}"
+        request = self.context.get("request") if hasattr(self, "context") else None
+        return request.build_absolute_uri(url) if request else url
 
     def get_username_changed_at(self, obj):
         profile = get_user_profile(obj)
@@ -394,6 +409,7 @@ class UserSerializer(UserApprovalMixin, UserProfileMixin, serializers.ModelSeria
             "last_name",
             "phone_number",
             "real_name",
+            "avatar_url",
             "is_staff",
             "is_active",
             "approval_status",
@@ -504,6 +520,7 @@ class UserDetailSerializer(UserApprovalMixin, UserProfileMixin, serializers.Mode
             "last_name",
             "phone_number",
             "real_name",
+            "avatar_url",
             "is_staff",
             "is_active",
             "groups",
@@ -1173,6 +1190,21 @@ class UserApprovalReviewSerializer(serializers.Serializer):
     )
 
 
+class CurrentUserAvatarSerializer(serializers.Serializer):
+    avatar = serializers.ImageField(required=True)
+
+    def validate_avatar(self, value):
+        max_size = 5 * 1024 * 1024
+        allowed_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+        content_type = (getattr(value, "content_type", "") or "").lower()
+
+        if value.size > max_size:
+            raise serializers.ValidationError("头像图片不能超过 5MB。")
+        if content_type and content_type not in allowed_types:
+            raise serializers.ValidationError("头像仅支持 JPG、PNG、WEBP 或 GIF 图片。")
+        return value
+
+
 class CurrentUserProfileSerializer(serializers.Serializer):
     username = serializers.CharField(required=False)
     email = serializers.EmailField(required=False, allow_blank=True)
@@ -1299,7 +1331,7 @@ class MyTokenObtainPairSerializer(BaseTokenObtainPairSerializer):
         data = super().validate(attrs)
 
         # 添加用户基础信息
-        user_serializer = UserDetailSerializer(self.user)
+        user_serializer = UserDetailSerializer(self.user, context=self.context)
         data["user"] = user_serializer.data
 
         return data

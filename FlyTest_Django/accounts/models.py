@@ -57,6 +57,11 @@ class UserApproval(models.Model):
         return f"{self.user.username} - {self.get_status_display()}"
 
 
+def user_avatar_upload_path(instance, filename):
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
+    return f"accounts/avatars/user_{instance.user_id}/avatar.{extension}"
+
+
 class UserProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -75,6 +80,12 @@ class UserProfile(models.Model):
         blank=True,
         default="",
         verbose_name="真实姓名",
+    )
+    avatar = models.ImageField(
+        upload_to=user_avatar_upload_path,
+        blank=True,
+        default="",
+        verbose_name="头像",
     )
     password_changed_at = models.DateTimeField(
         null=True,
