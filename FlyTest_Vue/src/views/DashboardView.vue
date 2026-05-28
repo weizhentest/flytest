@@ -17,8 +17,11 @@
           <icon-bar-chart />
         </div>
         <div class="empty-project-copy">
-          <h2>请选择项目后查看管理首页</h2>
-          <p>首页会集中展示当前项目的测试用例、执行结果、自动化能力与 AI 资源使用情况。</p>
+          <h2>当前还没有可用项目</h2>
+          <p>请先创建项目，或联系管理员将你加入项目后，再查看管理首页。</p>
+          <div class="empty-project-actions">
+            <a-button type="primary" @click="goToProjectManagement">去创建项目</a-button>
+          </div>
         </div>
       </div>
     </div>
@@ -303,6 +306,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
 import {
   IconBarChart, IconFile, IconThunderbolt, IconApps, IconDesktop
 } from '@arco-design/web-vue/es/icon'
@@ -315,6 +319,7 @@ import type { TokenUsageStats as LlmTokenUsageStats } from '@/features/langgraph
 
 const projectStore = useProjectStore()
 const authStore = useAuthStore()
+const router = useRouter()
 const loading = ref(false)
 const statistics = ref<ProjectStatistics | null>(null)
 const tokenStats = ref<TokenUsageStats | null>(null)
@@ -347,6 +352,10 @@ const approvalSubtitle = computed(() => {
   }
   return '新注册用户默认没有后台权限，请等待管理员审核并分配权限后再使用管理后台。'
 })
+
+const goToProjectManagement = () => {
+  void router.push({ name: 'ProjectManagement' })
+}
 
 const formatDashboardDate = (date: Date): string => {
   const pad = (num: number) => String(num).padStart(2, '0')
@@ -831,6 +840,10 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.7;
   color: var(--theme-text-secondary);
+}
+
+.empty-project-actions {
+  margin-top: 18px;
 }
 
 .hero-section {
