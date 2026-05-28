@@ -295,18 +295,6 @@
           </article>
         </section>
 
-        <LlmTokenUsageDashboard
-          :stats="tokenUsageStats"
-          :loading="tokenUsageLoading"
-          :preset="usagePreset"
-          :source="usageSource"
-          :start-date="usageStartDate"
-          :end-date="usageEndDate"
-          @update:preset="handleUsagePresetChange"
-          @update:source="handleUsageSourceChange"
-          @update:date-range="handleUsageDateRangeChange"
-          @refresh="fetchTokenUsage"
-        />
       </a-spin>
     </div>
   </div>
@@ -322,7 +310,6 @@ import { getProjectStatistics, getTokenUsageStats, type ProjectStatistics, type 
 import { useProjectStore } from '@/store/projectStore'
 import { useAuthStore } from '@/store/authStore'
 import { getUserDisplayName } from '@/utils/userDisplay'
-import LlmTokenUsageDashboard from '@/features/langgraph/components/LlmTokenUsageDashboard.vue'
 import { fetchTokenUsageStats } from '@/features/langgraph/services/llmConfigService'
 import type { TokenUsageStats as LlmTokenUsageStats } from '@/features/langgraph/types/llmConfig'
 

@@ -76,13 +76,22 @@ export const useProjectStore = defineStore('project', () => {
         // 设置当前项目（如果找到了合适的项目）
         if (projectToSelect) {
           setCurrentProject(projectToSelect);
+        } else {
+          currentProject.value = null;
+          try {
+            localStorage.removeItem(PROJECT_STORAGE_KEY);
+          } catch (err) {
+            console.warn('清除保存的项目ID失败:', err);
+          }
         }
       } else {
         error.value = response.error || '获取项目列表失败';
+        currentProject.value = null;
       }
     } catch (err) {
       console.error('获取项目列表出错:', err);
       error.value = '获取项目列表时发生错误';
+      currentProject.value = null;
     } finally {
       loading.value = false;
     }

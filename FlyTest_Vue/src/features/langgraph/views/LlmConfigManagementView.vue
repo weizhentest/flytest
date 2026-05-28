@@ -25,19 +25,6 @@
       @page-size-change="handlePageSizeChange"
     />
 
-    <LlmTokenUsageDashboard
-      :stats="tokenUsageStats"
-      :loading="tokenUsageLoading"
-      :preset="usagePreset"
-      :source="usageSource"
-      :start-date="usageStartDate"
-      :end-date="usageEndDate"
-      @update:preset="handleUsagePresetChange"
-      @update:source="handleUsageSourceChange"
-      @update:date-range="handleUsageDateRangeChange"
-      @refresh="fetchTokenUsage"
-    />
-
     <LlmConfigFormModal
       :visible="isModalVisible"
       :config-data="currentConfig"
@@ -64,7 +51,6 @@ import { Button as AButton, Message, Modal as AModal } from '@arco-design/web-vu
 import { IconPlus, IconFile } from '@arco-design/web-vue/es/icon';
 import LlmConfigTable from '@/features/langgraph/components/LlmConfigTable.vue';
 import LlmConfigFormModal from '@/features/langgraph/components/LlmConfigFormModal.vue';
-import LlmTokenUsageDashboard from '@/features/langgraph/components/LlmTokenUsageDashboard.vue';
 import SystemPromptModal from '@/features/langgraph/components/SystemPromptModal.vue';
 import type { LlmConfig, CreateLlmConfigRequest, PartialUpdateLlmConfigRequest, TokenUsageStats } from '@/features/langgraph/types/llmConfig';
 import {

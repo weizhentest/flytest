@@ -35,7 +35,7 @@ class ProjectViewSet(BaseModelViewSet):
     def get_queryset(self):
         user = self.request.user
         queryset = Project.objects.filter(is_deleted=False)
-        if user.is_superuser:
+        if user.is_superuser or user.is_staff:
             return queryset
         return queryset.filter(members__user=user).distinct()
 
