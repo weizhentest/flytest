@@ -7,6 +7,7 @@ const RegisterView = () => import('../views/RegisterView.vue')
 const DashboardView = () => import('../views/DashboardView.vue')
 const PersonalCenterView = () => import('../views/PersonalCenterView.vue')
 const UserManagementView = () => import('../views/UserManagementView.vue')
+const UserOperationLogView = () => import('../views/UserOperationLogView.vue')
 const OrganizationManagementView = () => import('../views/OrganizationManagementView.vue')
 const PermissionManagementView = () => import('../views/PermissionManagementView.vue')
 const ProjectManagementView = () => import('../views/ProjectManagementView.vue')
@@ -99,6 +100,11 @@ const routes: RouteRecordRaw[] = [
         path: 'users',
         name: 'UserManagement',
         component: UserManagementView,
+      },
+      {
+        path: 'users/:id/operation-logs',
+        name: 'UserOperationLogs',
+        component: UserOperationLogView,
       },
       {
         path: 'organizations',

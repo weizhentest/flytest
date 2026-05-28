@@ -81,6 +81,21 @@ SUPPORTED_EXTRACTORS = {
     "status_code",
     "response_time",
 }
+STATUS_ASSERTION_TYPES = {"status_code", "status_range"}
+BUSINESS_ASSERTION_TYPES = {
+    "body_contains",
+    "body_not_contains",
+    "json_path",
+    "header",
+    "cookie",
+    "regex",
+    "exists",
+    "not_exists",
+    "array_length",
+    "json_schema",
+    "openapi_contract",
+}
+JSON_PATH_HINT_PATTERN = re.compile(r"\b(?:data|result|response|payload|body)(?:\.[A-Za-z_][A-Za-z0-9_-]*)+\b")
 SUPPORTED_AUTH_TYPES = {"none", "basic", "bearer", "api_key", "cookie", "bootstrap_request"}
 AUTH_TYPE_ALIASES = {
     "": "",
@@ -105,7 +120,7 @@ DEFAULT_CASE_PROMPT = """你是 FlyTest 的资深 API 自动化测试设计专�
 请围绕给定接口生成结构化测试用例，要求如下：
 
 1. 每个测试用例必须严格绑定当前接口，不能跨接口。
-2. 优先覆盖：基础成功场景、核心业务校验、关键边界场景、常见异常场景。
+2. 优先覆盖：基础成功场景、核心业务校验、关键边界场景、常见异常场景；场景必须来自接口信息、需求文档、知识库或历史执行上下文。
 3. 如果已有测试用例，请避免和现有名称、意图完全重复；在追加生成模式下尤其如此。
 4. 断言优先使用结构化规格，可使用：
    - status_code / status_range
@@ -113,6 +128,9 @@ DEFAULT_CASE_PROMPT = """你是 FlyTest 的资深 API 自动化测试设计专�
    - json_path / exists / not_exists / array_length
    - header / cookie / regex
    - response_time / json_schema / openapi_contract
+   每个测试用例不能只断言 HTTP 响应码。除状态码外，必须至少增加 1 条和真实业务结果相关的重要字段断言，
+   例如业务 code、message、data.id、data.token、data.orderNo、列表数量、错误提示、权限标识、库存/余额/状态字段等。
+   如果需求文档或知识库描述了返回字段、错误码、边界条件、鉴权规则，应优先把这些内容转成 json_path / exists / array_length / body_contains 等断言。
 5. 如需依赖响应上下文，请使用 extractors 提取变量，可使用：
    - json_path / header / cookie / regex / status_code / response_time
 6. request_overrides 只返回相对当前接口需要覆盖的字段，可包含：
@@ -121,7 +139,10 @@ DEFAULT_CASE_PROMPT = """你是 FlyTest 的资深 API 自动化测试设计专�
    - body_mode / body_json / raw_text / xml_text / graphql_query / graphql_operation_name / graphql_variables / binary_base64
    - form_fields / multipart_parts / files
    - auth / transport
+   请求参数必须基于接口文档里的真实参数、枚举、示例、必填规则和字段类型生成；不要随意编造接口文档不存在的字段。
+   正向用例优先使用文档示例或 schema 默认值；异常/边界用例通过缺失必填项、非法枚举、越界数值、空字符串、无效 token 等真实规则构造。
 7. 结果必须只返回 JSON，不要输出 Markdown，不要解释。
+8. 用例名称和 description 要体现具体业务场景，不要生成多个只有名称不同但请求、断言、业务意图相同的用例。
 
 输出 JSON 结构如下：
 {
@@ -158,6 +179,12 @@ ${request_json}
 
 已有测试用例:
 ${existing_cases_json}
+
+项目需求/知识上下文:
+${reference_context_json}
+
+历史执行上下文:
+${historical_context_json}
 
 Strict output contract:
 ${generation_contract_json}
@@ -232,6 +259,25 @@ def _serialize_generation_contract() -> str:
         "supported_assertions": sorted(SUPPORTED_ASSERTIONS),
         "supported_extractors": sorted(SUPPORTED_EXTRACTORS),
         "dedup_hint": "append mode deduplicates by effective request coverage plus assertion semantics, not only by case name",
+        "assertion_quality_rules": [
+            "status_code or status_range is required, but it is not enough by itself",
+            "every case should include at least one business or response-field assertion when any field hint is available",
+            "success cases should assert important response fields such as code, message, data.id, data.token, data.orderNo, list length, or domain status fields",
+            "failure cases should assert both the failure status and error payload fields such as code, message, error, or documented business error text",
+            "prefer json_path, exists, array_length, body_contains, json_schema, or openapi_contract for business assertions",
+        ],
+        "scenario_coverage_rules": [
+            "derive case scenarios from requirement documents, knowledge references, request schema, and execution history",
+            "avoid generating several cases that only differ by name",
+            "when documentation mentions auth, validation, inventory, idempotency, permission, boundary, or error code rules, create separate cases for those rules",
+            "use tags like positive, negative, boundary, auth, permission, validation, idempotency, or business-rule to make coverage visible",
+        ],
+        "request_parameter_rules": [
+            "use only documented request fields unless a field is explicitly needed for auth or environment binding",
+            "positive cases should reuse documented examples, defaults, enums, and schema-compatible values",
+            "negative and boundary cases should mutate real documented fields: omit required fields, use invalid enum values, cross numeric bounds, blank required strings, or provide invalid auth tokens",
+            "do not invent placeholder request fields that are absent from request_spec or document contract",
+        ],
         "request_override_rules": [
             "only return fields that need override",
             "headers/query/cookies/form_fields/multipart_parts may be objects or named-item arrays",
@@ -1111,6 +1157,245 @@ def _serialize_generation_reference_context(api_request: ApiRequest) -> str:
     return pretty_json_dumps(_build_generation_reference_context(api_request))
 
 
+def _parse_reference_context(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except Exception:  # noqa: BLE001
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _collect_reference_text(reference_context: dict[str, Any] | None) -> str:
+    if not isinstance(reference_context, dict):
+        return ""
+    fragments: list[str] = []
+    summary = reference_context.get("summary")
+    if isinstance(summary, dict):
+        fragments.extend(str(item) for item in summary.get("search_terms") or [] if str(item).strip())
+        if summary.get("generation_hint"):
+            fragments.append(str(summary.get("generation_hint")))
+    for item in reference_context.get("references") or []:
+        if not isinstance(item, dict):
+            continue
+        for key in ("title", "container_title", "snippet", "content", "description"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                fragments.append(value)
+    return "\n".join(fragments)
+
+
+def _clean_assertion_for_generation(assertion: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = {
+        "enabled",
+        "order",
+        "assertion_type",
+        "type",
+        "target",
+        "selector",
+        "path",
+        "operator",
+        "expected_text",
+        "expected_number",
+        "expected_json",
+        "expected",
+        "min_value",
+        "max_value",
+        "schema_text",
+    }
+    return {key: value for key, value in assertion.items() if key in allowed_keys}
+
+
+def _assertion_dedupe_key(assertion: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "assertion_type": str(assertion.get("assertion_type") or assertion.get("type") or ""),
+            "target": str(assertion.get("target") or ""),
+            "selector": str(assertion.get("selector") or assertion.get("path") or ""),
+            "operator": str(assertion.get("operator") or "equals"),
+            "expected_text": str(assertion.get("expected_text") or assertion.get("expected") or ""),
+            "expected_number": assertion.get("expected_number"),
+            "expected_json": assertion.get("expected_json") or {},
+            "min_value": assertion.get("min_value"),
+            "max_value": assertion.get("max_value"),
+            "schema_text": str(assertion.get("schema_text") or ""),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _dedupe_assertions(assertions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for assertion in assertions:
+        if not isinstance(assertion, dict):
+            continue
+        key = _assertion_dedupe_key(assertion)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(assertion)
+    return result
+
+
+def _has_business_assertion(assertions: list[dict[str, Any]]) -> bool:
+    return any(
+        str(item.get("assertion_type") or item.get("type") or "").strip() in BUSINESS_ASSERTION_TYPES
+        for item in assertions or []
+        if isinstance(item, dict)
+    )
+
+
+def _primary_status_code(assertions: list[dict[str, Any]]) -> int | None:
+    for item in assertions or []:
+        if not isinstance(item, dict):
+            continue
+        assertion_type = str(item.get("assertion_type") or item.get("type") or "").strip()
+        if assertion_type != "status_code":
+            continue
+        value = item.get("expected_number")
+        if value in (None, ""):
+            value = item.get("expected")
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _json_exists_assertion(selector: str) -> dict[str, Any]:
+    return {
+        "assertion_type": "exists",
+        "target": "json",
+        "selector": selector,
+        "operator": "exists",
+    }
+
+
+def _message_field_assertions(reference_text: str) -> list[dict[str, Any]]:
+    lower_text = reference_text.lower()
+    assertions: list[dict[str, Any]] = []
+    if any(marker in lower_text for marker in ("message", "msg", "提示", "错误信息", "错误提示")):
+        assertions.append(_json_exists_assertion("message"))
+    if any(marker in lower_text for marker in ("error", "错误", "异常")):
+        assertions.append(_json_exists_assertion("error"))
+    if any(marker in lower_text for marker in ("code", "错误码", "业务码", "状态码")):
+        assertions.append(_json_exists_assertion("code"))
+    return assertions
+
+
+def _extract_documented_business_paths(reference_text: str) -> list[str]:
+    paths: list[str] = []
+    for match in JSON_PATH_HINT_PATTERN.findall(reference_text or ""):
+        cleaned = match.strip().strip(".,;:，。；：)）]】")
+        if cleaned and cleaned not in paths:
+            paths.append(cleaned)
+    for match in re.findall(r'"(?:path|selector)"\s*:\s*"([A-Za-z_][A-Za-z0-9_.-]*)"', reference_text or ""):
+        cleaned = match.strip().strip(".")
+        if cleaned and cleaned not in paths and cleaned not in {"body", "query", "headers", "cookies"}:
+            paths.append(cleaned)
+    return paths
+
+
+def _infer_business_paths_from_request(api_request: ApiRequest, reference_text: str) -> list[str]:
+    text = f"{api_request.name} {api_request.url} {api_request.description or ''} {reference_text}".lower()
+    paths: list[str] = []
+
+    def add(path: str):
+        if path not in paths:
+            paths.append(path)
+
+    if any(marker in text for marker in ("orderno", "order_no", "订单号", "订单编号")):
+        add("data.orderNo")
+    if any(marker in text for marker in ("token", "登录态", "access_token", "accesstoken")):
+        add("data.token")
+    if any(marker in text for marker in ("userid", "user_id", "用户id", "用户编号")):
+        add("data.userId")
+    if any(marker in text for marker in ("fileid", "file_id", "文件id")):
+        add("data.fileId")
+    if "/orders" in text or "订单" in text:
+        add("data.id")
+    if any(marker in text for marker in ("create", "新增", "创建")):
+        add("data.id")
+    if any(marker in text for marker in ("detail", "详情", "查询详情")):
+        add("data.id")
+    return paths
+
+
+def _infer_list_assertion(api_request: ApiRequest, reference_text: str) -> dict[str, Any] | None:
+    text = f"{api_request.name} {api_request.url} {api_request.description or ''} {reference_text}".lower()
+    if not any(marker in text for marker in ("list", "search", "page", "列表", "分页", "搜索", "查询列表")):
+        return None
+    return {
+        "assertion_type": "array_length",
+        "target": "json",
+        "selector": "data",
+        "operator": "gte",
+        "expected_number": 0,
+    }
+
+
+def _business_assertion_candidates(
+    api_request: ApiRequest,
+    *,
+    reference_context: dict[str, Any] | None,
+    status_code: int | None,
+) -> list[dict[str, Any]]:
+    reference_text = "\n".join(
+        item
+        for item in (
+            api_request.name,
+            api_request.url,
+            api_request.description or "",
+            _collect_reference_text(reference_context),
+        )
+        if item
+    )
+    candidates: list[dict[str, Any]] = []
+    for assertion in serialize_assertion_specs(api_request):
+        assertion_type = str(assertion.get("assertion_type") or assertion.get("type") or "").strip()
+        if assertion_type in BUSINESS_ASSERTION_TYPES:
+            candidates.append(_clean_assertion_for_generation(assertion))
+
+    is_failure_case = status_code is not None and status_code >= 400
+    if is_failure_case:
+        candidates.extend(_message_field_assertions(reference_text))
+    else:
+        for path in _extract_documented_business_paths(reference_text):
+            candidates.append(_json_exists_assertion(path))
+        for path in _infer_business_paths_from_request(api_request, reference_text):
+            candidates.append(_json_exists_assertion(path))
+        list_assertion = _infer_list_assertion(api_request, reference_text)
+        if list_assertion:
+            candidates.append(list_assertion)
+        candidates.extend(_message_field_assertions(reference_text))
+
+    return _dedupe_assertions(candidates)
+
+
+def _ensure_business_assertions(
+    api_request: ApiRequest,
+    assertions: list[dict[str, Any]],
+    *,
+    reference_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    if _has_business_assertion(assertions):
+        return _dedupe_assertions(assertions)
+    status_code = _primary_status_code(assertions)
+    candidates = _business_assertion_candidates(
+        api_request,
+        reference_context=reference_context,
+        status_code=status_code,
+    )
+    if not candidates:
+        candidates = [_json_exists_assertion("message" if status_code is not None and status_code >= 400 else "data")]
+    return _dedupe_assertions(list(assertions or []) + candidates[:3])
+
+
 def _normalize_assertions(assertions: Any, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     if isinstance(assertions, list):
@@ -1355,6 +1640,46 @@ def _normalize_transport_override(payload: Any) -> dict[str, Any]:
     return normalized if has_value else {}
 
 
+def _base_named_item_names(api_request: ApiRequest, bucket: str) -> set[str]:
+    request_spec = serialize_request_spec(api_request)
+    return {
+        str(item.get("name") or "").strip()
+        for item in request_spec.get(bucket) or []
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+
+
+def _prune_named_overrides(api_request: ApiRequest, bucket: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    allowed_names = _base_named_item_names(api_request, bucket)
+    if not allowed_names:
+        return items
+    return [item for item in items if str(item.get("name") or "").strip() in allowed_names]
+
+
+def _prune_json_payload_to_shape(payload: Any, shape: Any) -> Any:
+    if isinstance(payload, dict) and isinstance(shape, dict) and shape:
+        return {
+            key: _prune_json_payload_to_shape(value, shape[key])
+            for key, value in payload.items()
+            if key in shape
+        }
+    if isinstance(payload, list) and isinstance(shape, list) and shape:
+        item_shape = shape[0]
+        return [_prune_json_payload_to_shape(item, item_shape) for item in payload]
+    return payload
+
+
+def _prune_request_overrides_to_documented_fields(api_request: ApiRequest, overrides: dict[str, Any]) -> dict[str, Any]:
+    request_spec = serialize_request_spec(api_request)
+    pruned = dict(overrides)
+    for bucket in ("query", "cookies", "form_fields", "multipart_parts"):
+        pruned[bucket] = _prune_named_overrides(api_request, bucket, list(pruned.get(bucket) or []))
+    base_body = request_spec.get("body_json")
+    if pruned.get("body_json") and isinstance(base_body, dict) and base_body:
+        pruned["body_json"] = _prune_json_payload_to_shape(pruned.get("body_json"), base_body)
+    return pruned
+
+
 def _normalize_request_overrides(api_request: ApiRequest, overrides: Any) -> dict[str, Any]:
     if not isinstance(overrides, dict):
         overrides = {}
@@ -1413,7 +1738,7 @@ def _normalize_request_overrides(api_request: ApiRequest, overrides: Any) -> dic
             normalized["xml_text"] = str(overrides.get("body"))
         elif body_mode == "binary":
             normalized["binary_base64"] = str(overrides.get("body"))
-    return normalized
+    return _prune_request_overrides_to_documented_fields(api_request, normalized)
 
 
 def _normalize_numeric_value(value: Any) -> Any:
@@ -1775,6 +2100,7 @@ def _normalize_case_draft(
     index: int,
     existing_names: set[str],
     existing_fingerprints: set[str],
+    reference_context: dict[str, Any] | None = None,
 ) -> GeneratedCaseDraft | None:
     raw_name = str(item.get("name") or "").strip() or f"{api_request.name} - AI场景{index + 1}"
     name = raw_name[:160]
@@ -1797,9 +2123,15 @@ def _normalize_case_draft(
     assertions = _normalize_assertions(item.get("assertions"), fallback_assertions)
     extractors = _normalize_extractors(item.get("extractors"), [])
     overrides = _normalize_request_overrides(api_request, item.get("request_overrides"))
+    raw_fingerprint = _semantic_case_fingerprint(api_request, assertions, overrides)
+    if raw_fingerprint in existing_fingerprints:
+        return None
+
+    assertions = _ensure_business_assertions(api_request, assertions, reference_context=reference_context)
     fingerprint = _semantic_case_fingerprint(api_request, assertions, overrides)
     if fingerprint in existing_fingerprints:
         return None
+    existing_fingerprints.add(raw_fingerprint)
     existing_fingerprints.add(fingerprint)
 
     return GeneratedCaseDraft(
@@ -1813,25 +2145,78 @@ def _normalize_case_draft(
     )
 
 
+def _build_invalid_request_override(api_request: ApiRequest) -> dict[str, Any]:
+    request_spec = serialize_request_spec(api_request)
+    body_mode = str(request_spec.get("body_mode") or "none").lower()
+    if body_mode == "json" and isinstance(request_spec.get("body_json"), dict) and request_spec["body_json"]:
+        body_json = dict(request_spec["body_json"])
+        field_name, current_value = next(iter(body_json.items()))
+        if isinstance(current_value, (int, float)) and not isinstance(current_value, bool):
+            body_json[field_name] = -1
+        elif isinstance(current_value, bool):
+            body_json[field_name] = False
+        else:
+            body_json[field_name] = ""
+        return {
+            "body_mode": "json",
+            "body_json": body_json,
+        }
+    for bucket_name in ("query", "form_fields", "multipart_parts"):
+        items = [item for item in request_spec.get(bucket_name) or [] if isinstance(item, dict) and item.get("name")]
+        if not items:
+            continue
+        invalid_items = [dict(item) for item in items]
+        invalid_items[0]["value"] = ""
+        return {bucket_name: invalid_items}
+    return {}
+
+
+def _failure_assertions(min_status: int = 400, max_status: int = 499, *, message_selector: str = "message") -> list[dict[str, Any]]:
+    return [
+        {
+            "assertion_type": "status_range",
+            "min_value": min_status,
+            "max_value": max_status,
+        },
+        _json_exists_assertion(message_selector),
+    ]
+
+
+def _documented_business_error_assertions(reference_context: dict[str, Any] | None) -> list[dict[str, Any]]:
+    reference_text = _collect_reference_text(reference_context).lower()
+    if "409" in reference_text or "冲突" in reference_text or "库存" in reference_text or "inventory" in reference_text:
+        return [
+            {"assertion_type": "status_code", "expected_number": 409},
+            _json_exists_assertion("message"),
+        ]
+    if "401" in reference_text or "鉴权" in reference_text or "登录态" in reference_text or "token" in reference_text:
+        return _failure_assertions(401, 403)
+    return _failure_assertions()
+
+
 def _build_fallback_cases(
     api_request: ApiRequest,
     existing_cases: list[ApiTestCase],
     *,
     count: int,
+    reference_context: dict[str, Any] | None = None,
 ) -> list[GeneratedCaseDraft]:
+    if reference_context is None:
+        reference_context = _build_generation_reference_context(api_request)
     existing_names = {case.name for case in existing_cases}
     existing_fingerprints = {
         _semantic_case_fingerprint(api_request, serialize_assertion_specs(case), serialize_test_case_override(case))
         for case in existing_cases
     }
     base_assertions = serialize_assertion_specs(api_request) or [{"assertion_type": "status_code", "expected_number": 200}]
+    success_assertions = _ensure_business_assertions(api_request, base_assertions, reference_context=reference_context)
 
     templates = [
         {
             "name": f"{api_request.name} - 基础成功校验",
-            "description": f"验证 {api_request.method} {api_request.url} 的基础可用性。",
+            "description": f"验证 {api_request.method} {api_request.url} 的基础成功路径，并校验关键业务响应字段。",
             "tags": ["baseline", "positive"],
-            "assertions": base_assertions,
+            "assertions": success_assertions,
             "extractors": [],
             "request_overrides": {},
         },
@@ -1839,23 +2224,39 @@ def _build_fallback_cases(
             "name": f"{api_request.name} - 响应结构校验",
             "description": f"验证 {api_request.name} 的核心响应字段和断言配置。",
             "tags": ["response-check", "regression"],
-            "assertions": base_assertions,
+            "assertions": _dedupe_assertions(
+                success_assertions
+                + [
+                    {
+                        "assertion_type": "response_time",
+                        "operator": "lte",
+                        "expected_number": 3000,
+                    }
+                ]
+            ),
             "extractors": [],
             "request_overrides": {},
         },
         {
-            "name": f"{api_request.name} - 回归稳定性校验",
-            "description": f"用于回归验证 {api_request.name} 在当前环境下的稳定执行能力。",
-            "tags": ["regression", "smoke"],
-            "assertions": base_assertions,
+            "name": f"{api_request.name} - 业务规则异常校验",
+            "description": f"根据接口需求文档和请求结构覆盖 {api_request.name} 的业务异常或参数异常场景。",
+            "tags": ["negative", "business-rule", "validation"],
+            "assertions": _documented_business_error_assertions(reference_context),
             "extractors": [],
-            "request_overrides": {},
+            "request_overrides": _build_invalid_request_override(api_request),
         },
     ]
 
     drafts: list[GeneratedCaseDraft] = []
     for index, template in enumerate(templates[: max(1, count)]):
-        draft = _normalize_case_draft(api_request, template, index, existing_names, existing_fingerprints)
+        draft = _normalize_case_draft(
+            api_request,
+            template,
+            index,
+            existing_names,
+            existing_fingerprints,
+            reference_context=reference_context,
+        )
         if draft:
             drafts.append(draft)
     return drafts
@@ -1873,7 +2274,12 @@ def _generate_test_case_drafts_with_ai_uncached(
 ) -> AITestCaseGenerationResult:
     active_config = resolve_active_llm_config(user)
     if not active_config:
-        fallback_cases = _build_fallback_cases(api_request, existing_cases, count=count)
+        fallback_cases = _build_fallback_cases(
+            api_request,
+            existing_cases,
+            count=count,
+            reference_context=_parse_reference_context(reference_context_json) or None,
+        )
         return AITestCaseGenerationResult(
             used_ai=False,
             note="未检测到激活的 LLM 配置，已回退到模板生成测试用例。",
@@ -1886,6 +2292,7 @@ def _generate_test_case_drafts_with_ai_uncached(
     prompt_template, prompt_source, prompt_name = _get_generation_prompt(user)
     generation_contract_json = _serialize_generation_contract()
     reference_context_json = reference_context_json or _serialize_generation_reference_context(api_request)
+    reference_context = _parse_reference_context(reference_context_json)
     historical_context_json = historical_context_json or _serialize_generation_history_context(api_request)
     formatted_prompt = _format_prompt(
         prompt_template,
@@ -1952,7 +2359,14 @@ def _generate_test_case_drafts_with_ai_uncached(
         for index, item in enumerate(raw_cases[: max(1, count)]):
             if not isinstance(item, dict):
                 continue
-            draft = _normalize_case_draft(api_request, item, index, existing_names, existing_fingerprints)
+            draft = _normalize_case_draft(
+                api_request,
+                item,
+                index,
+                existing_names,
+                existing_fingerprints,
+                reference_context=reference_context,
+            )
             if draft:
                 drafts.append(draft)
 
@@ -1970,7 +2384,12 @@ def _generate_test_case_drafts_with_ai_uncached(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("API test case AI generation failed: %s", exc, exc_info=True)
-        fallback_cases = _build_fallback_cases(api_request, existing_cases, count=count)
+        fallback_cases = _build_fallback_cases(
+            api_request,
+            existing_cases,
+            count=count,
+            reference_context=reference_context,
+        )
         return AITestCaseGenerationResult(
             used_ai=False,
             note=f"AI 生成测试用例失败，已回退到模板生成。失败原因: {exc}",
@@ -2054,7 +2473,12 @@ def generate_test_case_drafts_with_ai(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("API test case AI generation wrapper failed: %s", exc, exc_info=True)
-        fallback_cases = _build_fallback_cases(api_request, existing_cases, count=count)
+        fallback_cases = _build_fallback_cases(
+            api_request,
+            existing_cases,
+            count=count,
+            reference_context=_parse_reference_context(reference_context_json),
+        )
         return AITestCaseGenerationResult(
             used_ai=False,
             note=f"AI 用例生成调度失败，已回退到模板生成。失败原因: {exc}",

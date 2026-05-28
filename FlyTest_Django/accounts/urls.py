@@ -6,6 +6,7 @@ from .views import (
     ContentTypeViewSet,
     CurrentUserAvatarAPIView,
     CurrentUserAPIView,
+    CurrentUserOperationTrackAPIView,
     CurrentUserProfileAPIView,
     GroupViewSet,
     LogoutAPIView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("me/", CurrentUserAPIView.as_view(), name="user-me"),
     path("profile/", CurrentUserProfileAPIView.as_view(), name="user-profile"),
     path("profile/avatar/", CurrentUserAvatarAPIView.as_view(), name="user-avatar"),
+    path("operation-logs/track/", CurrentUserOperationTrackAPIView.as_view(), name="user-operation-log-track"),
     path(
         "change-password/",
         ChangeCurrentUserPasswordAPIView.as_view(),

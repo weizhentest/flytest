@@ -49,6 +49,10 @@ DEFAULT_REQUEST_TIMEOUT_MS = 30000
 JSON_CONTENT_TYPES = {"application/json"}
 XML_CONTENT_TYPES = {"application/xml", "text/xml"}
 TEXT_CONTENT_TYPES = {"text/plain"}
+OPENAPI_CONTEXT_TEXT_LIMIT = 4200
+OPENAPI_CONTEXT_FIELD_LIMIT = 24
+OPENAPI_CONTEXT_RESPONSE_LIMIT = 6
+OPENAPI_CONTEXT_EXAMPLE_PATH_LIMIT = 16
 
 
 @dataclass
@@ -543,6 +547,315 @@ def resolve_openapi_ref(spec: dict[str, Any], value: Any) -> Any:
     return current
 
 
+def _stable_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def resolve_openapi_schema(spec: dict[str, Any], schema: Any, *, depth: int = 0) -> Any:
+    if depth > 8:
+        return schema
+    if isinstance(schema, list):
+        return [resolve_openapi_schema(spec, item, depth=depth + 1) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    if schema.get("$ref"):
+        return resolve_openapi_schema(spec, resolve_openapi_ref(spec, schema), depth=depth + 1)
+    if isinstance(schema.get("allOf"), list):
+        merged: dict[str, Any] = {}
+        required: list[str] = []
+        properties: dict[str, Any] = {}
+        for item in schema.get("allOf") or []:
+            resolved_item = resolve_openapi_schema(spec, item, depth=depth + 1)
+            if not isinstance(resolved_item, dict):
+                continue
+            merged.update({key: value for key, value in resolved_item.items() if key not in {"required", "properties"}})
+            required.extend(str(name) for name in (resolved_item.get("required") or []) if str(name))
+            if isinstance(resolved_item.get("properties"), dict):
+                properties.update(resolved_item["properties"])
+        merged.update({key: value for key, value in schema.items() if key != "allOf"})
+        if properties:
+            merged["properties"] = properties | dict(merged.get("properties") or {})
+        if required:
+            merged["required"] = list(dict.fromkeys(required + [str(name) for name in (merged.get("required") or []) if str(name)]))
+        schema = merged
+    result: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in {"properties"} and isinstance(value, dict):
+            result[key] = {
+                name: resolve_openapi_schema(spec, child, depth=depth + 1)
+                for name, child in value.items()
+            }
+        elif key in {"items", "additionalProperties"} and isinstance(value, dict):
+            result[key] = resolve_openapi_schema(spec, value, depth=depth + 1)
+        elif key in {"oneOf", "anyOf"} and isinstance(value, list):
+            result[key] = [resolve_openapi_schema(spec, item, depth=depth + 1) for item in value]
+        else:
+            result[key] = value
+    return result
+
+
+def compact_schema(schema: Any, *, depth: int = 0) -> Any:
+    if not isinstance(schema, dict) or depth > 4:
+        return {}
+    result: dict[str, Any] = {}
+    for key in (
+        "type",
+        "format",
+        "description",
+        "required",
+        "enum",
+        "minimum",
+        "maximum",
+        "minLength",
+        "maxLength",
+        "minItems",
+        "maxItems",
+        "pattern",
+        "default",
+        "example",
+        "nullable",
+    ):
+        if key in schema and schema.get(key) not in (None, "", [], {}):
+            result[key] = schema.get(key)
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        result["properties"] = {
+            str(name): compact_schema(value, depth=depth + 1)
+            for name, value in list(properties.items())[:OPENAPI_CONTEXT_FIELD_LIMIT]
+            if isinstance(value, dict)
+        }
+    items = schema.get("items")
+    if isinstance(items, dict):
+        result["items"] = compact_schema(items, depth=depth + 1)
+    for combinator in ("oneOf", "anyOf", "allOf"):
+        values = schema.get(combinator)
+        if isinstance(values, list) and values:
+            result[combinator] = [compact_schema(item, depth=depth + 1) for item in values[:3] if isinstance(item, dict)]
+    return result
+
+
+def collect_schema_paths(schema: Any, prefix: str = "") -> list[dict[str, Any]]:
+    if not isinstance(schema, dict):
+        return []
+    schema_type = str(schema.get("type") or "").lower()
+    required_names = set(schema.get("required") or [])
+    paths: list[dict[str, Any]] = []
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, child_schema in list(properties.items())[:OPENAPI_CONTEXT_FIELD_LIMIT]:
+            if not isinstance(child_schema, dict):
+                continue
+            path = f"{prefix}.{name}" if prefix else str(name)
+            paths.append(
+                {
+                    "path": path,
+                    "type": child_schema.get("type") or "",
+                    "format": child_schema.get("format") or "",
+                    "required": name in required_names,
+                    "description": child_schema.get("description") or "",
+                    "enum": child_schema.get("enum") or [],
+                    "example": child_schema.get("example", child_schema.get("default", "")),
+                }
+            )
+            if child_schema.get("properties") or child_schema.get("items"):
+                paths.extend(collect_schema_paths(child_schema, path)[:OPENAPI_CONTEXT_FIELD_LIMIT])
+    elif schema_type == "array":
+        paths.extend(collect_schema_paths(schema.get("items") or {}, f"{prefix}[]".strip("."))[:OPENAPI_CONTEXT_FIELD_LIMIT])
+    return paths[:OPENAPI_CONTEXT_FIELD_LIMIT]
+
+
+def collect_example_paths(value: Any, prefix: str = "") -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, item in list(value.items())[:OPENAPI_CONTEXT_FIELD_LIMIT]:
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(item, dict):
+                paths.extend(collect_example_paths(item, path))
+            elif isinstance(item, list):
+                paths.append(path)
+                paths.extend(collect_example_paths(item, path))
+            else:
+                paths.append(path)
+    elif isinstance(value, list) and value:
+        paths.extend(collect_example_paths(value[0], f"{prefix}[]".strip(".")))
+    return paths[:OPENAPI_CONTEXT_EXAMPLE_PATH_LIMIT]
+
+
+def _normalize_openapi_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
+    schema = parameter.get("schema") if isinstance(parameter.get("schema"), dict) else {}
+    if not schema and parameter.get("type"):
+        schema = {"type": parameter.get("type")}
+        for key in ("format", "enum", "default", "minimum", "maximum", "minLength", "maxLength", "pattern", "items"):
+            if key in parameter:
+                schema[key] = parameter.get(key)
+    return {
+        "name": parameter.get("name") or "",
+        "in": parameter.get("in") or "",
+        "required": bool(parameter.get("required", False)),
+        "description": parameter.get("description") or "",
+        "example": extract_parameter_example(parameter, schema if isinstance(schema, dict) else None),
+        "schema": compact_schema(schema),
+    }
+
+
+def _extract_request_body_contract(spec: dict[str, Any], request_body: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(request_body, dict):
+        return None
+    content = request_body.get("content") or {}
+    for content_type, content_item in content.items():
+        if not isinstance(content_item, dict):
+            continue
+        raw_schema = content_item.get("schema") if isinstance(content_item.get("schema"), dict) else {}
+        schema = resolve_openapi_schema(spec, raw_schema)
+        example = extract_content_example(content_item)
+        return {
+            "required": bool(request_body.get("required", False)),
+            "description": request_body.get("description") or "",
+            "content_type": str(content_type),
+            "schema": compact_schema(schema),
+            "fields": collect_schema_paths(schema),
+            "example": example,
+        }
+    return None
+
+
+def resolve_openapi_request_body_schemas(spec: dict[str, Any], request_body: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request_body, dict):
+        return {}
+    resolved = dict(request_body)
+    content = resolved.get("content")
+    if isinstance(content, dict):
+        resolved_content: dict[str, Any] = {}
+        for content_type, content_item in content.items():
+            if not isinstance(content_item, dict):
+                resolved_content[content_type] = content_item
+                continue
+            resolved_item = dict(content_item)
+            if isinstance(resolved_item.get("schema"), dict):
+                resolved_item["schema"] = resolve_openapi_schema(spec, resolved_item["schema"])
+            resolved_content[content_type] = resolved_item
+        resolved["content"] = resolved_content
+    return resolved
+
+
+def _extract_response_content(spec: dict[str, Any], response: dict[str, Any]) -> tuple[str, dict[str, Any], Any]:
+    content = response.get("content") or {}
+    for content_type, content_item in content.items():
+        if not isinstance(content_item, dict):
+            continue
+        raw_schema = content_item.get("schema") if isinstance(content_item.get("schema"), dict) else {}
+        schema = resolve_openapi_schema(spec, raw_schema)
+        return str(content_type), schema if isinstance(schema, dict) else {}, extract_content_example(content_item)
+    raw_schema = response.get("schema") if isinstance(response.get("schema"), dict) else {}
+    schema = resolve_openapi_schema(spec, raw_schema)
+    examples = response.get("examples") or {}
+    example = {}
+    if isinstance(examples, dict) and examples:
+        example = next(iter(examples.values()))
+    elif isinstance(schema, dict) and schema:
+        example = build_example_from_schema(schema)
+    return "application/json" if schema else "", schema if isinstance(schema, dict) else {}, example
+
+
+def _extract_response_contracts(spec: dict[str, Any], responses: dict[str, Any]) -> list[dict[str, Any]]:
+    contracts: list[dict[str, Any]] = []
+    for status_code, response in list((responses or {}).items())[:OPENAPI_CONTEXT_RESPONSE_LIMIT]:
+        if not isinstance(response, dict):
+            continue
+        contract: dict[str, Any] = {
+            "status": str(status_code),
+            "description": response.get("description") or "",
+        }
+        content_type, schema, example = _extract_response_content(spec, response)
+        if content_type or schema or example:
+            contract.update(
+                {
+                    "content_type": content_type,
+                    "schema": compact_schema(schema),
+                    "fields": collect_schema_paths(schema),
+                    "example": example,
+                    "example_paths": collect_example_paths(example),
+                }
+            )
+        contracts.append(contract)
+    return contracts
+
+
+def _build_json_schema_assertion(schema: Any) -> dict[str, Any] | None:
+    if not isinstance(schema, dict) or not schema:
+        return None
+    return {
+        "assertion_type": "json_schema",
+        "target": "json",
+        "schema_text": _stable_json(schema),
+    }
+
+
+def _build_response_assertion_specs(spec: dict[str, Any], responses: dict[str, Any]) -> list[dict[str, Any]]:
+    success_status = extract_success_status(responses)
+    assertions: list[dict[str, Any]] = [{"assertion_type": "status_code", "expected_number": success_status}]
+    success_response = None
+    for key, response in (responses or {}).items():
+        if str(key) == str(success_status) and isinstance(response, dict):
+            success_response = response
+            break
+        if str(key).startswith("2") and isinstance(response, dict) and success_response is None:
+            success_response = response
+    if isinstance(success_response, dict):
+        _content_type, schema, example = _extract_response_content(spec, success_response)
+        schema_assertion = _build_json_schema_assertion(schema)
+        if schema_assertion:
+            assertions.append(schema_assertion)
+        for path in collect_example_paths(example):
+            if path:
+                assertions.append(
+                    {
+                        "assertion_type": "exists",
+                        "target": "json",
+                        "selector": path.replace("[]", ""),
+                        "operator": "exists",
+                    }
+                )
+            if len(assertions) >= 8:
+                break
+    return assertions
+
+
+def _build_api_contract_context(
+    *,
+    spec: dict[str, Any],
+    path: str,
+    method: str,
+    operation: dict[str, Any],
+    parameters: list[dict[str, Any]],
+    request_body: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "source": "openapi",
+        "operation_id": operation.get("operationId") or "",
+        "method": method,
+        "path": path,
+        "summary": operation.get("summary") or "",
+        "description": operation.get("description") or "",
+        "tags": operation.get("tags") or [],
+        "parameters": [_normalize_openapi_parameter(parameter) for parameter in parameters if isinstance(parameter, dict)],
+        "request_body": _extract_request_body_contract(spec, request_body),
+        "responses": _extract_response_contracts(spec, operation.get("responses") or {}),
+        "security": operation.get("security", spec.get("security", [])),
+    }
+
+
+def _append_contract_to_description(description: str, contract: dict[str, Any]) -> str:
+    description = str(description or "").strip()
+    contract_json = _stable_json(contract)
+    suffix = f"\n\n[接口契约]\n{contract_json}"
+    if len(description) + len(suffix) <= OPENAPI_CONTEXT_TEXT_LIMIT:
+        return f"{description}{suffix}" if description else suffix.strip()
+    available = max(0, OPENAPI_CONTEXT_TEXT_LIMIT - len(suffix) - 1)
+    prefix = description[:available].rstrip()
+    return f"{prefix}{suffix}" if prefix else suffix.strip()
+
+
 def normalize_auth_variable_name(value: str, fallback: str = "token") -> str:
     normalized = re.sub(r"[^a-zA-Z0-9]+", "_", str(value or "")).strip("_").lower()
     if not normalized:
@@ -864,6 +1177,7 @@ def parse_openapi_document(spec: dict[str, Any]) -> list[ParsedRequestData]:
             )
             request_body = resolve_openapi_ref(spec, operation.get("requestBody") or {})
             if isinstance(request_body, dict) and request_body:
+                request_body = resolve_openapi_request_body_schemas(spec, request_body)
                 request_spec.update(parse_request_body_spec(request_body))
                 body_type, body = request_spec_to_legacy_body(request_spec)
             elif spec.get("swagger"):
@@ -876,24 +1190,38 @@ def parse_openapi_document(spec: dict[str, Any]) -> list[ParsedRequestData]:
                 )
                 body_type, body = request_spec_to_legacy_body(request_spec)
 
-            success_status = extract_success_status(operation.get("responses") or {})
+            responses = {
+                str(status_code): resolve_openapi_ref(spec, response)
+                for status_code, response in (operation.get("responses") or {}).items()
+            }
+            success_status = extract_success_status(responses)
             tags = operation.get("tags") or []
             request_name = operation.get("summary") or operation.get("operationId") or f"{upper_method} {path}"
             final_url = normalize_request_url(base_url, path)
+            contract_context = _build_api_contract_context(
+                spec=spec,
+                path=path,
+                method=upper_method,
+                operation={**operation, "responses": responses},
+                parameters=parameters,
+                request_body=request_body if isinstance(request_body, dict) else {},
+            )
+            description = _append_contract_to_description(str(operation.get("description") or ""), contract_context)
+            assertion_specs = _build_response_assertion_specs(spec, responses)
 
             requests.append(
                 ParsedRequestData(
                     name=request_name,
                     method=upper_method,
                     url=final_url,
-                    description=str(operation.get("description") or ""),
+                    description=description,
                     headers=headers,
                     params=params,
                     body_type=body_type,
                     body=body,
                     assertions=[{"type": "status_code", "expected": success_status}],
                     request_spec=request_spec,
-                    assertion_specs=[{"assertion_type": "status_code", "expected_number": success_status}],
+                    assertion_specs=assertion_specs,
                     collection_name=tags[0] if tags else guess_collection_name_from_path(path),
                 )
             )

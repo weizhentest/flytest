@@ -1071,6 +1071,150 @@ class ApiAutomationAICaseGeneratorTests(TestCase):
     @patch("api_automation.ai_case_generator.create_llm_instance")
     @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
     @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_enriches_status_only_ai_cases_with_business_assertions(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        self._seed_reference_context()
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated status-only case.",
+                    "cases": [
+                        {
+                            "name": "Create order - success",
+                            "description": "AI only returned a response code assertion.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "positive"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {},
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="generate",
+            count=1,
+        )
+
+        assertion_selectors = {
+            item.get("selector")
+            for item in result.cases[0].assertions
+            if item.get("assertion_type") in {"exists", "json_path", "array_length"}
+        }
+        prompt_text = mock_safe_invoke.call_args.args[1][1].content
+        self.assertTrue(result.used_ai)
+        self.assertIn("每个测试用例不能只断言 HTTP 响应码", prompt_text)
+        self.assertIn("项目需求/知识上下文", prompt_text)
+        self.assertGreater(len(result.cases[0].assertions), 1)
+        self.assertIn("data.orderNo", assertion_selectors)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
+    def test_generation_prunes_request_overrides_to_documented_parameters(
+        self,
+        mock_safe_invoke,
+        mock_filter,
+        mock_create_llm,
+    ):
+        cache.clear()
+        self.api_request.description = (
+            "创建订单接口。\n\n[接口契约]\n"
+            '{"request_body":{"fields":[{"path":"sku","required":true},{"path":"qty","required":true}]},'
+            '"responses":[{"status":"201","fields":[{"path":"data.orderNo"}]}]}'
+        )
+        self.api_request.save(update_fields=["description"])
+        mock_filter.return_value.first.return_value = SimpleNamespace(name="demo-model")
+        mock_create_llm.return_value = object()
+        mock_safe_invoke.return_value = SimpleNamespace(
+            content=json.dumps(
+                {
+                    "summary": "Generated with one invented request field.",
+                    "cases": [
+                        {
+                            "name": "Create order - documented params only",
+                            "description": "Uses documented order params.",
+                            "status": "ready",
+                            "tags": ["ai-generated", "positive"],
+                            "assertions": [{"assertion_type": "status_code", "expected_number": 200}],
+                            "request_overrides": {
+                                "body_mode": "json",
+                                "body_json": {"sku": "A100", "qty": 1, "debugFlag": True},
+                            },
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="generate",
+            count=1,
+        )
+
+        body_json = result.cases[0].request_overrides["body_json"]
+        assertion_selectors = {item.get("selector") for item in result.cases[0].assertions}
+        self.assertEqual(body_json, {"sku": "A100", "qty": 1})
+        self.assertNotIn("debugFlag", body_json)
+        self.assertIn("data.orderNo", assertion_selectors)
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator._collect_knowledge_references_with_hybrid_search")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    def test_fallback_generation_adds_business_assertions_and_requirement_scenarios(
+        self,
+        mock_filter,
+        mock_hybrid_references,
+    ):
+        cache.clear()
+        self._seed_reference_context()
+        mock_filter.return_value.first.return_value = None
+        mock_hybrid_references.return_value = {
+            "references": [],
+            "summary": {"fallback_used": True, "result_count": 0},
+        }
+
+        result = generate_test_case_drafts_with_ai(
+            api_request=self.api_request,
+            user=self.user,
+            existing_cases=[],
+            mode="generate",
+            count=3,
+        )
+
+        self.assertFalse(result.used_ai)
+        self.assertEqual(len(result.cases), 3)
+        for draft in result.cases:
+            self.assertTrue(
+                any(
+                    item.get("assertion_type") not in {"status_code", "status_range"}
+                    for item in draft.assertions
+                )
+            )
+        self.assertTrue(any("business-rule" in draft.tags for draft in result.cases))
+        self.assertTrue(any(draft.request_overrides for draft in result.cases))
+        cache.clear()
+
+    @patch("api_automation.ai_case_generator.create_llm_instance")
+    @patch("api_automation.ai_case_generator.LLMConfig.objects.filter")
+    @patch("api_automation.ai_case_generator.safe_llm_invoke")
     def test_generation_cache_key_changes_when_reference_context_changes(
         self,
         mock_safe_invoke,
@@ -1985,6 +2129,97 @@ class ApiAutomationImporterParsingTests(SimpleTestCase):
         self.assertEqual(xml_request.request_spec["body_mode"], "xml")
         self.assertIn("<Request>", xml_request.request_spec["xml_text"])
 
+    def test_openapi_document_preserves_request_and_response_contract_for_case_generation(self):
+        spec = {
+            "openapi": "3.0.3",
+            "info": {"title": "Order API", "version": "1.0"},
+            "paths": {
+                "/orders": {
+                    "post": {
+                        "summary": "Create order",
+                        "description": "创建订单，需要校验 SKU、数量和库存。",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "required": ["sku", "qty"],
+                                        "properties": {
+                                            "sku": {
+                                                "type": "string",
+                                                "description": "商品 SKU",
+                                                "example": "A100",
+                                            },
+                                            "qty": {
+                                                "type": "integer",
+                                                "minimum": 1,
+                                                "maximum": 99,
+                                                "example": 2,
+                                            },
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {
+                            "201": {
+                                "description": "created",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "required": ["code", "data"],
+                                            "properties": {
+                                                "code": {"type": "integer", "example": 0},
+                                                "message": {"type": "string", "example": "success"},
+                                                "data": {
+                                                    "type": "object",
+                                                    "required": ["orderNo", "status"],
+                                                    "properties": {
+                                                        "orderNo": {"type": "string", "example": "O202605270001"},
+                                                        "status": {"type": "string", "enum": ["created", "paid"]},
+                                                    },
+                                                },
+                                            },
+                                        }
+                                    }
+                                },
+                            },
+                            "409": {
+                                "description": "库存不足",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "code": {"type": "integer", "example": 40901},
+                                                "message": {"type": "string", "example": "inventory not enough"},
+                                            },
+                                        }
+                                    }
+                                },
+                            },
+                        },
+                    }
+                }
+            },
+        }
+
+        requests = parse_openapi_document(spec)
+
+        create_order_request = requests[0]
+        assertion_types = [item["assertion_type"] for item in create_order_request.assertion_specs]
+        assertion_selectors = {item.get("selector") for item in create_order_request.assertion_specs}
+        self.assertEqual(create_order_request.request_spec["body_json"], {"sku": "A100", "qty": 2})
+        self.assertIn("[接口契约]", create_order_request.description)
+        self.assertIn('"path": "sku"', create_order_request.description)
+        self.assertIn('"path": "data.orderNo"', create_order_request.description)
+        self.assertIn('"status": "409"', create_order_request.description)
+        self.assertIn("json_schema", assertion_types)
+        self.assertIn("data.orderNo", assertion_selectors)
+        self.assertIn("data.status", assertion_selectors)
+
     def test_curl_import_supports_cookie_basic_auth_and_transport_flags(self):
         markdown = """
         ## Download report
@@ -2867,7 +3102,7 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 2)
 
     @patch("api_automation.views.generate_test_case_drafts_with_ai")
-    def test_generate_mode_skips_request_with_existing_cases(self, mock_generate):
+    def test_generate_mode_appends_when_request_has_existing_cases(self, mock_generate):
         api_request = ApiRequest.objects.create(
             collection=self.collection,
             name="List reports",
@@ -2884,6 +3119,37 @@ class ApiAutomationImportDocumentTests(TestCase):
             assertions=[{"type": "status_code", "expected": 200}],
             creator=self.user,
         )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI generated additional case",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            case_summaries=[
+                {
+                    "name": "List reports - pagination",
+                    "status": "ready",
+                    "tags": ["ai-generated"],
+                    "assertion_count": 1,
+                    "extractor_count": 0,
+                    "assertion_types": ["status_code"],
+                    "extractor_variables": [],
+                    "override_sections": [],
+                    "body_mode": "none",
+                }
+            ],
+            cases=[
+                GeneratedCaseDraft(
+                    name="List reports - pagination",
+                    description="Generated for an existing request",
+                    status="ready",
+                    tags=["ai-generated"],
+                    assertions=[{"assertion_type": "status_code", "expected_number": 200}],
+                    extractors=[],
+                    request_overrides={},
+                )
+            ],
+        )
 
         response = self.client.post(
             "/api/api-automation/requests/generate-test-cases/",
@@ -2897,9 +3163,12 @@ class ApiAutomationImportDocumentTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         payload = self._payload(response)
-        self.assertEqual(payload["skipped_requests"], 1)
-        self.assertEqual(payload["created_testcase_count"], 0)
-        mock_generate.assert_not_called()
+        self.assertEqual(payload["skipped_requests"], 0)
+        self.assertEqual(payload["created_testcase_count"], 1)
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 2)
+        self.assertTrue(ApiTestCase.objects.filter(request=api_request, name="Existing report case").exists())
+        self.assertTrue(ApiTestCase.objects.filter(request=api_request, name="List reports - pagination").exists())
+        self.assertEqual(mock_generate.call_args.kwargs["mode"], "append")
 
     @patch("api_automation.views.generate_test_case_drafts_with_ai")
     def test_regenerate_mode_returns_preview_without_deleting_existing_cases(self, mock_generate):
@@ -3046,6 +3315,149 @@ class ApiAutomationImportDocumentTests(TestCase):
         self.assertFalse(ApiTestCase.objects.filter(id=existing_case.id).exists())
         self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 1)
         self.assertEqual(ApiTestCase.objects.get(request=api_request).name, "Create order - regenerated")
+
+    @patch("api_automation.views._start_case_generation_job")
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_case_generation_job_generate_creates_cases(self, mock_generate, _mock_start_job):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="Create order",
+            method="POST",
+            url="/api/orders",
+            created_by=self.user,
+        )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI generated case",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            case_summaries=[
+                {
+                    "name": "Create order - success",
+                    "status": "ready",
+                    "tags": ["ai-generated"],
+                    "assertion_count": 1,
+                    "extractor_count": 0,
+                    "assertion_types": ["status_code"],
+                    "extractor_variables": [],
+                    "override_sections": [],
+                    "body_mode": "none",
+                }
+            ],
+            cases=[
+                GeneratedCaseDraft(
+                    name="Create order - success",
+                    description="Generated by async job",
+                    status="ready",
+                    tags=["ai-generated"],
+                    assertions=[{"assertion_type": "status_code", "expected_number": 200}],
+                    extractors=[],
+                    request_overrides={},
+                )
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/case-generation-jobs/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "generate",
+                "count_per_request": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        job_id = self._payload(response)["id"]
+        _run_case_generation_job(job_id)
+
+        job = ApiCaseGenerationJob.objects.get(pk=job_id)
+        self.assertEqual(job.status, "success")
+        self.assertEqual(job.result_payload["created_testcase_count"], 1)
+        self.assertEqual(job.result_payload["items"][0]["items"][0]["name"], "Create order - success")
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 1)
+        self.assertEqual(ApiTestCase.objects.get(request=api_request).name, "Create order - success")
+
+    @patch("api_automation.views._start_case_generation_job")
+    @patch("api_automation.views.generate_test_case_drafts_with_ai")
+    def test_case_generation_job_generate_appends_when_request_has_existing_cases(
+        self,
+        mock_generate,
+        _mock_start_job,
+    ):
+        api_request = ApiRequest.objects.create(
+            collection=self.collection,
+            name="List reports",
+            method="GET",
+            url="/api/reports",
+            created_by=self.user,
+        )
+        ApiTestCase.objects.create(
+            project=self.project,
+            request=api_request,
+            name="Existing report case",
+            status="ready",
+            script={"request": {"method": "GET", "url": "/api/reports"}},
+            assertions=[{"type": "status_code", "expected": 200}],
+            creator=self.user,
+        )
+        mock_generate.return_value = AITestCaseGenerationResult(
+            used_ai=True,
+            note="AI generated additional case",
+            prompt_name="API自动化用例生成",
+            prompt_source="builtin_fallback",
+            model_name="demo-model",
+            case_summaries=[
+                {
+                    "name": "List reports - pagination",
+                    "status": "ready",
+                    "tags": ["ai-generated"],
+                    "assertion_count": 1,
+                    "extractor_count": 0,
+                    "assertion_types": ["status_code"],
+                    "extractor_variables": [],
+                    "override_sections": [],
+                    "body_mode": "none",
+                }
+            ],
+            cases=[
+                GeneratedCaseDraft(
+                    name="List reports - pagination",
+                    description="Generated by async job for an existing request",
+                    status="ready",
+                    tags=["ai-generated"],
+                    assertions=[{"assertion_type": "status_code", "expected_number": 200}],
+                    extractors=[],
+                    request_overrides={},
+                )
+            ],
+        )
+
+        response = self.client.post(
+            "/api/api-automation/case-generation-jobs/",
+            {
+                "scope": "selected",
+                "ids": [api_request.id],
+                "mode": "generate",
+                "count_per_request": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        job_id = self._payload(response)["id"]
+        _run_case_generation_job(job_id)
+
+        job = ApiCaseGenerationJob.objects.get(pk=job_id)
+        self.assertEqual(job.status, "success")
+        self.assertEqual(job.result_payload["skipped_requests"], 0)
+        self.assertEqual(job.result_payload["created_testcase_count"], 1)
+        self.assertEqual(ApiTestCase.objects.filter(request=api_request).count(), 2)
+        self.assertTrue(ApiTestCase.objects.filter(request=api_request, name="Existing report case").exists())
+        self.assertTrue(ApiTestCase.objects.filter(request=api_request, name="List reports - pagination").exists())
+        self.assertEqual(mock_generate.call_args.kwargs["mode"], "append")
 
     @patch("api_automation.views._start_case_generation_job")
     @patch("api_automation.views.generate_test_case_drafts_with_ai")

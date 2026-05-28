@@ -44,16 +44,32 @@ from .serializers import (
     MyTokenObtainPairSerializer,
     PasswordAwareTokenRefreshSerializer,
     UserApprovalReviewSerializer,
+    UserOperationLogSerializer,
 )
 from .models import (
     UserApproval,
+    UserOperationLog,
     ensure_user_approval_record,
     ensure_user_profile,
     get_user_approval_status,
     is_user_approved,
 )
+from .audit import record_user_operation
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_int(value, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+
+    if minimum is not None:
+        number = max(number, minimum)
+    if maximum is not None:
+        number = min(number, maximum)
+    return number
 
 
 class UserCreateAPIView(generics.CreateAPIView):
@@ -205,6 +221,33 @@ class ChangeCurrentUserPasswordAPIView(APIView):
         )
         clear_auth_cookies(response)
         return response
+
+
+class CurrentUserOperationTrackAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        action = request.data.get("action") or UserOperationLog.ACTION_MENU
+        if action not in {UserOperationLog.ACTION_MENU}:
+            action = UserOperationLog.ACTION_MENU
+
+        label = str(request.data.get("label") or "访问菜单").strip()
+        path = str(request.data.get("path") or "").strip()
+        method = str(request.data.get("method") or "GET").strip().upper()
+        route_name = str(request.data.get("route_name") or "").strip()
+
+        log_entry = record_user_operation(
+            user=request.user,
+            action=action,
+            label=label,
+            request=request,
+            path=path,
+            method=method,
+            metadata={"route_name": route_name} if route_name else {},
+        )
+
+        serializer = UserOperationLogSerializer(log_entry) if log_entry else None
+        return Response(serializer.data if serializer else None, status=status.HTTP_201_CREATED)
 
 
 class GroupViewSet(viewsets.ModelViewSet):
@@ -830,6 +873,31 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = PermissionSerializer(all_perms_qs, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["get"], url_path="operation-logs")
+    @permission_required("auth.view_user")
+    def operation_logs(self, request, pk=None):
+        user = self.get_object()
+        page = _safe_int(request.query_params.get("page"), 1, minimum=1)
+        page_size = _safe_int(request.query_params.get("page_size"), 20, minimum=1, maximum=100)
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        queryset = (
+            UserOperationLog.objects.filter(user=user)
+            .select_related("user", "user__profile")
+            .order_by("-created_at")
+        )
+        total = queryset.count()
+        serializer = UserOperationLogSerializer(queryset[start:end], many=True)
+        return Response(
+            {
+                "items": serializer.data,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
     @action(detail=False, methods=["get"], url_path="approval-summary")
     @permission_required("auth.view_user")
     def approval_summary(self, request):
@@ -1194,6 +1262,17 @@ class MyTokenObtainPairView(BaseTokenObtainPairView):
             if response.status_code == status.HTTP_200_OK and isinstance(response.data, dict):
                 access_token = response.data.get("access")
                 refresh_token = response.data.get("refresh")
+                user_payload = response.data.get("user") or {}
+                login_user = User.objects.filter(id=user_payload.get("id")).first()
+                if login_user:
+                    record_user_operation(
+                        user=login_user,
+                        action=UserOperationLog.ACTION_LOGIN,
+                        label="登录系统",
+                        request=request,
+                        path="/login",
+                        method="POST",
+                    )
                 if access_token and refresh_token:
                     remember_me = self._remember_me_enabled(request)
                     refresh_max_age = (
@@ -1263,6 +1342,15 @@ class LogoutAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        if getattr(request.user, "is_authenticated", False):
+            record_user_operation(
+                user=request.user,
+                action=UserOperationLog.ACTION_LOGOUT,
+                label="退出登录",
+                request=request,
+                path="/logout",
+                method="POST",
+            )
         response = Response({"message": "已退出登录。"}, status=status.HTTP_200_OK)
         clear_auth_cookies(response)
         return response

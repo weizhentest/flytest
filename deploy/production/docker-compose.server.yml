@@ -1,0 +1,63 @@
+version: "2.4"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: flytest-redis
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    volumes:
+      - ./runtime/redis:/data
+    networks:
+      - flytest
+    mem_limit: 128m
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/production/backend.Dockerfile
+    container_name: flytest-backend
+    restart: unless-stopped
+    env_file:
+      - ./.env.server
+    environment:
+      DATABASE_TYPE: sqlite
+      DATABASE_PATH: /app/data/db.sqlite3
+      MEDIA_ROOT: /app/data/media
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      DJANGO_BASE_URL: http://localhost:8000
+      UI_AUTOMATION_AI_USE_CELERY: "true"
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:8912:8000"
+    volumes:
+      - ./runtime/backend/data:/app/data
+      - ../../FlyTest_Skills:/app/bundled_skills:ro
+    networks:
+      - flytest
+    mem_limit: 640m
+
+  app-automation:
+    build:
+      context: ../../FlyTest_FastAPI_AppAutomation
+      dockerfile: Dockerfile
+    container_name: flytest-app-automation
+    restart: unless-stopped
+    env_file:
+      - ./.env.server
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - ./runtime/app-automation:/app/data
+    networks:
+      - flytest
+    mem_limit: 256m
+
+networks:
+  flytest:
+    driver: bridge

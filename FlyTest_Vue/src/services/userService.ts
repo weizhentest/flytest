@@ -90,6 +90,41 @@ export interface UserApprovalSummary {
   rejected: number;
 }
 
+export interface UserOperationLog {
+  id: number;
+  user: number | null;
+  username: string;
+  user_display_name: string;
+  action: 'login' | 'logout' | 'menu' | string;
+  action_display: string;
+  label: string;
+  path: string;
+  method: string;
+  ip_address: string | null;
+  user_agent: string;
+  created_at: string;
+}
+
+export interface UserOperationLogListParams {
+  page: number;
+  pageSize: number;
+}
+
+export interface UserOperationLogListResponse {
+  success: boolean;
+  data?: UserOperationLog[];
+  total?: number;
+  error?: string;
+}
+
+export interface TrackUserOperationPayload {
+  action?: 'menu';
+  label: string;
+  path: string;
+  method?: string;
+  route_name?: string;
+}
+
 /**
  * 获取用户列表
  * @param params 分页和搜索参数
@@ -498,4 +533,50 @@ export const rejectUser = async (
     data: response.data,
     error: response.error,
   };
+};
+
+export const getUserOperationLogs = async (
+  userId: number,
+  params: UserOperationLogListParams,
+): Promise<UserOperationLogListResponse> => {
+  const response = await request<{
+    items: UserOperationLog[];
+    total: number;
+    page: number;
+    page_size: number;
+  }>({
+    url: `/accounts/users/${userId}/operation-logs/`,
+    method: 'GET',
+    params: {
+      page: params.page,
+      page_size: params.pageSize,
+    },
+  });
+
+  if (!response.success || !response.data) {
+    return {
+      success: false,
+      error: response.error || '获取用户操作记录失败',
+    };
+  }
+
+  return {
+    success: true,
+    data: response.data.items || [],
+    total: response.data.total || 0,
+  };
+};
+
+export const trackUserOperation = async (payload: TrackUserOperationPayload): Promise<void> => {
+  await request<UserOperationLog>({
+    url: '/accounts/operation-logs/track/',
+    method: 'POST',
+    data: {
+      action: payload.action || 'menu',
+      label: payload.label,
+      path: payload.path,
+      method: payload.method || 'GET',
+      route_name: payload.route_name || '',
+    },
+  });
 };

@@ -456,6 +456,36 @@ def _run_case_generation_job(job_id: int):
             )
             return
 
+        applied_items: list[dict[str, object]] = []
+        for index, (api_request, public_item, draft_item) in enumerate(
+            zip(api_requests, public_items, draft_items),
+            start=1,
+        ):
+            if _is_case_generation_job_cancelled(job_id):
+                raise CaseGenerationJobCancelled("AI 用例生成已手动停止")
+
+            if draft_item.get("skipped"):
+                applied_items.append(public_item)
+                continue
+
+            percent = 88 + int(index / max(total_requests, 1) * 8)
+            _save_case_generation_job(
+                job_id,
+                status="running",
+                progress_percent=min(percent, 98),
+                progress_stage="apply",
+                progress_message=f"正在保存接口“{api_request.name}”的测试用例（{index}/{total_requests}）。",
+            )
+            applied_items.append(
+                _apply_request_test_case_generation_from_drafts(
+                    api_request=api_request,
+                    creator=job.creator,
+                    mode=job.mode,
+                    draft_item=draft_item,
+                )
+            )
+
+        summary = _build_case_generation_summary(scope=job.scope, mode=job.mode, items=applied_items)
         _save_case_generation_job(
             job_id,
             status="success",
@@ -1890,40 +1920,13 @@ def _prepare_request_test_case_generation(
     count_per_request: int,
 ) -> dict[str, object]:
     existing_cases = list(api_request.test_cases.order_by("created_at"))
-    if mode == "generate" and existing_cases:
-        public_item = {
-            "request_id": api_request.id,
-            "request_name": api_request.name,
-            "request_method": api_request.method,
-            "request_url": api_request.url,
-            "mode": mode,
-            "skipped": True,
-            "skipped_reason": "当前接口已存在测试用例，请使用重新生成或追加生成。",
-            "created_count": 0,
-            "ai_used": False,
-            "ai_cache_hit": False,
-            "ai_cache_key": None,
-            "ai_duration_ms": None,
-            "ai_lock_wait_ms": None,
-            "note": "已跳过已有测试用例的接口。",
-            "case_summaries": [],
-            "items": [],
-        }
-        return {
-            "public_item": public_item,
-            "draft_item": {
-                "request_id": api_request.id,
-                "skipped": True,
-                "mode": mode,
-                "drafts": [],
-            },
-        }
+    effective_mode = "append" if mode == "generate" and existing_cases else mode
 
     generation_result = generate_test_case_drafts_with_ai(
         api_request=api_request,
         user=user,
         existing_cases=existing_cases,
-        mode=mode,
+        mode=effective_mode,
         count=count_per_request,
     )
     existing_case_summaries = summarize_persisted_test_cases(api_request, existing_cases)
@@ -2039,31 +2042,13 @@ def _generate_request_test_cases(
     apply_changes: bool = False,
 ):
     existing_cases = list(api_request.test_cases.order_by("created_at"))
-    if mode == "generate" and existing_cases:
-        return {
-            "request_id": api_request.id,
-            "request_name": api_request.name,
-            "request_method": api_request.method,
-            "request_url": api_request.url,
-            "mode": mode,
-            "skipped": True,
-            "skipped_reason": "当前接口已存在测试用例，请使用重新生成或追加生成。",
-            "created_count": 0,
-            "ai_used": False,
-            "ai_cache_hit": False,
-            "ai_cache_key": None,
-            "ai_duration_ms": None,
-            "ai_lock_wait_ms": None,
-            "note": "已跳过已有测试用例的接口。",
-            "case_summaries": [],
-            "items": [],
-        }
+    effective_mode = "append" if mode == "generate" and existing_cases else mode
 
     generation_result = generate_test_case_drafts_with_ai(
         api_request=api_request,
         user=user,
         existing_cases=existing_cases,
-        mode=mode,
+        mode=effective_mode,
         count=count_per_request,
     )
 

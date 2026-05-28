@@ -53,6 +53,22 @@
           {{ record.approval_status_display || '待审核' }}
         </a-tag>
       </template>
+      <template #username="{ record }">
+        <div class="username-cell">
+          <span class="username-text">{{ record.username }}</span>
+          <a-tooltip content="查看操作记录">
+            <a-button
+              type="text"
+              size="mini"
+              class="username-log-button"
+              aria-label="查看操作记录"
+              @click.stop="openUserOperationLogs(record)"
+            >
+              <template #icon><icon-history /></template>
+            </a-button>
+          </a-tooltip>
+        </div>
+      </template>
       <template #operations="{ record }">
         <a-space :size="4">
           <a-button
@@ -272,7 +288,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import { Message, Modal, Row as ARow, Col as ACol, Divider as ADivider } from '@arco-design/web-vue';
+import { IconHistory } from '@arco-design/web-vue/es/icon';
 import {
   getUserList,
   createUser,
@@ -291,6 +309,7 @@ import { useProjectStore } from '@/store/projectStore';
 import { getUserDisplayName } from '@/utils/userDisplay';
 
 const projectStore = useProjectStore();
+const router = useRouter();
 
 // 加载状态
 const loading = ref(false);
@@ -315,6 +334,7 @@ const columns = [
   {
     title: '系统用户名',
     dataIndex: 'username',
+    slotName: 'username',
     align: 'center',
   },
   {
@@ -390,6 +410,10 @@ const viewUserPermissions = async (user: User) => {
   if (permissionTreeSelectorRef.value) {
     await permissionTreeSelectorRef.value.loadPermissions();
   }
+};
+
+const openUserOperationLogs = (user: User) => {
+  router.push({ name: 'UserOperationLogs', params: { id: user.id } });
 };
 
 // 刷新用户列表
@@ -887,6 +911,33 @@ const deleteUser = (user: User) => {
   font-size: 12px;
   line-height: 1.5;
   color: var(--color-text-3);
+}
+
+.username-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  gap: 6px;
+}
+
+.username-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.username-log-button {
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-2);
+  background: var(--color-fill-2);
+}
+
+.username-log-button:hover {
+  color: rgb(var(--primary-6));
+  background: rgba(var(--primary-6), 0.12);
 }
 
 /* 操作按钮样式优化 */

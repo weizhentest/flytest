@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import { defineAsyncComponent, h, ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useProjectStore } from '@/store/projectStore';
 import { useAiActivityStore } from '@/store/aiActivityStore';
 import {
@@ -166,6 +166,7 @@ const getTestTypePrompt = (testTypes: string[]): string => {
   return prompts.length > 0 ? prompts.join('\n\n') : TEST_TYPE_PROMPTS['functional'];
 };
 
+const route = useRoute();
 const router = useRouter();
 const projectStore = useProjectStore();
 const aiActivityStore = useAiActivityStore();
@@ -206,6 +207,36 @@ const testCaseListRef = ref<InstanceType<typeof TestCaseList> | null>(null);
 
 // 存储所有模块数据，用于传递给详情页和表单
 const allModules = ref<TestCaseModule[]>([]);
+let lastRouteTestCaseId: number | null = null;
+
+const getRouteTestCaseId = () => {
+  const rawValue = route.query.testcase_id ?? route.query.testcaseId;
+  const firstValue = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  const testcaseId = Number(firstValue);
+  return Number.isInteger(testcaseId) && testcaseId > 0 ? testcaseId : null;
+};
+
+const openRouteTestCaseDetail = (testcaseId: number) => {
+  const listIds = testCaseListRef.value?.getTestCaseIds?.() || [];
+  testCaseIdsForNavigation.value = listIds.includes(testcaseId) ? listIds : [testcaseId, ...listIds];
+  currentViewingTestCaseId.value = testcaseId;
+  viewMode.value = 'view';
+};
+
+const syncRouteTestCaseDetail = () => {
+  const testcaseId = getRouteTestCaseId();
+  if (testcaseId) {
+    lastRouteTestCaseId = testcaseId;
+    openRouteTestCaseDetail(testcaseId);
+    return;
+  }
+
+  if (lastRouteTestCaseId) {
+    lastRouteTestCaseId = null;
+    backToList();
+  }
+};
+
 const currentGenerateDraft = computed<Partial<GenerateDraft> | null>(() => {
   if (!selectedModuleId.value) {
     return null;
@@ -1056,11 +1087,19 @@ watch(currentProjectId, (newVal) => {
   // 列表和模块面板会各自 watch projectId 并刷新
   if (newVal) {
     fetchAllModulesForForm(); // 项目切换时，重新加载模块给表单
+    syncRouteTestCaseDetail();
   } else {
     allModules.value = [];
     moduleTreeForForm.value = [];
   }
 });
+
+watch(
+  () => [route.query.testcase_id, route.query.testcaseId],
+  () => {
+    syncRouteTestCaseDetail();
+  }
+);
 
 watch(
   () => ({
@@ -1139,6 +1178,7 @@ onMounted(() => {
   if (currentProjectId.value) {
     fetchAllModulesForForm();
   }
+  syncRouteTestCaseDetail();
 });
 
 onUnmounted(() => {

@@ -15,6 +15,7 @@ from rest_framework_simplejwt.serializers import (
 )
 from .models import (
     UserApproval,
+    UserOperationLog,
     ensure_user_approval_record,
     ensure_user_profile,
     get_user_approval_record,
@@ -534,6 +535,47 @@ class UserDetailSerializer(UserApprovalMixin, UserProfileMixin, serializers.Mode
             "can_change_username",
         )  # 根据需要添加更多字段
         read_only_fields = fields
+
+
+class UserOperationLogSerializer(serializers.ModelSerializer):
+    username = serializers.SerializerMethodField()
+    user_display_name = serializers.SerializerMethodField()
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+
+    class Meta:
+        model = UserOperationLog
+        fields = (
+            "id",
+            "user",
+            "username",
+            "user_display_name",
+            "action",
+            "action_display",
+            "label",
+            "path",
+            "method",
+            "ip_address",
+            "user_agent",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_username(self, obj):
+        if obj.user_id and obj.user:
+            return obj.user.username
+        return obj.username_snapshot
+
+    def get_user_display_name(self, obj):
+        user = obj.user
+        if not user:
+            return obj.username_snapshot
+
+        profile = get_user_profile(user)
+        if profile and profile.real_name:
+            return profile.real_name
+
+        full_name = " ".join(part for part in [user.first_name, user.last_name] if part).strip()
+        return full_name or user.username
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

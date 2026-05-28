@@ -58,16 +58,39 @@
             @select="onSelect"
           >
             <template #title="nodeData">
-              <div class="tree-node" :class="`tree-node--${nodeData.type}`">
+              <a-dropdown
+                v-if="nodeData.type === 'collection'"
+                trigger="contextMenu"
+                position="br"
+                :popup-max-width="false"
+                class="collection-node-dropdown"
+                @select="value => handleCollectionContextAction(nodeData, value)"
+              >
+                <div
+                  class="tree-node"
+                  :class="`tree-node--${nodeData.type}`"
+                  @contextmenu="handleCollectionNodeContextMenu(nodeData)"
+                >
+                  <div class="tree-node__copy">
+                    <span class="tree-node__name">{{ nodeData.name }}</span>
+                  </div>
+                  <span class="tree-node__count">
+                    {{ nodeData.requestCount || 0 }} 个接口
+                  </span>
+                </div>
+                <template #content>
+                  <a-doption v-if="!nodeData.parent" value="addChild" class="centered-dropdown-item">新增子目录</a-doption>
+                  <a-doption value="edit" class="centered-dropdown-item">编辑目录</a-doption>
+                  <a-doption value="delete" class="centered-dropdown-item">删除目录</a-doption>
+                </template>
+              </a-dropdown>
+              <div v-else class="tree-node" :class="`tree-node--${nodeData.type}`">
                 <div class="tree-node__copy">
                   <span class="tree-node__name">{{ nodeData.name }}</span>
-                  <span v-if="nodeData.type === 'request'" class="tree-node__method">
+                  <span class="tree-node__method">
                     {{ nodeData.method }}
                   </span>
                 </div>
-                <span v-if="nodeData.type === 'collection'" class="tree-node__count">
-                  {{ nodeData.requestCount || 0 }} 个接口
-                </span>
               </div>
             </template>
           </a-tree>
@@ -172,50 +195,36 @@ const buildTreeData = (collections: ApiCollection[], requests: ApiRequest[]) => 
     return acc
   }, new Map<number, ApiRequest[]>())
 
-  const collectVisibleRequests = (node: ApiCollection, rootCollectionId: number): CollectionTreeRequestNode[] => {
-    const directRequests = [...(requestMap.get(node.id) || [])].map(request => ({
-      ...request,
-      type: 'request' as const,
-      key: `request-${request.id}`,
-      displayCollectionId: rootCollectionId,
-    }))
-
-    const childRequests = [...(node.children || [])]
-      .sort((left, right) => {
-        if ((left.order || 0) !== (right.order || 0)) {
-          return (left.order || 0) - (right.order || 0)
-        }
-        return localeCompareZh(left.name || '', right.name || '')
-      })
-      .flatMap(child => collectVisibleRequests(child, rootCollectionId))
-
-    return [...directRequests, ...childRequests].sort((left, right) => {
+  const sortByOrderAndName = <T extends { order?: number; name?: string }>(items: T[]) =>
+    [...items].sort((left, right) => {
       if ((left.order || 0) !== (right.order || 0)) {
         return (left.order || 0) - (right.order || 0)
       }
       return localeCompareZh(left.name || '', right.name || '')
     })
-  }
+
+  const createRequestNodes = (collectionId: number): CollectionTreeRequestNode[] =>
+    sortByOrderAndName(requestMap.get(collectionId) || []).map(request => ({
+      ...request,
+      type: 'request' as const,
+      key: `request-${request.id}`,
+      displayCollectionId: collectionId,
+    }))
 
   const createCollectionNodes = (nodes: ApiCollection[]): CollectionTreeCollectionNode[] =>
-    [...nodes]
-      .sort((left, right) => {
-        if ((left.order || 0) !== (right.order || 0)) {
-          return (left.order || 0) - (right.order || 0)
-        }
-        return localeCompareZh(left.name || '', right.name || '')
-      })
-      .map(node => {
-        const requestNodes = collectVisibleRequests(node, node.id)
+    sortByOrderAndName(nodes).map(node => {
+      const collectionNodes = createCollectionNodes(node.children || [])
+      const requestNodes = createRequestNodes(node.id)
+      const children = [...collectionNodes, ...requestNodes]
 
-        return {
-          ...node,
-          type: 'collection',
-          key: `collection-${node.id}`,
-          requestCount: requestNodes.length,
-          children: requestNodes,
-        }
-      })
+      return {
+        ...node,
+        type: 'collection',
+        key: `collection-${node.id}`,
+        requestCount: requestNodes.length + collectionNodes.reduce((total, child) => total + child.requestCount, 0),
+        children: children.length ? children : undefined,
+      }
+    })
 
   return createCollectionNodes(collections)
 }
@@ -349,6 +358,26 @@ const onSelect = (keys: (string | number)[], data: { node?: CollectionTreeNode }
   emitSelection(node || null)
 }
 
+const selectCollectionNode = (node: CollectionTreeCollectionNode) => {
+  selectedKeys.value = [node.key]
+  currentTreeSelection.value = node
+  emitSelection(node)
+}
+
+const handleCollectionNodeContextMenu = (node: CollectionTreeNode) => {
+  if (node.type === 'collection') {
+    selectCollectionNode(node)
+  }
+}
+
+const handleCollectionContextAction = (
+  node: CollectionTreeNode,
+  value: string | number | Record<string, any> | undefined
+) => {
+  handleCollectionNodeContextMenu(node)
+  void handleAction(value)
+}
+
 const resetForm = () => {
   formData.value = {
     project: projectId.value || 0,
@@ -358,8 +387,10 @@ const resetForm = () => {
   formRef.value?.clearValidate?.()
 }
 
-const handleAction = async (value: string) => {
-  switch (value) {
+const handleAction = async (value: string | number | Record<string, any> | undefined) => {
+  const actionValue = String(value || '')
+
+  switch (actionValue) {
     case 'addRoot':
       isEditing.value = false
       currentCollection.value = null
@@ -403,7 +434,8 @@ const handleAction = async (value: string) => {
         Message.warning('请先选择一个目录')
         return
       }
-      const target = collectionMap.value.get(actionCollectionId.value)
+      const targetId = actionCollectionId.value
+      const target = collectionMap.value.get(targetId)
       if (!target) return
       Modal.warning({
         title: '确认删除',
@@ -412,7 +444,7 @@ const handleAction = async (value: string) => {
         cancelText: '取消',
         onOk: async () => {
           try {
-            await collectionApi.delete(actionCollectionId.value!)
+            await collectionApi.delete(targetId)
             Message.success('目录删除成功')
             currentTreeSelection.value = null
             selectedKeys.value = []
@@ -641,8 +673,14 @@ defineExpose({
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.12);
 }
 
+.collection-node-dropdown {
+  display: block;
+  width: 100%;
+}
+
 .tree-node {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 12px;

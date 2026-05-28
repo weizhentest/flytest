@@ -950,7 +950,7 @@ import {
   type TestBugType,
 } from '@/services/testBugService';
 import { getProjectMembers, type ProjectMember } from '@/services/projectService';
-import { getTestCaseList, type TestCase } from '@/services/testcaseService';
+import { getTestCaseDetail, getTestCaseList, type TestCase } from '@/services/testcaseService';
 
 type ActionType = 'assign' | 'confirm' | 'fix' | 'resolve' | 'activate' | 'close' | 'delete' | null;
 type StatusView = 'all' | TestBugStatus;
@@ -1086,6 +1086,8 @@ let membersRequestId = 0;
 let suiteTestCasesRequestId = 0;
 let bugsRequestId = 0;
 let detailViewRequestId = 0;
+let testcaseStepFillRequestId = 0;
+const testcaseDetailCache = new Map<number, TestCase>();
 const hasActiveFilters = computed(
   () =>
     Boolean(
@@ -2482,6 +2484,25 @@ const fetchSuiteTestCases = async () => {
   suiteTestCases.value = response.success && response.data ? response.data : [];
 };
 
+const getCachedTestcaseDetail = async (testcaseId: number) => {
+  if (!props.currentProjectId) {
+    return null;
+  }
+
+  const cached = testcaseDetailCache.get(testcaseId);
+  if (cached?.steps?.length) {
+    return cached;
+  }
+
+  const response = await getTestCaseDetail(props.currentProjectId, testcaseId);
+  if (!response.success || !response.data) {
+    return null;
+  }
+
+  testcaseDetailCache.set(testcaseId, response.data);
+  return response.data;
+};
+
 const fetchBugs = async () => {
   if (!props.currentProjectId || !props.selectedSuiteId) {
     bugList.value = [];
@@ -2873,6 +2894,50 @@ const getPriorityColor = (priority?: string) => {
 const escapeBugHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
 
+const buildTestcaseDetailHref = (testcaseId: number) => `/testcases?testcase_id=${encodeURIComponent(String(testcaseId))}`;
+
+const buildTestcaseStepsHtml = (testcases: TestCase[]) => {
+  const sections = testcases
+    .map((testcase) => {
+      const steps = Array.isArray(testcase.steps) ? testcase.steps : [];
+      const stepItems = steps
+        .filter((step) => String(step.description || '').trim())
+        .map((step) => `<li>${escapeBugHtml(String(step.description || '').trim())}</li>`)
+        .join('');
+
+      return [
+        `<p><strong><a class="bug-linked-testcase" href="${buildTestcaseDetailHref(testcase.id)}">关联测试用例：${escapeBugHtml(testcase.name || `#${testcase.id}`)}</a></strong></p>`,
+        stepItems ? `<ol>${stepItems}</ol>` : '<p>暂无执行步骤</p>',
+      ].join('');
+    })
+    .filter(Boolean);
+
+  return sections.join('<hr />');
+};
+
+const fillStepsFromSelectedTestcases = async () => {
+  if (detailDraftType.value !== 'create' || !detailEditMode.value || !props.currentProjectId) {
+    return;
+  }
+
+  const selectedIds = detailForm.testcase_ids.map((item) => Number(item)).filter(Boolean);
+  const requestId = ++testcaseStepFillRequestId;
+  if (!selectedIds.length) {
+    detailForm.steps = '';
+    return;
+  }
+
+  const details = await Promise.all(selectedIds.map((id) => getCachedTestcaseDetail(id)));
+  if (requestId !== testcaseStepFillRequestId) {
+    return;
+  }
+
+  const selectedDetails = details
+    .map((item, index) => item || suiteTestCases.value.find((testcase) => testcase.id === selectedIds[index]))
+    .filter((item): item is TestCase => Boolean(item));
+  detailForm.steps = buildTestcaseStepsHtml(selectedDetails);
+};
+
 const getPlainTextPreview = (value?: string | null, maxLength = 120) => {
   const plainText = String(value || '')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -3064,6 +3129,13 @@ watch(
   () => pagination.pageSize,
   () => {
     normalizePaginationCurrent();
+  }
+);
+
+watch(
+  () => detailForm.testcase_ids.slice(),
+  () => {
+    void fillStepsFromSelectedTestcases();
   }
 );
 
@@ -3982,6 +4054,15 @@ defineExpose({
 
 .bug-detail-content pre {
   overflow-x: auto;
+}
+
+.bug-detail-content :deep(.bug-linked-testcase) {
+  color: rgb(var(--arcoblue-6));
+  text-decoration: none;
+}
+
+.bug-detail-content :deep(.bug-linked-testcase:hover) {
+  text-decoration: underline;
 }
 
 .bug-detail-attachment-list {
