@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="dashboard-view">
     <div v-if="!isApproved" class="approval-pending-card">
       <div class="approval-shell">
@@ -34,17 +34,29 @@
               <span class="hero-eyebrow">Control Center</span>
               <span class="hero-project-chip">当前项目</span>
             </div>
-            <h1 class="hero-title">{{ currentProjectName }}</h1>
-            <p class="hero-description">
-              面向测试管理、质量治理与 AI 能力协同的统一工作台，帮助团队快速掌握用例规模、执行质量、自动化产出与资源消耗。
-            </p>
+            <div class="hero-title-row">
+              <h1 class="hero-title">{{ currentProjectName }}</h1>
+              <span class="hero-inline-status" :class="passRateTone">{{ passRateStatusText }}</span>
+            </div>
 
             <div class="hero-highlights">
               <div v-for="item in heroHighlights" :key="item.label" class="hero-highlight-card">
                 <span class="hero-highlight-label">{{ item.label }}</span>
                 <strong class="hero-highlight-value">{{ item.value }}</strong>
-                <span class="hero-highlight-foot">{{ item.foot }}</span>
               </div>
+            </div>
+
+            <div class="hero-kpi-strip">
+              <article v-for="card in overviewCards" :key="card.title" class="hero-kpi-card">
+                <div class="hero-kpi-head">
+                  <component :is="card.icon" class="hero-kpi-icon" />
+                  <span class="hero-kpi-title">{{ card.title }}</span>
+                </div>
+                <div class="hero-kpi-value-row">
+                  <strong class="hero-kpi-value">{{ card.value }}</strong>
+                  <span class="hero-kpi-unit">{{ card.unit }}</span>
+                </div>
+              </article>
             </div>
           </div>
 
@@ -102,35 +114,96 @@
           </div>
         </section>
 
-        <section class="kpi-grid">
-          <article v-for="card in overviewCards" :key="card.title" class="kpi-card">
-            <div class="kpi-head">
-              <div class="kpi-icon-wrap">
-                <component :is="card.icon" class="kpi-icon" />
+        <section class="insight-grid">
+          <article class="surface-card backlog-card">
+            <div class="section-head">
+              <div>
+                <span class="section-kicker">Actionable Queue</span>
+                <h3 class="section-title">待处理事项</h3>
               </div>
-              <div class="kpi-head-copy">
-                <span class="kpi-title">{{ card.title }}</span>
-                <span class="kpi-caption">{{ card.caption }}</span>
+              <span class="section-badge">{{ backlogTotal }} 项</span>
+            </div>
+            <div class="backlog-list">
+              <div v-for="item in backlogCards" :key="item.label" class="backlog-item">
+                <div class="backlog-main">
+                  <div class="backlog-copy">
+                    <span class="backlog-label">{{ item.label }}</span>
+                    <p class="backlog-desc">{{ item.description }}</p>
+                  </div>
+                  <div class="backlog-value-block">
+                    <strong class="backlog-value">{{ item.value }}</strong>
+                    <span class="backlog-share">{{ item.share }}</span>
+                  </div>
+                </div>
+                <div class="review-track">
+                  <div class="review-fill" :style="{ width: `${item.percent}%`, background: item.color }"></div>
+                </div>
               </div>
             </div>
-            <div class="kpi-value-row">
-              <strong class="kpi-value">{{ card.value }}</strong>
-              <span class="kpi-value-unit">{{ card.unit }}</span>
+          </article>
+
+          <article class="surface-card bug-risk-card">
+            <div class="section-head">
+              <div>
+                <span class="section-kicker">Defect Signal</span>
+                <h3 class="section-title">缺陷风险</h3>
+              </div>
+              <span class="section-badge">{{ statistics?.bugs?.total || 0 }} 个</span>
             </div>
-            <div class="kpi-tags">
-              <span
-                v-for="tag in card.tags"
-                :key="`${card.title}-${tag.label}`"
-                class="kpi-tag"
-                :class="tag.tone"
-              >
-                {{ tag.label }} {{ tag.value }}
-              </span>
+            <div class="bug-hero">
+              <div class="bug-hero-value">
+                <strong>{{ statistics?.bugs?.open || 0 }}</strong>
+                <span>未关闭缺陷</span>
+              </div>
+              <div class="bug-hero-tags">
+                <span class="bug-tag danger">高优先级 {{ statistics?.bugs?.high_severity || 0 }}</span>
+                <span class="bug-tag warning">待回归 {{ statistics?.bugs?.pending_retest || 0 }}</span>
+              </div>
+            </div>
+            <div class="bug-risk-list">
+              <div v-for="item in bugRiskCards" :key="item.label" class="bug-risk-item">
+                <div class="bug-risk-head">
+                  <span class="bug-risk-label">{{ item.label }}</span>
+                  <strong class="bug-risk-value">{{ item.value }}</strong>
+                </div>
+                <p class="bug-risk-desc">{{ item.description }}</p>
+                <div class="review-track compact">
+                  <div class="review-fill" :style="{ width: `${item.percent}%`, background: item.color }"></div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="surface-card automation-matrix-card">
+            <div class="section-head">
+              <div>
+                <span class="section-kicker">Automation Coverage</span>
+                <h3 class="section-title">自动化矩阵</h3>
+              </div>
+              <span class="section-badge">{{ automationFootnote }}</span>
+            </div>
+            <div class="automation-matrix">
+              <div v-for="item in automationMatrixCards" :key="item.label" class="automation-row">
+                <div class="automation-row-main">
+                  <div>
+                    <div class="automation-label-row">
+                      <span class="automation-label">{{ item.label }}</span>
+                      <span :class="['automation-status', item.tone]">{{ item.status }}</span>
+                    </div>
+                    <p class="automation-desc">{{ item.description }}</p>
+                  </div>
+                  <strong class="automation-total">{{ item.total }}</strong>
+                </div>
+                <div class="automation-metrics">
+                  <span>{{ item.metricA }}</span>
+                  <span>{{ item.metricB }}</span>
+                </div>
+              </div>
             </div>
           </article>
         </section>
 
-        <section class="insight-grid">
+        <section class="secondary-insight-grid">
           <article class="surface-card review-card">
             <div class="section-head">
               <div>
@@ -147,41 +220,6 @@
                 </div>
                 <div class="review-track">
                   <div class="review-fill" :style="{ width: `${item.percent}%`, background: item.color }"></div>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article class="surface-card execution-card">
-            <div class="section-head">
-              <div>
-                <span class="section-kicker">Execution Quality</span>
-                <h3 class="section-title">执行结果结构</h3>
-              </div>
-              <span class="section-badge">{{ statistics?.executions?.total_executions || 0 }} 次</span>
-            </div>
-            <div class="execution-summary">
-              <div class="execution-ring">
-                <svg viewBox="0 0 100 100" class="execution-ring-svg">
-                  <circle cx="50" cy="50" r="42" class="execution-ring-track" />
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="42"
-                    class="execution-ring-progress"
-                    :style="{ strokeDasharray: `${passRate * 2.64} 264`, stroke: rateColor }"
-                  />
-                </svg>
-                <div class="execution-ring-text">
-                  <strong>{{ passRate }}</strong>
-                  <span>通过率</span>
-                </div>
-              </div>
-              <div class="execution-legend">
-                <div v-for="item in executionLegend" :key="item.label" class="execution-legend-item">
-                  <span class="execution-legend-dot" :style="{ background: item.color }"></span>
-                  <span class="execution-legend-label">{{ item.label }}</span>
-                  <strong class="execution-legend-value">{{ item.value }}</strong>
                 </div>
               </div>
             </div>
@@ -241,7 +279,7 @@
             <div class="section-head">
               <div>
                 <span class="section-kicker">Execution Trend</span>
-                <h3 class="section-title">近 7 天执行走势</h3>
+                <h3 class="section-title">近 7 天执行趋势</h3>
               </div>
               <div class="trend-summary">
                 <span class="summary-item">近 30 天 {{ statistics?.execution_trend?.summary_30d?.execution_count || 0 }} 次</span>
@@ -415,17 +453,14 @@ const heroHighlights = computed(() => [
   {
     label: '测试用例总量',
     value: statistics.value?.testcases?.total || 0,
-    foot: '覆盖当前项目的业务验证基础',
   },
   {
     label: '近 30 天执行次数',
     value: statistics.value?.execution_trend?.summary_30d?.execution_count || 0,
-    foot: '反映近期回归与验证活跃度',
   },
   {
     label: '自动化用例规模',
     value: statistics.value?.ui_automation?.total_cases || 0,
-    foot: '用于支撑高频回归与持续验证',
   },
 ])
 
@@ -508,6 +543,135 @@ const operationalCards = computed(() => [
     description: '反映当前项目 AI 调用强度与近期分析活跃度。',
   },
 ])
+
+const backlogCards = computed(() => {
+  const caseTotal = statistics.value?.testcases?.total || 0
+  const executionTotal = statistics.value?.executions?.total_executions || 0
+  const pendingReview = statistics.value?.testcases?.by_review_status?.pending_review || 0
+  const needsOptimization = statistics.value?.testcases?.by_review_status?.needs_optimization || 0
+  const pendingRetest = statistics.value?.bugs?.pending_retest || 0
+  const uiFailed = statistics.value?.ui_automation?.by_status?.failed || 0
+  const getPercent = (value: number, base: number) => base === 0 ? 0 : Math.min(100, Math.round((value / base) * 100))
+
+  return [
+    {
+      label: '待审核用例',
+      description: '还未进入正式可执行状态，影响新增需求流转。',
+      value: pendingReview,
+      share: `${getPercent(pendingReview, caseTotal)}%`,
+      percent: getPercent(pendingReview, caseTotal),
+      color: '#f59e0b',
+    },
+    {
+      label: '待优化用例',
+      description: '建议优先回看描述不完整或频繁波动的用例。',
+      value: needsOptimization,
+      share: `${getPercent(needsOptimization, caseTotal)}%`,
+      percent: getPercent(needsOptimization, caseTotal),
+      color: '#3b82f6',
+    },
+    {
+      label: '待回归缺陷',
+      description: '修复已提交，当前仍等待验证闭环。',
+      value: pendingRetest,
+      share: `${getPercent(pendingRetest, Math.max(statistics.value?.bugs?.total || 0, 1))}%`,
+      percent: getPercent(pendingRetest, Math.max(statistics.value?.bugs?.total || 0, 1)),
+      color: '#8b5cf6',
+    },
+    {
+      label: 'UI 失败记录',
+      description: '优先排查环境、脚本和元素定位稳定性。',
+      value: uiFailed,
+      share: `${getPercent(uiFailed, executionTotal)}%`,
+      percent: getPercent(uiFailed, executionTotal),
+      color: '#ef4444',
+    },
+  ]
+})
+
+const backlogTotal = computed(() => backlogCards.value.reduce((sum, item) => sum + item.value, 0))
+
+const bugRiskCards = computed(() => {
+  const bugTotal = Math.max(statistics.value?.bugs?.total || 0, 1)
+  const getPercent = (value: number) => Math.min(100, Math.round((value / bugTotal) * 100))
+
+  return [
+    {
+      label: '高优先级缺陷',
+      value: statistics.value?.bugs?.high_severity || 0,
+      description: '直接影响核心流程，建议持续追踪修复时效。',
+      percent: getPercent(statistics.value?.bugs?.high_severity || 0),
+      color: '#ef4444',
+    },
+    {
+      label: '已确认待修复',
+      value: statistics.value?.bugs?.by_status?.confirmed || 0,
+      description: '问题已定位，需要明确版本与负责人。',
+      percent: getPercent(statistics.value?.bugs?.by_status?.confirmed || 0),
+      color: '#f97316',
+    },
+    {
+      label: '处理中',
+      value: statistics.value?.bugs?.by_status?.assigned || 0,
+      description: '开发处理中，适合和迭代节奏一起看。',
+      percent: getPercent(statistics.value?.bugs?.by_status?.assigned || 0),
+      color: '#3b82f6',
+    },
+    {
+      label: '已关闭',
+      value: statistics.value?.bugs?.closed || 0,
+      description: '已完成修复闭环，可作为当前消化进度参考。',
+      percent: getPercent(statistics.value?.bugs?.closed || 0),
+      color: '#22c55e',
+    },
+  ]
+})
+
+const automationMatrixCards = computed(() => {
+  const uiTotal = statistics.value?.ui_automation?.total_cases || 0
+  const uiSuccess = statistics.value?.ui_automation?.by_status?.success || 0
+  const uiFailed = statistics.value?.ui_automation?.by_status?.failed || 0
+  const apiRequests = statistics.value?.api_automation?.requests || 0
+  const apiCases = statistics.value?.api_automation?.test_cases || 0
+  const apiExecutions = statistics.value?.api_automation?.executions || 0
+  const appTotal = 0
+  const appStatus = '待接入'
+
+  return [
+    {
+      label: 'API 自动化',
+      status: apiCases > 0 ? '已接入' : '待补齐',
+      tone: apiCases > 0 ? 'good' : 'warning',
+      description: '接口侧数据结构已预留，适合补执行覆盖与成功率。',
+      total: apiCases,
+      metricA: `请求 ${apiRequests}`,
+      metricB: `执行 ${apiExecutions}`,
+    },
+    {
+      label: 'UI 自动化',
+      status: uiTotal > 0 ? '运行中' : '待建设',
+      tone: uiTotal > 0 ? 'good' : 'warning',
+      description: '更适合盯稳定性、失败数和回归覆盖面。',
+      total: uiTotal,
+      metricA: `成功 ${uiSuccess}`,
+      metricB: `失败 ${uiFailed}`,
+    },
+    {
+      label: 'APP 自动化',
+      status: appStatus,
+      tone: 'muted',
+      description: '首页先保留入口位，后续接入真机与移动回归数据。',
+      total: appTotal,
+      metricA: '设备 0',
+      metricB: '执行 0',
+    },
+  ]
+})
+
+const automationFootnote = computed(() => {
+  const activeLines = automationMatrixCards.value.filter(item => item.total > 0).length
+  return `${activeLines}/3 已形成数据`
+})
 
 const getBarHeight = (value: number): string => {
   const maxValue = Math.max(
@@ -760,8 +924,10 @@ onUnmounted(() => {
   min-height: 100%;
   padding: 16px;
   background:
-    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.06), transparent 22%),
-    linear-gradient(180deg, rgba(247, 250, 253, 0.92), rgba(241, 245, 249, 0.88));
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.16), transparent 24%),
+    radial-gradient(circle at top right, rgba(var(--theme-accent-secondary-rgb), 0.12), transparent 20%),
+    radial-gradient(circle at bottom right, rgba(var(--theme-accent-tertiary-rgb), 0.11), transparent 22%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(240, 245, 252, 0.92));
   box-sizing: border-box;
   overflow-y: auto;
 }
@@ -774,13 +940,13 @@ onUnmounted(() => {
 .dashboard-spin {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 :deep(.arco-spin-children) {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .approval-pending-card,
@@ -849,25 +1015,33 @@ onUnmounted(() => {
 .hero-section {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
-  gap: 18px;
-  padding: 24px;
-  border-radius: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
   background:
-    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.16), transparent 26%),
-    linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 252, 0.92));
-  box-shadow: 0 28px 64px rgba(15, 23, 42, 0.08);
+    radial-gradient(circle at top right, rgba(var(--theme-accent-rgb), 0.24), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(var(--theme-accent-secondary-rgb), 0.16), transparent 24%),
+    linear-gradient(140deg, rgba(255, 255, 255, 0.99), rgba(243, 248, 255, 0.96));
+  box-shadow: 0 30px 72px rgba(15, 23, 42, 0.1);
 }
 
 .hero-main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .hero-kicker-row {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.hero-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
 }
 
@@ -875,7 +1049,7 @@ onUnmounted(() => {
 .hero-project-chip,
 .section-kicker,
 .hero-aside-kicker {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -888,7 +1062,7 @@ onUnmounted(() => {
 }
 
 .hero-project-chip {
-  padding: 5px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.06);
   color: var(--theme-text-secondary);
@@ -899,41 +1073,51 @@ onUnmounted(() => {
 .hero-title {
   margin: 0;
   font-family: var(--theme-display-font);
-  font-size: 34px;
+  font-size: 28px;
   line-height: 1.1;
   color: var(--theme-text);
-}
-
-.hero-description {
-  margin: 0;
-  max-width: 760px;
-  font-size: 15px;
-  line-height: 1.8;
-  color: var(--theme-text-secondary);
 }
 
 .hero-highlights {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 8px;
+}
+
+.hero-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .hero-highlight-card,
 .hero-aside-panel,
-.kpi-card,
+.hero-kpi-card,
 .surface-card {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 251, 255, 0.88));
+  box-shadow: 0 20px 46px rgba(15, 23, 42, 0.06);
+}
+
+.hero-highlight-card:nth-child(1) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.08), rgba(255, 255, 255, 0.94));
+}
+
+.hero-highlight-card:nth-child(2) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-secondary-rgb), 0.08), rgba(255, 255, 255, 0.94));
+}
+
+.hero-highlight-card:nth-child(3) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-tertiary-rgb), 0.08), rgba(255, 255, 255, 0.94));
 }
 
 .hero-highlight-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 124px;
-  padding: 18px;
-  border-radius: 20px;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 12px;
 }
 
 .hero-highlight-label,
@@ -949,34 +1133,113 @@ onUnmounted(() => {
 }
 
 .hero-highlight-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .hero-highlight-value {
-  font-size: 30px;
+  font-size: 22px;
   line-height: 1;
   color: var(--theme-text);
 }
 
-.hero-highlight-foot {
-  font-size: 12px;
-  line-height: 1.6;
+.hero-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 82px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.hero-kpi-card:nth-child(1) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.09), rgba(255, 255, 255, 0.95));
+}
+
+.hero-kpi-card:nth-child(2) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-secondary-rgb), 0.09), rgba(255, 255, 255, 0.95));
+}
+
+.hero-kpi-card:nth-child(3) {
+  background: linear-gradient(180deg, rgba(var(--theme-accent-tertiary-rgb), 0.09), rgba(255, 255, 255, 0.95));
+}
+
+.hero-kpi-card:nth-child(4) {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(255, 255, 255, 0.95));
+}
+
+.hero-kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-kpi-icon {
+  font-size: 15px;
+  color: var(--theme-accent);
+}
+
+.hero-kpi-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--theme-text-secondary);
+}
+
+.hero-kpi-value-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.hero-kpi-value {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--theme-text);
+}
+
+.hero-kpi-unit {
+  font-size: 10px;
+  color: var(--theme-text-tertiary);
+  margin-bottom: 2px;
 }
 
 .hero-aside {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
 }
 
 .hero-aside-panel {
-  padding: 18px;
-  border-radius: 22px;
+  padding: 12px;
+  border-radius: 14px;
 }
 
 .hero-aside-panel.compact {
-  padding-top: 16px;
+  padding-top: 12px;
+}
+
+.hero-inline-status {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hero-inline-status.good {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+}
+
+.hero-inline-status.warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.hero-inline-status.risk {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
 }
 
 .hero-aside-head,
@@ -999,8 +1262,8 @@ onUnmounted(() => {
 }
 
 .hero-aside-badge {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 5px 8px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -1021,16 +1284,16 @@ onUnmounted(() => {
 
 .hero-score-row {
   display: grid;
-  grid-template-columns: 138px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .hero-score-ring {
   position: relative;
-  width: 138px;
-  height: 138px;
+  width: 96px;
+  height: 96px;
 }
 
 .hero-score-svg {
@@ -1068,32 +1331,32 @@ onUnmounted(() => {
 }
 
 .hero-score-text strong {
-  font-size: 34px;
+  font-size: 22px;
   color: var(--theme-text);
   line-height: 1;
 }
 
 .hero-score-text span {
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 11px;
   color: var(--theme-text-secondary);
 }
 
 .hero-score-meta {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .hero-score-stat {
   display: flex;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 16px;
+  padding: 7px 9px;
+  border-radius: 10px;
   background: rgba(248, 250, 252, 0.88);
 }
 
 .hero-score-stat span {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--theme-text-secondary);
 }
 
@@ -1110,195 +1373,328 @@ onUnmounted(() => {
 }
 
 .hero-score-stat strong {
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .governance-list {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .governance-item {
   display: flex;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 7px 9px;
+  border-radius: 10px;
   background: rgba(248, 250, 252, 0.9);
 }
 
 .governance-label {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .governance-value {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
 }
 
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.kpi-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 220px;
-  padding: 20px;
-  border-radius: 22px;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
-}
-
-.kpi-card:hover,
+.hero-kpi-card:hover,
 .surface-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 24px 54px rgba(15, 23, 42, 0.08);
 }
 
-.kpi-head {
+.insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.9fr) minmax(0, 1fr);
   gap: 12px;
-  justify-content: flex-start;
 }
 
-.kpi-icon-wrap {
-  width: 44px;
-  height: 44px;
+.secondary-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.surface-card {
+  --card-accent-rgb: var(--theme-accent-rgb);
+  position: relative;
+  overflow: hidden;
+  padding: 14px;
+  border-radius: 16px;
+  border-color: rgba(var(--card-accent-rgb), 0.14);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.surface-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 4px;
+  border-radius: 0 0 999px 999px;
+  background: rgba(var(--card-accent-rgb), 0.78);
+}
+
+.backlog-card {
+  --card-accent-rgb: var(--theme-accent-rgb);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.14), rgba(255, 255, 255, 0.95));
+}
+
+.bug-risk-card {
+  --card-accent-rgb: 239, 68, 68;
+  background:
+    linear-gradient(180deg, rgba(239, 68, 68, 0.12), rgba(255, 255, 255, 0.95));
+}
+
+.automation-matrix-card {
+  --card-accent-rgb: var(--theme-accent-secondary-rgb);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-secondary-rgb), 0.14), rgba(255, 255, 255, 0.95));
+}
+
+.review-card {
+  --card-accent-rgb: var(--theme-accent-tertiary-rgb);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-tertiary-rgb), 0.12), rgba(255, 255, 255, 0.95));
+}
+
+.token-card {
+  --card-accent-rgb: 245, 158, 11;
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.12), rgba(255, 255, 255, 0.95));
+}
+
+.trend-panel {
+  --card-accent-rgb: var(--theme-accent-rgb);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-rgb), 0.11), rgba(255, 255, 255, 0.96));
+}
+
+.operations-panel {
+  --card-accent-rgb: var(--theme-accent-secondary-rgb);
+  background:
+    linear-gradient(180deg, rgba(var(--theme-accent-secondary-rgb), 0.11), rgba(255, 255, 255, 0.96));
+}
+
+.section-head {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  margin: 4px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.section-badge {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(var(--card-accent-rgb), 0.92);
+  background: rgba(var(--card-accent-rgb), 0.1);
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.backlog-list,
+.bug-risk-list,
+.automation-matrix {
+  display: grid;
+  gap: 10px;
+}
+
+.backlog-item,
+.bug-risk-item,
+.automation-row {
+  padding: 12px;
   border-radius: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(var(--theme-accent-rgb), 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-.kpi-icon {
-  font-size: 22px;
-  color: var(--theme-accent);
+.backlog-main,
+.automation-row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.kpi-head-copy {
+.backlog-copy,
+.bug-risk-head {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.kpi-title {
-  font-size: 15px;
+.backlog-label,
+.bug-risk-label,
+.automation-label {
+  font-size: 13px;
   font-weight: 700;
   color: var(--theme-text);
 }
 
-.kpi-caption {
-  font-size: 12px;
+.backlog-desc,
+.bug-risk-desc,
+.automation-desc {
+  margin: 0;
+  font-size: 11px;
   line-height: 1.5;
-}
-
-.kpi-value-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.kpi-value {
-  font-size: 38px;
-  line-height: 1;
-}
-
-.kpi-value-unit {
-  margin-bottom: 4px;
-  font-size: 13px;
-  color: var(--theme-text-tertiary);
-}
-
-.kpi-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.kpi-tag {
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.kpi-tag.positive {
-  background: rgba(34, 197, 94, 0.12);
-  color: #15803d;
-}
-
-.kpi-tag.warning {
-  background: rgba(245, 158, 11, 0.12);
-  color: #b45309;
-}
-
-.kpi-tag.info {
-  background: rgba(59, 130, 246, 0.12);
-  color: #1d4ed8;
-}
-
-.kpi-tag.danger {
-  background: rgba(239, 68, 68, 0.12);
-  color: #b91c1c;
-}
-
-.kpi-tag.neutral {
-  background: rgba(15, 23, 42, 0.06);
   color: var(--theme-text-secondary);
 }
 
-.kpi-tag.accent {
-  background: rgba(var(--theme-accent-rgb), 0.12);
-  color: var(--theme-accent);
+.backlog-value-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 72px;
 }
 
-.insight-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.9fr) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.surface-card {
-  padding: 20px;
-  border-radius: 22px;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
-}
-
-.section-head {
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.section-title {
-  margin: 6px 0 0;
+.backlog-value,
+.bug-risk-value,
+.automation-total {
   font-size: 22px;
-  line-height: 1.2;
+  line-height: 1;
+  color: var(--theme-text);
 }
 
-.section-badge {
-  padding: 6px 10px;
-  font-size: 12px;
+.backlog-share {
+  font-size: 11px;
   font-weight: 600;
-  background: rgba(15, 23, 42, 0.06);
+  color: var(--theme-text-secondary);
 }
 
-.review-list {
-  display: grid;
-  gap: 14px;
+.review-track.compact {
+  margin-top: 8px;
+  height: 6px;
+}
+
+.bug-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.bug-hero-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bug-hero-value strong {
+  font-size: 28px;
+  line-height: 1;
+  color: #b91c1c;
+}
+
+.bug-hero-value span {
+  font-size: 12px;
+  color: var(--theme-text-secondary);
+}
+
+.bug-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.bug-tag,
+.automation-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bug-tag.danger {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.bug-tag.warning {
+  color: #7c3aed;
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.bug-risk-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.automation-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.automation-status.good {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.automation-status.warning {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.automation-status.muted {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.automation-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.automation-metrics span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--theme-text-secondary);
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .review-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.9);
 }
 
 .review-label,
 .review-value {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .review-value {
@@ -1306,7 +1702,7 @@ onUnmounted(() => {
 }
 
 .review-track {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(148, 163, 184, 0.15);
@@ -1320,15 +1716,15 @@ onUnmounted(() => {
 
 .execution-summary {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
   align-items: center;
 }
 
 .execution-ring {
   position: relative;
-  width: 160px;
-  height: 160px;
+  width: 132px;
+  height: 132px;
 }
 
 .execution-ring-svg {
@@ -1348,7 +1744,7 @@ onUnmounted(() => {
 }
 
 .execution-ring-text strong {
-  font-size: 34px;
+  font-size: 28px;
   line-height: 1;
 }
 
@@ -1360,17 +1756,18 @@ onUnmounted(() => {
 
 .execution-legend {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .execution-legend-item {
   display: grid;
   grid-template-columns: 10px 1fr auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.9);
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.92);
 }
 
 .execution-legend-dot {
@@ -1380,64 +1777,65 @@ onUnmounted(() => {
 }
 
 .execution-legend-label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--theme-text-secondary);
 }
 
 .execution-legend-value {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .token-total-panel {
-  padding: 18px;
-  border-radius: 18px;
+  padding: 14px;
+  border-radius: 14px;
   background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.12), rgba(255, 255, 255, 0.82));
 }
 
 .token-total-label {
   display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
 }
 
 .token-total-value {
   display: block;
-  font-size: 32px;
+  font-size: 26px;
   line-height: 1.1;
   color: var(--theme-accent);
 }
 
 .token-total-meta {
   display: flex;
-  gap: 14px;
-  margin-top: 10px;
-  font-size: 12px;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
   color: var(--theme-text-secondary);
 }
 
 .token-stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .token-mini-card {
-  padding: 14px 12px;
-  border-radius: 16px;
-  background: rgba(248, 250, 252, 0.92);
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.92);
 }
 
 .token-mini-card span {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--theme-text-secondary);
 }
 
 .token-mini-card strong {
   display: block;
-  margin-top: 8px;
-  font-size: 22px;
+  margin-top: 6px;
+  font-size: 18px;
   color: var(--theme-text);
 }
 
@@ -1450,26 +1848,27 @@ onUnmounted(() => {
 }
 
 .token-ranking {
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .token-ranking-title {
-  margin-bottom: 10px;
-  font-size: 13px;
+  margin-bottom: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--theme-text);
 }
 
 .token-ranking-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .token-ranking-item {
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.9);
-  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.92);
+  font-size: 12px;
   color: var(--theme-text-secondary);
 }
 
@@ -1500,7 +1899,7 @@ onUnmounted(() => {
 .trend-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.85fr);
-  gap: 16px;
+  gap: 12px;
 }
 
 .trend-summary {
@@ -1510,9 +1909,9 @@ onUnmounted(() => {
 }
 
 .summary-item {
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--theme-text-secondary);
   background: rgba(15, 23, 42, 0.06);
@@ -1531,31 +1930,31 @@ onUnmounted(() => {
 .trend-chart {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
   align-items: end;
-  min-height: 220px;
+  min-height: 176px;
 }
 
 .trend-column {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .trend-bar-shell {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 6px;
-  min-height: 150px;
-  padding: 12px 0;
-  border-radius: 18px;
+  gap: 5px;
+  min-height: 124px;
+  padding: 8px 0;
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.86), rgba(241, 245, 249, 0.98));
 }
 
 .trend-bar {
-  width: 16px;
+  width: 12px;
   border-radius: 999px;
   transition: height 0.3s ease;
 }
@@ -1569,12 +1968,12 @@ onUnmounted(() => {
 }
 
 .trend-column-meta {
-  gap: 8px;
+  gap: 6px;
 }
 
 .trend-date,
 .trend-total {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .trend-total {
@@ -1583,9 +1982,9 @@ onUnmounted(() => {
 
 .trend-legend {
   display: flex;
-  gap: 18px;
-  margin-top: 18px;
-  padding-top: 16px;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
@@ -1593,7 +1992,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--theme-text-secondary);
 }
 
@@ -1614,48 +2013,50 @@ onUnmounted(() => {
 
 .operations-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .operations-item {
-  gap: 18px;
+  gap: 12px;
   align-items: flex-start;
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(248, 250, 252, 0.9);
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(252, 253, 255, 0.92);
 }
 
 .operations-item-copy {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .operations-item-label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--theme-text);
 }
 
 .operations-item-desc {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .operations-item-value {
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1;
 }
 
 @media (max-width: 1400px) {
   .hero-section,
   .insight-grid,
+  .secondary-insight-grid,
   .trend-grid {
     grid-template-columns: 1fr;
   }
 
-  .kpi-grid {
+  .hero-kpi-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1667,7 +2068,6 @@ onUnmounted(() => {
 
   .hero-section,
   .surface-card,
-  .kpi-card,
   .approval-shell,
   .empty-project-shell {
     padding: 18px;
@@ -1679,9 +2079,20 @@ onUnmounted(() => {
   }
 
   .hero-highlights,
-  .kpi-grid,
+  .hero-kpi-strip,
   .token-stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .backlog-main,
+  .automation-row-main,
+  .bug-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .backlog-value-block {
+    align-items: flex-start;
   }
 
   .hero-score-row,
@@ -1699,3 +2110,4 @@ onUnmounted(() => {
   }
 }
 </style>
+

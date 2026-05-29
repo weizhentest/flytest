@@ -625,6 +625,26 @@ export interface ProjectStatistics {
       cancelled: number;
     };
   };
+  api_automation: {
+    requests: number;
+    test_cases: number;
+    executions: number;
+  };
+  bugs: {
+    total: number;
+    open: number;
+    pending_retest: number;
+    closed: number;
+    high_severity: number;
+    by_status: {
+      unassigned: number;
+      assigned: number;
+      confirmed: number;
+      fixed: number;
+      pending_retest: number;
+      closed: number;
+    };
+  };
 }
 
 interface ProjectStatisticsResponse {

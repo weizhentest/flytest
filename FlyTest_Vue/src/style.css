@@ -75,6 +75,10 @@
   --theme-accent-hover: #1248d8;
   --theme-accent-active: #0c3aac;
   --theme-accent-rgb: 35, 92, 255;
+  --theme-accent-secondary: #13b5b1;
+  --theme-accent-secondary-rgb: 19, 181, 177;
+  --theme-accent-tertiary: #7c5cff;
+  --theme-accent-tertiary-rgb: 124, 92, 255;
   --theme-accent-soft: rgba(35, 92, 255, 0.1);
   --theme-success: #1d9b6c;
   --theme-warning: #d97706;
@@ -82,6 +86,12 @@
   --theme-info: #0f7ea8;
   --theme-grid-line: rgba(159, 176, 199, 0.16);
   --theme-display-font: 'Space Grotesk', 'Manrope', sans-serif;
+  --theme-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.9));
+  --theme-panel-bg-soft: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.84));
+  --theme-hero-bg:
+    radial-gradient(circle at top left, rgba(var(--theme-accent-rgb), 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(var(--theme-accent-secondary-rgb), 0.14), transparent 24%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.92));
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -135,6 +145,10 @@
   --theme-accent-hover: #60a5fa;
   --theme-accent-active: #1d4ed8;
   --theme-accent-rgb: 59, 130, 246;
+  --theme-accent-secondary: #22c7ba;
+  --theme-accent-secondary-rgb: 34, 199, 186;
+  --theme-accent-tertiary: #8b7bff;
+  --theme-accent-tertiary-rgb: 139, 123, 255;
   --theme-panel-bg: linear-gradient(180deg, rgba(19, 30, 47, 0.96), rgba(13, 21, 34, 0.94));
   --theme-panel-bg-strong: linear-gradient(180deg, rgba(20, 31, 48, 0.98), rgba(12, 20, 33, 0.98));
   --theme-panel-bg-soft: linear-gradient(180deg, rgba(22, 34, 52, 0.88), rgba(15, 23, 42, 0.78));
@@ -191,6 +205,12 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background-color: var(--theme-bg);
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(var(--theme-accent-rgb), 0.24), transparent 28%),
+    radial-gradient(circle at 100% 6%, rgba(var(--theme-accent-secondary-rgb), 0.17), transparent 22%),
+    radial-gradient(circle at 72% 100%, rgba(var(--theme-accent-tertiary-rgb), 0.14), transparent 24%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fd 48%, #f4f7fd 100%);
+  background-attachment: fixed;
   color: var(--theme-page-text);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -239,6 +259,11 @@ button:focus-visible {
 
 :root[data-theme='black'] #app {
   color: var(--theme-page-text);
+}
+
+::selection {
+  background: rgba(var(--theme-accent-rgb), 0.18);
+  color: var(--theme-text);
 }
 
 :root[data-theme='black'] .main-layout,

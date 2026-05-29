@@ -1796,9 +1796,11 @@ onUnmounted(() => {
   padding: 0 22px;
   border-radius: 12px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 253, 0.92));
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+    radial-gradient(circle at 0% 0%, rgba(var(--theme-accent-rgb), 0.12), transparent 22%),
+    radial-gradient(circle at 100% 0%, rgba(var(--theme-accent-secondary-rgb), 0.1), transparent 18%),
+    var(--theme-panel-bg);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: var(--theme-card-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -1822,7 +1824,9 @@ onUnmounted(() => {
 .project-selector :deep(.arco-select-view) {
   min-width: 240px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(245, 249, 255, 0.9));
+  border-color: rgba(125, 145, 176, 0.2);
 }
 
 .user-info {
@@ -1841,7 +1845,9 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   font-weight: 700;
-  box-shadow: 0 10px 22px rgba(var(--theme-accent-rgb), 0.16);
+  box-shadow:
+    0 10px 22px rgba(var(--theme-accent-rgb), 0.16),
+    0 0 0 3px rgba(var(--theme-accent-secondary-rgb), 0.08);
 }
 
 .username {
@@ -1901,9 +1907,11 @@ onUnmounted(() => {
   margin: 0 14px 14px;
   border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 253, 0.86));
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+    radial-gradient(circle at top right, rgba(var(--theme-accent-secondary-rgb), 0.08), transparent 18%),
+    radial-gradient(circle at 0% 100%, rgba(var(--theme-accent-rgb), 0.08), transparent 22%),
+    var(--theme-panel-bg-soft);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: var(--theme-card-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -1931,8 +1939,9 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 12% 10%, rgba(var(--theme-accent-rgb), 0.1), transparent 22%),
-    radial-gradient(circle at 88% 16%, rgba(15, 126, 168, 0.08), transparent 18%);
+    radial-gradient(circle at 12% 10%, rgba(var(--theme-accent-rgb), 0.12), transparent 22%),
+    radial-gradient(circle at 88% 16%, rgba(var(--theme-accent-secondary-rgb), 0.1), transparent 18%),
+    radial-gradient(circle at 56% 88%, rgba(var(--theme-accent-tertiary-rgb), 0.08), transparent 18%);
   pointer-events: none;
 }
 
@@ -1942,7 +1951,8 @@ onUnmounted(() => {
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 255, 0.82));
   border: 1px solid rgba(148, 163, 184, 0.16);
   color: var(--theme-text-secondary);
   font-size: 12px;

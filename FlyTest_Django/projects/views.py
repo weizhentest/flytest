@@ -305,7 +305,7 @@ class ProjectViewSet(BaseModelViewSet):
 
         from mcp_tools.models import RemoteMCPConfig
         from skills.models import Skill
-        from testcases.models import TestCase, TestExecution
+        from testcases.models import TestBug, TestCase, TestExecution
         from ui_automation.models import UiExecutionRecord, UiTestCase
 
         testcase_stats = TestCase.objects.filter(project=project).aggregate(
@@ -397,6 +397,25 @@ class ProjectViewSet(BaseModelViewSet):
             },
         }
 
+        bug_queryset = TestBug.objects.filter(project=project)
+        bug_stats = bug_queryset.aggregate(
+            total=Count('id'),
+            unassigned=Count('id', filter=Q(status=TestBug.STATUS_UNASSIGNED)),
+            assigned=Count('id', filter=Q(status=TestBug.STATUS_ASSIGNED)),
+            confirmed=Count('id', filter=Q(status=TestBug.STATUS_CONFIRMED)),
+            fixed=Count('id', filter=Q(status=TestBug.STATUS_FIXED)),
+            pending_retest=Count('id', filter=Q(status=TestBug.STATUS_PENDING_RETEST)),
+            closed=Count('id', filter=Q(status=TestBug.STATUS_CLOSED)),
+            severity_1=Count('id', filter=Q(severity='1')),
+            severity_2=Count('id', filter=Q(severity='2')),
+        )
+
+        api_automation_stats = {
+            'requests': 0,
+            'test_cases': 0,
+            'executions': 0,
+        }
+
         response_data = {
             'project': {'id': project.id, 'name': project.name},
             'testcases': {
@@ -435,6 +454,22 @@ class ProjectViewSet(BaseModelViewSet):
             'mcp': mcp_stats,
             'skills': skill_stats,
             'ui_automation': ui_automation_stats,
+            'api_automation': api_automation_stats,
+            'bugs': {
+                'total': bug_stats['total'] or 0,
+                'open': (bug_stats['unassigned'] or 0) + (bug_stats['assigned'] or 0) + (bug_stats['confirmed'] or 0),
+                'pending_retest': bug_stats['pending_retest'] or 0,
+                'closed': bug_stats['closed'] or 0,
+                'high_severity': (bug_stats['severity_1'] or 0) + (bug_stats['severity_2'] or 0),
+                'by_status': {
+                    'unassigned': bug_stats['unassigned'] or 0,
+                    'assigned': bug_stats['assigned'] or 0,
+                    'confirmed': bug_stats['confirmed'] or 0,
+                    'fixed': bug_stats['fixed'] or 0,
+                    'pending_retest': bug_stats['pending_retest'] or 0,
+                    'closed': bug_stats['closed'] or 0,
+                },
+            },
         }
 
         cache.set(cache_key, response_data, 20)
